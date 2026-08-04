@@ -1,0 +1,77 @@
+import fc from "fast-check";
+import { describe, expect, it } from "vitest";
+
+import {
+  ArrayDataSource,
+  CommandManager,
+  SetCellCommand,
+  TableStore
+} from "../../../../src/core";
+
+const ROW_COUNT = 5;
+const COLUMNS = [
+  { id: "a", field: "a" },
+  { id: "b", field: "b" },
+  { id: "c", field: "c" }
+];
+
+function createGrid() {
+  const rows = Array.from({ length: ROW_COUNT }, (_unused, row) => ({
+    a: row * 10,
+    b: row * 10 + 1,
+    c: row * 10 + 2
+  }));
+  const source = new ArrayDataSource(rows, COLUMNS);
+  return new TableStore(source);
+}
+
+function snapshot(store: TableStore): unknown[][] {
+  const grid: unknown[][] = [];
+  for (let row = 0; row < ROW_COUNT; row += 1) {
+    const rowValues: unknown[] = [];
+    for (let column = 0; column < COLUMNS.length; column += 1) {
+      rowValues.push(store.getCell(row, column));
+    }
+    grid.push(rowValues);
+  }
+  return grid;
+}
+
+describe("CommandManager — random command sequences", () => {
+  it("undoing every executed command restores the initial grid", () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            row: fc.integer({ min: 0, max: ROW_COUNT - 1 }),
+            column: fc.integer({ min: 0, max: COLUMNS.length - 1 }),
+            value: fc.integer()
+          }),
+          { maxLength: 30 }
+        ),
+        operations => {
+          const store = createGrid();
+          // historyLimit is sized to the batch so eviction never kicks in —
+          // this property is about undo correctness, not budget eviction
+          // (that has its own tests in CommandManager.test.ts).
+          const manager = new CommandManager(store, {
+            historyLimit: operations.length + 1
+          });
+          const initial = snapshot(store);
+
+          for (const operation of operations) {
+            manager.execute(
+              new SetCellCommand(store, operation.row, operation.column, operation.value)
+            );
+          }
+
+          while (manager.canUndo()) {
+            manager.undo();
+          }
+
+          expect(snapshot(store)).toEqual(initial);
+        }
+      )
+    );
+  });
+});

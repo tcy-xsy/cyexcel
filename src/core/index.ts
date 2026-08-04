@@ -29,3 +29,15 @@ export {
   type TableStoreCommitResult,
   mergePatches
 } from "./data";
+export {
+  SetCellCommand,
+  SetRangeCommand,
+  ClearRangeCommand,
+  CommandManager,
+  type CommandManagerOptions
+} from "./commands";
+export {
+  HistoryManager,
+  type HistoryEntry,
+  type HistoryManagerOptions
+} from "./history";
