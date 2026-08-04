@@ -33,6 +33,7 @@
     "./dist/cyexcel.umd.cjs"
   ],
   "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 4173",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test:unit": "vitest run",
