@@ -41,3 +41,11 @@ export {
   type HistoryEntry,
   type HistoryManagerOptions
 } from "./history";
+export {
+  LayoutEngine,
+  type LayoutOptions,
+  type ViewportState,
+  type IndexRange,
+  type CellRect,
+  toPhysicalPixelSize
+} from "./layout";
