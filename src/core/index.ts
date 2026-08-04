@@ -65,3 +65,15 @@ export {
   configureCanvasForDpr,
   type ResizableCanvas
 } from "./render";
+export {
+  SelectionModel,
+  type SelectionKind,
+  type CellPosition,
+  type SelectionBounds,
+  type SelectionSnapshot,
+  PointerController,
+  type HeaderLayout,
+  type PointerControllerOptions,
+  KeyboardController,
+  type KeyboardControllerOptions
+} from "./interaction";

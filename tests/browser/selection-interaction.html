@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel selection interaction fixture</title>
+    <style>
+      .grid {
+        position: relative;
+        width: 500px;
+        height: 400px;
+        margin-bottom: 8px;
+        outline: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="grid-a" class="grid" tabindex="0"></div>
+    <div id="grid-b" class="grid" tabindex="0"></div>
+    <script type="module">
+      import {
+        KeyboardController,
+        LayoutEngine,
+        PointerController,
+        SelectionModel
+      } from "/src/core/index.ts";
+
+      function setup(containerId, globalName) {
+        const container = document.getElementById(containerId);
+        const layout = new LayoutEngine({
+          rowCount: 20,
+          columnCount: 10,
+          rowHeight: 20,
+          columnWidths: Array.from({ length: 10 }, () => 50)
+        });
+        const selection = new SelectionModel({ rowCount: 20, columnCount: 10 });
+        const viewport = { scrollTop: 0, scrollLeft: 0, width: 500, height: 400 };
+
+        const publish = (snapshot) => {
+          window[globalName] = snapshot;
+        };
+        publish(selection.snapshot);
+
+        const pointer = new PointerController({
+          layout,
+          selection,
+          onSelectionChange: publish
+        });
+        pointer.setViewport(viewport);
+        pointer.attach(container);
+
+        const keyboard = new KeyboardController({ selection, onSelectionChange: publish });
+        keyboard.attach(container);
+      }
+
+      setup("grid-a", "__gridASelection");
+      setup("grid-b", "__gridBSelection");
+
+      window.__cyexcelSelectionReady = true;
+    </script>
+  </body>
+</html>
