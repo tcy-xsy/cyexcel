@@ -7,7 +7,9 @@
 export const CyExcelErrorCode = {
   InvalidCoordinate: "invalid-coordinate",
   InvalidRange: "invalid-range",
-  InvalidOptions: "invalid-options"
+  InvalidOptions: "invalid-options",
+  ColumnNotFound: "column-not-found",
+  ReadonlyDataSource: "readonly-data-source"
 } as const;
 
 export type CyExcelErrorCode =

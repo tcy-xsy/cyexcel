@@ -21,3 +21,11 @@ export {
   assertValidRange,
   assertValidCyExcelOptions
 } from "./validation";
+export {
+  ArrayDataSource,
+  type ArrayDataSourceColumn,
+  type ArrayDataSourceOptions,
+  TableStore,
+  type TableStoreCommitResult,
+  mergePatches
+} from "./data";
