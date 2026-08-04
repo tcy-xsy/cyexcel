@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel full loop fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 400px;
+        height: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+      const columns = [
+        { id: "name", field: "name", width: 120 },
+        { id: "price", field: "price", width: 100 },
+        { id: "qty", field: "qty", width: 100 }
+      ];
+      const data = Array.from({ length: 50 }, (_unused, index) => ({
+        name: `Item ${index}`,
+        price: index * 10,
+        qty: index
+      }));
+
+      const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+
+      window.__sheet = sheet;
+      window.__cyexcelFullLoopReady = true;
+    </script>
+  </body>
+</html>

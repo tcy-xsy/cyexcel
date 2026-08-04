@@ -77,3 +77,12 @@ export {
   KeyboardController,
   type KeyboardControllerOptions
 } from "./interaction";
+export {
+  type CellEditor,
+  type CellEditorContext,
+  type CellEditorFactory,
+  type ValidationResult,
+  createTextCellEditor,
+  EditorManager,
+  type EditorManagerOptions
+} from "./editors";

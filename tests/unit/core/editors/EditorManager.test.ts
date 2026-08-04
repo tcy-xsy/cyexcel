@@ -1,0 +1,406 @@
+import { describe, expect, it } from "vitest";
+
+import { EditorManager, LayoutEngine } from "../../../../src/core";
+import type { CellEditor, CellEditorContext, ValidationResult } from "../../../../src/core";
+
+interface FakeContainer {
+  readonly element: HTMLElement;
+  dispatch(type: string, event: unknown): void;
+}
+
+function createFakeContainer(containsNext = false): FakeContainer {
+  const listeners = new Map<string, Set<EventListener>>();
+  const element = {
+    addEventListener: (type: string, listener: EventListener) => {
+      if (!listeners.has(type)) {
+        listeners.set(type, new Set());
+      }
+      listeners.get(type)?.add(listener);
+    },
+    removeEventListener: (type: string, listener: EventListener) => {
+      listeners.get(type)?.delete(listener);
+    },
+    contains: () => containsNext
+  } as unknown as HTMLElement;
+
+  return {
+    element,
+    dispatch(type: string, event: unknown) {
+      for (const listener of listeners.get(type) ?? []) {
+        (listener as (event: unknown) => void)(event);
+      }
+    }
+  };
+}
+
+function createLayout(): LayoutEngine {
+  return new LayoutEngine({
+    rowCount: 10,
+    columnCount: 5,
+    rowHeight: 20,
+    columnWidths: [50, 50, 50, 50, 50]
+  });
+}
+
+function createRecordingEditor(
+  overrides: {
+    readonly value?: unknown;
+    readonly validate?: () => ValidationResult;
+  } = {}
+): {
+  readonly editor: CellEditor;
+  readonly calls: string[];
+  getLastContext: () => CellEditorContext | undefined;
+} {
+  const calls: string[] = [];
+  let lastContext: CellEditorContext | undefined;
+  const value = overrides.value ?? "typed-value";
+
+  const base = {
+    mount(_container: HTMLElement, context: CellEditorContext): void {
+      calls.push("mount");
+      lastContext = context;
+    },
+    focus(): void {
+      calls.push("focus");
+    },
+    getValue(): unknown {
+      calls.push("getValue");
+      return value;
+    },
+    destroy(): void {
+      calls.push("destroy");
+    }
+  };
+
+  const editor: CellEditor = overrides.validate
+    ? {
+        ...base,
+        validate: () => {
+          calls.push("validate");
+          return overrides.validate?.() as ValidationResult;
+        }
+      }
+    : base;
+
+  return { editor, calls, getLastContext: () => lastContext };
+}
+
+function createManager(
+  editorOverrides: Parameters<typeof createRecordingEditor>[0] = {},
+  commitValue: (row: number, column: number, value: unknown) => void | Promise<void> = () => {},
+  containerOverrides?: { readonly containsNext?: boolean }
+) {
+  const layout = createLayout();
+  const recording = createRecordingEditor(editorOverrides);
+  const container = createFakeContainer(containerOverrides?.containsNext ?? false);
+  const manager = new EditorManager({
+    container: container.element,
+    layout,
+    getCellValue: () => "current-value",
+    commitValue,
+    editorFactory: () => recording.editor
+  });
+  return { manager, layout, dispatch: container.dispatch, ...recording };
+}
+
+describe("EditorManager.startEdit", () => {
+  it("mounts and focuses the editor, and reports isEditing", () => {
+    const { manager, calls } = createManager();
+
+    manager.startEdit(2, 1);
+
+    expect(manager.isEditing()).toBe(true);
+    expect(calls).toEqual(["mount", "focus"]);
+  });
+
+  it("positions the editor using LayoutEngine's cell rect, not its own math", () => {
+    const { manager, layout, getLastContext } = createManager();
+
+    manager.startEdit(3, 2);
+
+    expect(getLastContext()?.rect).toEqual(layout.getCellRect(3, 2));
+  });
+
+  it("ignores a second startEdit call while already editing", () => {
+    const { manager, calls } = createManager();
+
+    manager.startEdit(0, 0);
+    manager.startEdit(5, 5);
+
+    expect(calls).toEqual(["mount", "focus"]);
+  });
+});
+
+describe("EditorManager.commitEdit", () => {
+  it("calls getValue, then commitValue, then destroy, exactly once each and in order", async () => {
+    const commits: Array<{ row: number; column: number; value: unknown }> = [];
+    const { manager, calls } = createManager({ value: "hello" }, (row, column, value) => {
+      commits.push({ row, column, value });
+    });
+
+    manager.startEdit(1, 1);
+    await manager.commitEdit();
+
+    expect(calls).toEqual(["mount", "focus", "getValue", "destroy"]);
+    expect(commits).toEqual([{ row: 1, column: 1, value: "hello" }]);
+    expect(manager.isEditing()).toBe(false);
+  });
+
+  it("keeps the editor, value, and focus when validate() fails", async () => {
+    let commitValueCalled = false;
+    const { manager, calls } = createManager(
+      { validate: () => ({ valid: false, message: "nope" }) },
+      () => {
+        commitValueCalled = true;
+      }
+    );
+
+    manager.startEdit(0, 0);
+    await manager.commitEdit();
+
+    expect(calls).toEqual(["mount", "focus", "validate"]);
+    expect(commitValueCalled).toBe(false);
+    expect(manager.isEditing()).toBe(true);
+  });
+
+  it("does not tear down the editor when commitValue rejects", async () => {
+    const { manager, calls } = createManager({}, () => Promise.reject(new Error("boom")));
+
+    manager.startEdit(0, 0);
+
+    await expect(manager.commitEdit()).rejects.toThrow("boom");
+    expect(calls).not.toContain("destroy");
+    expect(manager.isEditing()).toBe(true);
+  });
+
+  it("is a no-op when nothing is being edited", async () => {
+    const { manager } = createManager();
+
+    await expect(manager.commitEdit()).resolves.toBeUndefined();
+    expect(manager.isEditing()).toBe(false);
+  });
+});
+
+describe("EditorManager.cancelEdit", () => {
+  it("destroys the editor without reading its value or committing", () => {
+    let commitValueCalled = false;
+    const { manager, calls } = createManager({}, () => {
+      commitValueCalled = true;
+    });
+
+    manager.startEdit(4, 4);
+    manager.cancelEdit();
+
+    expect(calls).toEqual(["mount", "focus", "destroy"]);
+    expect(commitValueCalled).toBe(false);
+    expect(manager.isEditing()).toBe(false);
+  });
+
+  it("is a no-op when nothing is being edited", () => {
+    const { manager } = createManager();
+
+    expect(() => manager.cancelEdit()).not.toThrow();
+    expect(manager.isEditing()).toBe(false);
+  });
+});
+
+describe("EditorManager keydown handling", () => {
+  it("Escape cancels the edit", () => {
+    const { manager, dispatch, calls } = createManager();
+    manager.startEdit(0, 0);
+
+    let defaultPrevented = false;
+    dispatch("keydown", { key: "Escape", preventDefault: () => (defaultPrevented = true) });
+
+    expect(defaultPrevented).toBe(true);
+    expect(calls).toContain("destroy");
+    expect(manager.isEditing()).toBe(false);
+  });
+
+  it("Enter commits when not composing", async () => {
+    const commits: unknown[] = [];
+    const { manager, dispatch } = createManager({}, (_row, _column, value) => {
+      commits.push(value);
+    });
+    manager.startEdit(0, 0);
+
+    dispatch("keydown", { key: "Enter", preventDefault: () => {} });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(commits).toHaveLength(1);
+    expect(manager.isEditing()).toBe(false);
+  });
+
+  it("Enter does not commit while an IME composition is in progress", async () => {
+    const commits: unknown[] = [];
+    const { manager, dispatch } = createManager({}, (_row, _column, value) => {
+      commits.push(value);
+    });
+    manager.startEdit(0, 0);
+
+    dispatch("compositionstart", {});
+    dispatch("keydown", { key: "Enter", preventDefault: () => {} });
+    await Promise.resolve();
+
+    expect(commits).toHaveLength(0);
+    expect(manager.isEditing()).toBe(true);
+
+    dispatch("compositionend", {});
+    dispatch("keydown", { key: "Enter", preventDefault: () => {} });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(commits).toHaveLength(1);
+  });
+
+  it("ignores keys other than Escape/Enter", () => {
+    const { manager, dispatch, calls } = createManager();
+    manager.startEdit(0, 0);
+
+    dispatch("keydown", { key: "a", preventDefault: () => {} });
+
+    expect(calls).toEqual(["mount", "focus"]);
+    expect(manager.isEditing()).toBe(true);
+  });
+
+  it("does nothing when a key event arrives while nothing is being edited", () => {
+    const { dispatch } = createManager();
+
+    expect(() => dispatch("keydown", { key: "Enter", preventDefault: () => {} })).not.toThrow();
+  });
+});
+
+describe("EditorManager focusout handling", () => {
+  it("commits when focus moves outside the container", async () => {
+    const commits: unknown[] = [];
+    const { manager, dispatch } = createManager({}, (_row, _column, value) => {
+      commits.push(value);
+    });
+    manager.startEdit(0, 0);
+
+    dispatch("focusout", { relatedTarget: null });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(commits).toHaveLength(1);
+    expect(manager.isEditing()).toBe(false);
+  });
+
+  it("does not commit when focus moves to another node still inside the container", () => {
+    const commits: unknown[] = [];
+    const { manager, dispatch } = createManager({}, (_row, _column, value) => {
+      commits.push(value);
+    }, { containsNext: true });
+    manager.startEdit(0, 0);
+
+    dispatch("focusout", { relatedTarget: {} });
+
+    expect(commits).toHaveLength(0);
+    expect(manager.isEditing()).toBe(true);
+  });
+
+  it("does nothing when focusout arrives while nothing is being edited", () => {
+    const { dispatch } = createManager();
+
+    expect(() => dispatch("focusout", { relatedTarget: null })).not.toThrow();
+  });
+});
+
+describe("EditorManager construction", () => {
+  it("defaults to the built-in text editor when no editorFactory is provided", () => {
+    const layout = createLayout();
+    const container = createFakeContainer();
+
+    expect(
+      () =>
+        new EditorManager({
+          container: container.element,
+          layout,
+          getCellValue: () => "x",
+          commitValue: () => {}
+        })
+    ).not.toThrow();
+  });
+});
+
+describe("EditorManager concurrent cancel during a pending commit", () => {
+  it("does not re-destroy the editor or fire onEditCommit once commitValue resolves", async () => {
+    let resolveCommit: () => void = () => {};
+    const commitPromise = new Promise<void>((resolve) => {
+      resolveCommit = resolve;
+    });
+    const onEditCommitCalls: Array<readonly [number, number]> = [];
+    const layout = createLayout();
+    const recording = createRecordingEditor();
+    const container = createFakeContainer();
+    const manager = new EditorManager({
+      container: container.element,
+      layout,
+      getCellValue: () => "current-value",
+      commitValue: () => commitPromise,
+      editorFactory: () => recording.editor,
+      onEditCommit: (row, column) => onEditCommitCalls.push([row, column])
+    });
+
+    manager.startEdit(0, 0);
+    const pendingCommit = manager.commitEdit();
+    manager.cancelEdit();
+
+    resolveCommit();
+    await pendingCommit;
+
+    expect(onEditCommitCalls).toHaveLength(0);
+    expect(recording.calls.filter((call) => call === "destroy")).toHaveLength(1);
+  });
+});
+
+describe("EditorManager.dispose cleans up listeners", () => {
+  it("stops reacting to events after dispose", () => {
+    const commits: unknown[] = [];
+    const { manager, dispatch } = createManager({}, (_row, _column, value) => {
+      commits.push(value);
+    });
+    manager.startEdit(0, 0);
+    manager.dispose();
+
+    dispatch("keydown", { key: "Enter", preventDefault: () => {} });
+    dispatch("focusout", { relatedTarget: null });
+
+    expect(commits).toHaveLength(0);
+  });
+});
+
+describe("EditorManager.dispose", () => {
+  it("is safe to call when nothing is being edited", () => {
+    const { manager } = createManager();
+
+    expect(() => manager.dispose()).not.toThrow();
+  });
+
+  it("forces the active edit to cancel rather than commit", () => {
+    let commitValueCalled = false;
+    const { manager, calls } = createManager({}, () => {
+      commitValueCalled = true;
+    });
+
+    manager.startEdit(0, 0);
+    manager.dispose();
+
+    expect(calls).toEqual(["mount", "focus", "destroy"]);
+    expect(commitValueCalled).toBe(false);
+    expect(manager.isEditing()).toBe(false);
+  });
+});
+
+describe("EditorManager initial input", () => {
+  it("passes the typed character through as initialInput", () => {
+    const { manager, getLastContext } = createManager();
+
+    manager.startEdit(0, 0, "5");
+
+    expect(getLastContext()?.initialInput).toBe("5");
+    expect(getLastContext()?.initialValue).toBe("current-value");
+  });
+});

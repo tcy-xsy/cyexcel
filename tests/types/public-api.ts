@@ -5,8 +5,10 @@ import {
 } from "../../src";
 import type { CyExcelCore } from "../../src/core";
 
-const options = { id: "orders" } satisfies CyExcelCoreOptions;
-const core: CyExcelCore = createCyExcelCore(options);
+declare const container: HTMLElement;
+
+const options = { rowHeight: 24 } satisfies CyExcelCoreOptions;
+const core: CyExcelCore = createCyExcelCore(container, options);
 const defineResult: CustomElementConstructor | undefined =
   typeof customElements === "undefined" ? undefined : defineCyExcel();
 
