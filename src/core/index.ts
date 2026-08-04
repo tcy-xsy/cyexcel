@@ -49,3 +49,19 @@ export {
   type CellRect,
   toPhysicalPixelSize
 } from "./layout";
+export {
+  type Canvas2DLike,
+  RenderScheduler,
+  type FrameScheduler,
+  type DirtyState,
+  type RenderTarget,
+  type RenderSchedulerOptions,
+  ContentLayerRenderer,
+  type CellPaintContext,
+  type CellPainter,
+  type ContentLayerRendererOptions,
+  SelectionLayerRenderer,
+  type SelectionLayerRendererOptions,
+  configureCanvasForDpr,
+  type ResizableCanvas
+} from "./render";

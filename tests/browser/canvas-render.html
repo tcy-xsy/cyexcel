@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel canvas render fixture</title>
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+    <script type="module">
+      import {
+        ContentLayerRenderer,
+        LayoutEngine,
+        configureCanvasForDpr
+      } from "/src/core/index.ts";
+
+      const canvas = document.getElementById("canvas");
+      const dpr = window.devicePixelRatio || 1;
+      const logicalWidth = 300;
+      const logicalHeight = 100;
+
+      configureCanvasForDpr(canvas, logicalWidth, logicalHeight, dpr);
+      const ctx = canvas.getContext("2d");
+      ctx.scale(dpr, dpr);
+
+      const layout = new LayoutEngine({
+        rowCount: 5,
+        columnCount: 5,
+        rowHeight: 20,
+        columnWidths: [60, 60, 60, 60, 60]
+      });
+
+      const renderer = new ContentLayerRenderer({
+        ctx,
+        layout,
+        getCellValue: (row, column) => `R${row}C${column}`
+      });
+      renderer.setViewport({
+        scrollTop: 0,
+        scrollLeft: 0,
+        width: logicalWidth,
+        height: logicalHeight
+      });
+      renderer.paintContent({ kind: "full" });
+
+      window.__cyexcelRenderReady = true;
+    </script>
+  </body>
+</html>

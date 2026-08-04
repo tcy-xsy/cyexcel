@@ -10,7 +10,8 @@ export const CyExcelErrorCode = {
   InvalidOptions: "invalid-options",
   ColumnNotFound: "column-not-found",
   ReadonlyDataSource: "readonly-data-source",
-  CommandCancelled: "command-cancelled"
+  CommandCancelled: "command-cancelled",
+  AsyncRendererNotSupported: "async-renderer-not-supported"
 } as const;
 
 export type CyExcelErrorCode =
