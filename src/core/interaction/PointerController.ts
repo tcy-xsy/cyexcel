@@ -16,6 +16,17 @@ export interface PointerControllerOptions {
 
 interface PointerModifiers {
   readonly shift: boolean;
+  /** `MouseEvent.button` — 0 for the primary (left) button, 2 for the secondary (right) one. Defaults to 0. */
+  readonly button?: number;
+}
+
+function isWithinRange(row: number, column: number, range: SelectionSnapshot["range"]): boolean {
+  return (
+    row >= range.startRow &&
+    row <= range.endRow &&
+    column >= range.startColumn &&
+    column <= range.endColumn
+  );
 }
 
 const NO_HEADERS: HeaderLayout = { rowHeaderWidth: 0, columnHeaderHeight: 0 };
@@ -90,6 +101,22 @@ export class PointerController {
     const inColumnHeader = point.y < this.#headerLayout.columnHeaderHeight;
     const { row, column } = this.#resolveGridPosition(point);
 
+    // A right-click landing inside the already-selected range must not
+    // collapse a multi-cell selection down to just the clicked cell —
+    // otherwise a context menu action (e.g. copy) would only ever see one
+    // cell no matter how much was selected first. Matches Excel: right-
+    // click inside the current selection preserves it; right-click
+    // *outside* it still replaces it with the single clicked cell, same as
+    // a left-click would (handled below, unchanged).
+    if (
+      modifiers.button === 2 &&
+      !inRowHeader &&
+      !inColumnHeader &&
+      isWithinRange(row, column, this.#selection.snapshot.range)
+    ) {
+      return;
+    }
+
     if (modifiers.shift) {
       this.#selection.extendTo(row, column);
     } else if (inRowHeader && inColumnHeader) {
@@ -137,7 +164,7 @@ export class PointerController {
       return { x: event.clientX - rect.left, y: event.clientY - rect.top };
     };
     const onPointerDown = (event: PointerEvent): void => {
-      this.handlePointerDown(toPoint(event), { shift: event.shiftKey });
+      this.handlePointerDown(toPoint(event), { shift: event.shiftKey, button: event.button });
     };
     const onPointerMove = (event: PointerEvent): void => {
       this.handlePointerMove(toPoint(event));

@@ -150,6 +150,33 @@ test("dragging a header column boundary resizes the column and shifts later colu
   expect(await statusHeaderHostLeft(page)).toBe("340px");
 });
 
+test("hovering a column boundary shows a col-resize cursor; hovering elsewhere doesn't", async ({ page }) => {
+  await gotoFixture(page);
+
+  const headerBox = await page.locator("#app canvas").nth(2).boundingBox();
+  if (!headerBox) {
+    throw new Error("missing header canvas box");
+  }
+
+  const cursorAt = (x: number, y: number) =>
+    page.evaluate(
+      ({ x, y }) => {
+        const canvas = document.querySelectorAll("#app canvas")[2] as HTMLCanvasElement;
+        const rect = canvas.getBoundingClientRect();
+        canvas.dispatchEvent(
+          new PointerEvent("pointermove", { clientX: rect.left + x, clientY: rect.top + y, bubbles: true })
+        );
+        return canvas.style.cursor;
+      },
+      { x, y }
+    );
+
+  // Same sku|name boundary (x=100) the resize-drag test above uses.
+  expect(await cursorAt(100, 14)).toBe("col-resize");
+  // Well inside a column, away from any boundary.
+  expect(await cursorAt(50, 14)).toBe("");
+});
+
 test("DOM header nodes are cleaned up on dispose()", async ({ page }) => {
   await gotoFixture(page);
   await expect(page.locator("#app select")).toBeVisible();

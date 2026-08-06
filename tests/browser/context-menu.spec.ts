@@ -122,6 +122,47 @@ test("right-clicking past the data extent opens a menu with a blank-target actio
   expect(await getRuns(page)).toEqual([{ target: "blank" }]);
 });
 
+test("right-clicking a cell inside an existing multi-cell selection preserves it instead of collapsing to one cell", async ({
+  page,
+  context
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await gotoFixture(page);
+  const box = await getAppBox(page);
+
+  // Drag-select cell (0,0) "Alice" through cell (1,0) "Bob".
+  await page.mouse.move(box.x + 50, box.y + 36);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 50, box.y + 36 + 24);
+  await page.mouse.up();
+
+  // Right-click one of the two already-selected cells.
+  await page.mouse.click(box.x + 50, box.y + 36, { button: "right" });
+  await page.locator('[data-item-id="cyexcel:copy"]').click();
+  await expect(page.locator('[role="menu"]')).toHaveCount(0);
+
+  await expect
+    .poll(async () => {
+      const text = await page.evaluate(() => navigator.clipboard.readText());
+      return text.split("\n").map((line) => line.trim());
+    })
+    .toEqual(["Alice", "Bob"]); // both rows — the selection wasn't collapsed to just "Alice"
+});
+
+test("clicking outside an open context menu closes it without running any action", async ({ page }) => {
+  await gotoFixture(page);
+  const box = await getAppBox(page);
+
+  await page.mouse.click(box.x + 50, box.y + 36, { button: "right" });
+  await expect(page.locator('[role="menu"]')).toBeVisible();
+
+  // A plain left click elsewhere on the grid, well away from the menu.
+  await page.mouse.click(box.x + 50, box.y + 250);
+
+  await expect(page.locator('[role="menu"]')).toHaveCount(0);
+  expect(await getRuns(page)).toEqual([]);
+});
+
 test("createBasicContextMenuPlugin's Copy/Paste actions round-trip through the real system clipboard", async ({
   page,
   context

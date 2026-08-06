@@ -105,6 +105,16 @@ test("clicking a hitTest-enabled canvas cell commits a Command", async ({ page }
   expect(await getCell(page, 0, 1)).toBe(1);
 });
 
+test("right-clicking a hitTest-enabled canvas cell does not commit its click action", async ({ page }) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  expect(await getCell(page, 0, 1)).toBe(0);
+  await page.mouse.click(box.x + 140, box.y + 10, { button: "right" });
+
+  expect(await getCell(page, 0, 1)).toBe(0); // unchanged — only #handleContextMenu should react to this click
+});
+
 test("clicking the DOM toggle button commits through context.actions.commit", async ({ page }) => {
   await gotoFixture(page);
 

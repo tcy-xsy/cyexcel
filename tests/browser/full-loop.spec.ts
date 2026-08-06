@@ -128,6 +128,30 @@ test("typing a new value and pressing Enter commits one undoable/redoable change
   expect(await getCell(page, 0, 0)).toBe("Changed");
 });
 
+test("Ctrl+Z/Ctrl+Y undo and redo from the keyboard, not just the programmatic API", async ({ page }) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  await page.mouse.click(box.x + 10, box.y + 10); // selects and focuses cell (0, 0), "Item 0"
+  await page.keyboard.type("Changed");
+  await page.keyboard.press("Enter");
+
+  await expect(page.locator("#app input")).toHaveCount(0);
+  expect(await getCell(page, 0, 0)).toBe("Changed");
+
+  await page.keyboard.press("Control+z");
+  expect(await getCell(page, 0, 0)).toBe("Item 0");
+
+  await page.keyboard.press("Control+y");
+  expect(await getCell(page, 0, 0)).toBe("Changed");
+
+  await page.keyboard.press("Control+z");
+  expect(await getCell(page, 0, 0)).toBe("Item 0");
+
+  await page.keyboard.press("Control+Shift+z");
+  expect(await getCell(page, 0, 0)).toBe("Changed");
+});
+
 test("Enter on a selected cell opens the editor when not already editing", async ({ page }) => {
   await gotoFixture(page);
   const box = await getContentCanvasBox(page);

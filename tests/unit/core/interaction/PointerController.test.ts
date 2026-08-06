@@ -241,3 +241,51 @@ describe("PointerController onSelectionChange", () => {
     expect(snapshots).toHaveLength(0);
   });
 });
+
+describe("PointerController right-click (context menu) selection handling", () => {
+  it("preserves a multi-cell selection when right-clicking a cell already inside it", () => {
+    const layout = createLayout();
+    const selection = new SelectionModel({ rowCount: 20, columnCount: 10 });
+    const controller = new PointerController({ layout, selection });
+    controller.setViewport(VIEWPORT);
+
+    // Select cells (1,1) through (3,3) with a left-button drag first.
+    controller.handlePointerDown({ x: 55, y: 25 }, { shift: false, button: 0 });
+    controller.handlePointerMove({ x: 155, y: 65 });
+    controller.handlePointerUp();
+    expect(selection.snapshot.range).toEqual({ startRow: 1, startColumn: 1, endRow: 3, endColumn: 3 });
+
+    // Right-click a cell inside that range — (2,2) is x:100-150, y:40-60.
+    controller.handlePointerDown({ x: 120, y: 50 }, { shift: false, button: 2 });
+
+    expect(selection.snapshot.range).toEqual({ startRow: 1, startColumn: 1, endRow: 3, endColumn: 3 });
+  });
+
+  it("replaces the selection when right-clicking a cell outside it, same as a left-click would", () => {
+    const layout = createLayout();
+    const selection = new SelectionModel({ rowCount: 20, columnCount: 10 });
+    const controller = new PointerController({ layout, selection });
+    controller.setViewport(VIEWPORT);
+
+    controller.handlePointerDown({ x: 55, y: 25 }, { shift: false, button: 0 });
+    controller.handlePointerMove({ x: 155, y: 65 });
+    controller.handlePointerUp();
+    expect(selection.snapshot.range).toEqual({ startRow: 1, startColumn: 1, endRow: 3, endColumn: 3 });
+
+    // Right-click cell (0,0), well outside the current selection.
+    controller.handlePointerDown({ x: 10, y: 5 }, { shift: false, button: 2 });
+
+    expect(selection.snapshot.range).toEqual({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 });
+  });
+
+  it("a plain left-click still behaves as before (button defaults to 0)", () => {
+    const layout = createLayout();
+    const selection = new SelectionModel({ rowCount: 20, columnCount: 10 });
+    const controller = new PointerController({ layout, selection });
+    controller.setViewport(VIEWPORT);
+
+    controller.handlePointerDown({ x: 55, y: 25 });
+
+    expect(selection.snapshot.active).toEqual({ row: 1, column: 1 });
+  });
+});

@@ -77,6 +77,18 @@ export class ContextMenuService {
     this.#hooks = options.hooks ?? new HookManager({ registry: STANDALONE_HOOK_REGISTRY });
     this.#rendererFactory = options.rendererFactory ?? { create: () => new DefaultMenuRenderer() };
     this.#restoreFocus = options.restoreFocus;
+    // Capture phase, registered once for the service's whole lifetime
+    // (gated on #activeRenderer inside the handler) rather than added/
+    // removed per open()/close() — simpler, and avoids listener churn.
+    // The click that *opens* a menu never self-closes it: contextmenu
+    // fires after that click's own pointerdown/pointerup, by which point
+    // open() hasn't run yet, so #activeRenderer is still null.
+    // Guarded — this class is unit-tested in plain Node (no `window`), and
+    // uses a fake `container` there, so it must stay constructible without
+    // a real DOM.
+    if (typeof window !== "undefined") {
+      window.addEventListener("pointerdown", this.#handleOutsidePointerDown, true);
+    }
   }
 
   registerProvider(meta: ContextMenuProviderMeta, provider: ContextMenuProvider): Disposer {
@@ -147,7 +159,22 @@ export class ContextMenuService {
 
   dispose(): void {
     this.close();
+    if (typeof window !== "undefined") {
+      window.removeEventListener("pointerdown", this.#handleOutsidePointerDown, true);
+    }
   }
+
+  /** A pointerdown anywhere outside the mounted menu closes it — previously only Escape or clicking an item inside it did. */
+  #handleOutsidePointerDown = (event: PointerEvent): void => {
+    if (!this.#activeRenderer) {
+      return;
+    }
+    const target = event.target;
+    if (target instanceof Node && this.#container.contains(target)) {
+      return;
+    }
+    this.close();
+  };
 
   #buildMenu(context: ContextMenuContext): readonly ContextMenuItem[] {
     const applicable = this.#providers

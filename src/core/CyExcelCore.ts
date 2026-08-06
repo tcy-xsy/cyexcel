@@ -1023,6 +1023,12 @@ export class CyExcelCore {
    * real click natively and never reaches this listener.
    */
   #handleCellHitTest = (event: PointerEvent): void => {
+    // Right-click (button 2) is handled by #handleContextMenu instead — a
+    // custom renderer's click action (e.g. "increment this counter") has
+    // no business firing just because the user opened the context menu.
+    if (event.button !== 0) {
+      return;
+    }
     const canvasRect = this.#contentCanvas.getBoundingClientRect();
     const point = { x: event.clientX - canvasRect.left, y: event.clientY - canvasRect.top };
     const viewport = this.#readViewport();
@@ -1237,6 +1243,22 @@ export class CyExcelCore {
       return;
     }
 
+    // Ctrl+Z / Cmd+Z undoes; Ctrl+Shift+Z, Cmd+Shift+Z, and Ctrl+Y all redo
+    // (the same three shortcuts Excel/Sheets/most editors accept).
+    if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+      const key = event.key.toLowerCase();
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        this.undo();
+        return;
+      }
+      if ((key === "z" && event.shiftKey) || key === "y") {
+        event.preventDefault();
+        this.redo();
+        return;
+      }
+    }
+
     if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
       this.#editorManager.startEdit(active.row, active.column, event.key);
@@ -1277,6 +1299,7 @@ export class CyExcelCore {
     const column = this.#columnAtResizeHandle(x, viewport);
     if (column !== null) {
       this.#resizeDrag = { column, startX: event.clientX, startWidth: this.#layout.getColumnWidth(column) };
+      this.#headerCanvas.style.cursor = "col-resize";
       return;
     }
 
@@ -1290,6 +1313,7 @@ export class CyExcelCore {
 
   #handleHeaderPointerMove = (event: PointerEvent): void => {
     if (!this.#resizeDrag) {
+      this.#updateHeaderResizeCursor(event);
       return;
     }
     const { column, startX, startWidth } = this.#resizeDrag;
@@ -1312,9 +1336,24 @@ export class CyExcelCore {
     this.#domHeaderManager.sync(viewport);
   };
 
-  #handleHeaderPointerUp = (): void => {
+  #handleHeaderPointerUp = (event: PointerEvent): void => {
     this.#resizeDrag = null;
+    this.#updateHeaderResizeCursor(event);
   };
+
+  /** Shows a col-resize cursor while hovering a resize handle, clears it otherwise — the 4px handle zone (RESIZE_HANDLE_TOLERANCE) has no other visual affordance. */
+  #updateHeaderResizeCursor(event: PointerEvent): void {
+    const rect = this.#headerCanvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    if (x < 0 || x > rect.width || y < 0 || y > rect.height) {
+      this.#headerCanvas.style.cursor = "";
+      return;
+    }
+    const viewport = this.#readViewport();
+    const overHandle = this.#columnAtResizeHandle(x, viewport) !== null;
+    this.#headerCanvas.style.cursor = overHandle ? "col-resize" : "";
+  }
 
   /**
    * A click in the corner band (y < headerHeight) selects everything;
