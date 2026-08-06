@@ -11,3 +11,9 @@ export {
   type PointerControllerOptions
 } from "./PointerController";
 export { KeyboardController, type KeyboardControllerOptions } from "./KeyboardController";
+export {
+  FillHandleController,
+  isPointOnFillHandle,
+  type FillHandleControllerOptions
+} from "./FillHandleController";
+export { computeFillValues } from "./fillValues";

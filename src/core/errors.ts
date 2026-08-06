@@ -11,7 +11,11 @@ export const CyExcelErrorCode = {
   ColumnNotFound: "column-not-found",
   ReadonlyDataSource: "readonly-data-source",
   CommandCancelled: "command-cancelled",
-  AsyncRendererNotSupported: "async-renderer-not-supported"
+  AsyncRendererNotSupported: "async-renderer-not-supported",
+  UnknownCellType: "unknown-cell-type",
+  UnknownHook: "unknown-hook",
+  AsyncHookNotSupported: "async-hook-not-supported",
+  StructuralModificationNotSupported: "structural-modification-not-supported"
 } as const;
 
 export type CyExcelErrorCode =

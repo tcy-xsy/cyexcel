@@ -13,6 +13,18 @@ export interface DataSource {
   getCell(row: number, column: number): unknown;
   setCell(row: number, column: number, value: unknown): void;
   getRows?(start: number, end: number): RowData[] | Promise<RowData[]>;
+  /**
+   * Optional structural mutation capability (Step 12) — a remote/computed
+   * DataSource is free to leave all three unimplemented; TableStore checks
+   * for their presence and throws a clear capability error instead of
+   * assuming they exist. `rows` uses the same "one array of values per
+   * row, in column order" convention as `setRange()`/`captureRange()`, not
+   * `RowData` — field-name mapping is ArrayDataSource's own concern, never
+   * TableStore's or a Command's.
+   */
+  insertRows?(start: number, rows: readonly (readonly unknown[])[]): void;
+  deleteRows?(start: number, count: number): void;
+  moveRows?(start: number, count: number, target: number): void;
 }
 
 /**
