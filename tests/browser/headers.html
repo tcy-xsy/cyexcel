@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel headers + frozen layout fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        /* Narrower than the 510px total column width, so there's real
+           horizontal overflow to scroll through (needed by the alignment
+           test) — the resize test scrolls the status column back into view
+           itself after growing an earlier column. */
+        width: 420px;
+        height: 300px;
+      }
+      .status-select {
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+
+      const statusHeaderFactory = {
+        kind: "dom",
+        create() {
+          let select;
+          return {
+            mount(host) {
+              select = document.createElement("select");
+              select.className = "status-select";
+              for (const label of ["All", "Active", "Archived"]) {
+                const option = document.createElement("option");
+                option.textContent = label;
+                select.append(option);
+              }
+              host.append(select);
+            },
+            update() {},
+            destroy() {
+              select.remove();
+            }
+          };
+        }
+      };
+
+      const columns = [
+        { id: "sku", field: "sku", width: 100, header: "SKU" },
+        { id: "name", field: "name", width: 140, header: "Name" },
+        { id: "price", field: "price", width: 90, header: "Price", minWidth: 60, maxWidth: 200 },
+        { id: "qty", field: "qty", width: 80, header: "Qty" },
+        { id: "status", field: "status", width: 100, header: { title: "Status", renderer: statusHeaderFactory } }
+      ];
+
+      const headerGroups = [
+        { id: "basics", title: "Basics", columns: [0, 1] },
+        { id: "sales", title: "Sales", columns: [2, 3] }
+      ];
+
+      const data = Array.from({ length: 50 }, (_unused, index) => ({
+        sku: `CY-${String(index + 1).padStart(4, "0")}`,
+        name: `Item ${index}`,
+        price: index * 10,
+        qty: index,
+        status: index % 2 === 0 ? "Active" : "Archived"
+      }));
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        data,
+        headerGroups,
+        rowHeight: 24,
+        headerHeight: 28,
+        freeze: { rows: 1, columns: 1 }
+      });
+
+      window.__sheet = sheet;
+      window.__cyexcelHeadersReady = true;
+    </script>
+  </body>
+</html>

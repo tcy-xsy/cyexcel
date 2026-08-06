@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel visual theme fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 400px;
+        height: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+
+      const columns = [
+        { id: "a", field: "a", width: 100, header: "A" },
+        { id: "b", field: "b", width: 100, header: "B" },
+        { id: "c", field: "c", width: 100, header: "C" },
+        { id: "d", field: "d", width: 100, header: "D" }
+      ];
+
+      const data = Array.from({ length: 30 }, (_unused, index) => ({
+        a: `r${index}`,
+        b: `r${index}`,
+        c: `r${index}`,
+        d: `r${index}`
+      }));
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        data,
+        rowHeight: 24,
+        headerHeight: 28,
+        freeze: { rows: 1, columns: 1 }
+      });
+
+      window.__sheet = sheet;
+      window.__cyexcelVisualThemeReady = true;
+    </script>
+  </body>
+</html>
