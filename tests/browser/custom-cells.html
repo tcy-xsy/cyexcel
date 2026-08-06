@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel custom cell renderers fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 500px;
+        height: 300px;
+      }
+      .toggle-button {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+
+      const counterRenderer = {
+        kind: "canvas",
+        paint({ ctx, rect, value }) {
+          ctx.fillStyle = "#0a7a3d";
+          // Deliberately changes ctx.font and never restores it — a
+          // realistic custom renderer that doesn't clean up after itself.
+          // ContentLayerRenderer is responsible for isolating this so it
+          // doesn't leak into whichever cell gets painted next (see
+          // doc/progress.md's "canvas 状态跨格子污染" patch). Picked large
+          // enough to be clearly distinguishable from the 13px default but
+          // not so large it gets clipped away by the 24px row height.
+          ctx.font = "18px serif";
+          ctx.textBaseline = "middle";
+          ctx.textAlign = "left";
+          ctx.fillText(`n=${value}`, rect.x + 4, rect.y + rect.height / 2);
+        },
+        hitTest({ value }) {
+          return { type: "set-value", value: Number(value) + 1 };
+        }
+      };
+
+      const toggleRendererFactory = {
+        kind: "dom",
+        create() {
+          let button;
+          let currentValue;
+          return {
+            mount(host, context) {
+              button = document.createElement("button");
+              button.type = "button";
+              button.className = "toggle-button";
+              currentValue = context.value;
+              button.textContent = currentValue ? "on" : "off";
+              button.addEventListener("click", () => {
+                context.actions.commit(!currentValue);
+              });
+              host.append(button);
+            },
+            update(context) {
+              currentValue = context.value;
+              button.textContent = currentValue ? "on" : "off";
+            },
+            destroy() {
+              button.remove();
+            }
+          };
+        }
+      };
+
+      const columns = [
+        { id: "name", field: "name", width: 120 },
+        { id: "counter", field: "counter", width: 100, renderer: counterRenderer },
+        { id: "toggle", field: "toggle", width: 100, renderer: toggleRendererFactory },
+        // Built-in "number" CellType, no custom renderer — exercises
+        // CellType.parse() on commit (see doc/progress.md's "编辑数字/money
+        // 列后单元格变空" patch).
+        { id: "price", field: "price", width: 100, type: "number" }
+      ];
+
+      const data = Array.from({ length: 200 }, (_unused, index) => ({
+        name: `Item ${index}`,
+        counter: index,
+        toggle: index % 2 === 0,
+        price: index * 10
+      }));
+
+      const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+
+      window.__sheet = sheet;
+      window.__cyexcelCustomCellsReady = true;
+    </script>
+  </body>
+</html>

@@ -1,4 +1,5 @@
-import type { LayoutEngine } from "../layout";
+import type { LayoutEngine, ViewportState } from "../layout";
+import { toViewportRect } from "../layout";
 import type { CellEditor, CellEditorFactory } from "./CellEditor";
 import { createTextCellEditor } from "./TextCellEditor";
 
@@ -13,6 +14,15 @@ export interface EditorManagerOptions {
     value: unknown
   ) => void | Promise<void>;
   readonly editorFactory?: CellEditorFactory;
+  /**
+   * Per-cell editor override, checked before falling back to editorFactory.
+   * Returning undefined for a given (row, column) means "use the default" —
+   * this is how a column opts into a specific editor (checkbox, date input,
+   * ...) without EditorManager itself knowing anything about column types.
+   */
+  readonly resolveEditor?: (row: number, column: number) => CellEditor | undefined;
+  /** Text-editor-only initial value, e.g. from the column's CellType.serialize(). */
+  readonly serializeCellValue?: (row: number, column: number, value: unknown) => string;
   readonly onEditStart?: (row: number, column: number) => void;
   readonly onEditCommit?: (row: number, column: number) => void;
   readonly onEditCancel?: (row: number, column: number) => void;
@@ -39,12 +49,15 @@ export class EditorManager {
     value: unknown
   ) => void | Promise<void>;
   readonly #editorFactory: CellEditorFactory;
+  readonly #resolveEditor: ((row: number, column: number) => CellEditor | undefined) | undefined;
+  readonly #serializeCellValue: ((row: number, column: number, value: unknown) => string) | undefined;
   readonly #onEditStart: ((row: number, column: number) => void) | undefined;
   readonly #onEditCommit: ((row: number, column: number) => void) | undefined;
   readonly #onEditCancel: ((row: number, column: number) => void) | undefined;
 
   #active: ActiveEdit | null = null;
   #composing = false;
+  #viewport: ViewportState = { scrollTop: 0, scrollLeft: 0, width: 0, height: 0 };
 
   constructor(options: EditorManagerOptions) {
     this.#container = options.container;
@@ -52,6 +65,8 @@ export class EditorManager {
     this.#getCellValue = options.getCellValue;
     this.#commitValue = options.commitValue;
     this.#editorFactory = options.editorFactory ?? createTextCellEditor;
+    this.#resolveEditor = options.resolveEditor;
+    this.#serializeCellValue = options.serializeCellValue;
     this.#onEditStart = options.onEditStart;
     this.#onEditCommit = options.onEditCommit;
     this.#onEditCancel = options.onEditCancel;
@@ -66,16 +81,21 @@ export class EditorManager {
     return this.#active !== null;
   }
 
+  setViewport(viewport: ViewportState): void {
+    this.#viewport = viewport;
+  }
+
   startEdit(row: number, column: number, initialInput?: string): void {
     if (this.#active) {
       return;
     }
 
-    const editor = this.#editorFactory();
-    const rect = this.#layout.getCellRect(row, column);
+    const editor = this.#resolveEditor?.(row, column) ?? this.#editorFactory();
+    const rect = toViewportRect(this.#layout.getCellRect(row, column), this.#viewport);
     const initialValue = this.#getCellValue(row, column);
+    const initialText = this.#serializeCellValue?.(row, column, initialValue);
 
-    editor.mount(this.#container, { row, column, initialValue, initialInput, rect });
+    editor.mount(this.#container, { row, column, initialValue, initialInput, initialText, rect });
     editor.focus();
 
     this.#active = { row, column, editor };

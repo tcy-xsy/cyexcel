@@ -6,6 +6,13 @@ export interface CellEditorContext {
   readonly initialValue: unknown;
   /** The initial typed character when editing was started by typing, if any. */
   readonly initialInput?: string | undefined;
+  /**
+   * Pre-serialized edit text for `initialValue` (from the column's
+   * CellType.serialize(), when the integration layer provides one) — only
+   * text-based editors need this; editors that read `initialValue` directly
+   * (e.g. a checkbox reading a real boolean) can ignore it.
+   */
+  readonly initialText?: string | undefined;
   /** Logical rect from LayoutEngine — editors position themselves from this, not their own math. */
   readonly rect: CellRect;
 }

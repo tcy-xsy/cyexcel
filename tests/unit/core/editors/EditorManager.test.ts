@@ -122,6 +122,21 @@ describe("EditorManager.startEdit", () => {
     expect(getLastContext()?.rect).toEqual(layout.getCellRect(3, 2));
   });
 
+  it("positions the editor relative to the current scroll offset, not the absolute content position", () => {
+    const { manager, layout, getLastContext } = createManager();
+
+    manager.setViewport({ scrollTop: 40, scrollLeft: 10, width: 200, height: 100 });
+    manager.startEdit(3, 2);
+
+    const absolute = layout.getCellRect(3, 2);
+    expect(getLastContext()?.rect).toEqual({
+      x: absolute.x - 10,
+      y: absolute.y - 40,
+      width: absolute.width,
+      height: absolute.height
+    });
+  });
+
   it("ignores a second startEdit call while already editing", () => {
     const { manager, calls } = createManager();
 
@@ -402,5 +417,91 @@ describe("EditorManager initial input", () => {
 
     expect(getLastContext()?.initialInput).toBe("5");
     expect(getLastContext()?.initialValue).toBe("current-value");
+  });
+});
+
+describe("EditorManager.resolveEditor — per-column editor resolution", () => {
+  it("uses the editor resolveEditor returns instead of the default editorFactory", () => {
+    const layout = createLayout();
+    const container = createFakeContainer();
+    const defaultRecording = createRecordingEditor({ value: "default" });
+    const resolvedRecording = createRecordingEditor({ value: "resolved" });
+
+    const manager = new EditorManager({
+      container: container.element,
+      layout,
+      getCellValue: () => "current-value",
+      commitValue: () => {},
+      editorFactory: () => defaultRecording.editor,
+      resolveEditor: () => resolvedRecording.editor
+    });
+
+    manager.startEdit(0, 0);
+
+    expect(resolvedRecording.calls).toEqual(["mount", "focus"]);
+    expect(defaultRecording.calls).toEqual([]);
+  });
+
+  it("falls back to the default editorFactory when resolveEditor returns undefined for that cell", () => {
+    const layout = createLayout();
+    const container = createFakeContainer();
+    const defaultRecording = createRecordingEditor({ value: "default" });
+    const resolvedRecording = createRecordingEditor({ value: "resolved" });
+
+    const manager = new EditorManager({
+      container: container.element,
+      layout,
+      getCellValue: () => "current-value",
+      commitValue: () => {},
+      editorFactory: () => defaultRecording.editor,
+      // Only column 1 gets a resolved editor — proves this is a per-cell
+      // decision, not a one-time global fallback check.
+      resolveEditor: (_row, column) => (column === 1 ? resolvedRecording.editor : undefined)
+    });
+
+    manager.startEdit(0, 0);
+    expect(defaultRecording.calls).toEqual(["mount", "focus"]);
+    expect(resolvedRecording.calls).toEqual([]);
+
+    manager.cancelEdit();
+    manager.startEdit(0, 1);
+    expect(resolvedRecording.calls).toEqual(["mount", "focus"]);
+  });
+
+  it("works normally when resolveEditor is not provided at all", () => {
+    const { manager, calls } = createManager();
+
+    manager.startEdit(0, 0);
+
+    expect(calls).toEqual(["mount", "focus"]);
+  });
+});
+
+describe("EditorManager.serializeCellValue — initial edit text", () => {
+  it("passes serializeCellValue's return value through as initialText", () => {
+    const layout = createLayout();
+    const container = createFakeContainer();
+    const recording = createRecordingEditor();
+
+    const manager = new EditorManager({
+      container: container.element,
+      layout,
+      getCellValue: () => ({ nested: true }),
+      commitValue: () => {},
+      editorFactory: () => recording.editor,
+      serializeCellValue: (_row, _column, value) => JSON.stringify(value)
+    });
+
+    manager.startEdit(0, 0);
+
+    expect(recording.getLastContext()?.initialText).toBe('{"nested":true}');
+  });
+
+  it("leaves initialText undefined when serializeCellValue is not provided", () => {
+    const { manager, getLastContext } = createManager();
+
+    manager.startEdit(0, 0);
+
+    expect(getLastContext()?.initialText).toBeUndefined();
   });
 });
