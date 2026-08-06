@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>cyexcel playground</title>
+    <link rel="stylesheet" href="./playground.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="app-header">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">CY</div>
+          <div class="brand-copy">
+            <p class="brand-name">cyexcel playground</p>
+            <p class="brand-sub">
+              直接挂载真实 <code>CyExcelCore</code>（<code>src/core</code>），不是
+              <code>plan/prototype.html</code> 那种手写 mock
+            </p>
+          </div>
+        </div>
+        <button class="button" id="themeButton" type="button">深色</button>
+      </header>
+
+      <section class="toolbar" aria-label="工具栏">
+        <div class="toolbar-group">
+          <button class="button" id="undoButton" type="button">撤销</button>
+          <button class="button" id="redoButton" type="button">重做</button>
+          <span class="hint-inline">核心还没绑定 Ctrl/Cmd+Z，只能靠这两个按钮</span>
+        </div>
+      </section>
+
+      <div class="workspace">
+        <section class="sheet-region" aria-label="表格区域">
+          <div class="sheet-mount" id="sheetMount"></div>
+          <footer class="status-bar" id="statusBar">尚未构建实例</footer>
+        </section>
+
+        <aside class="inspector" aria-label="配置与说明">
+          <section class="panel">
+            <h2>数据集配置</h2>
+            <div class="field-grid">
+              <label
+                >行数
+                <select id="rowCountSelect">
+                  <option value="1000">1,000</option>
+                  <option value="100000" selected>100,000</option>
+                  <option value="1000000">1,000,000</option>
+                </select>
+              </label>
+              <label>行高 <input id="rowHeightInput" type="number" min="16" max="80" value="28" /></label>
+              <label>行 overscan <input id="overscanRowsInput" type="number" min="0" value="4" /></label>
+              <label>列 overscan <input id="overscanColumnsInput" type="number" min="0" value="2" /></label>
+            </div>
+            <button class="button primary" id="rebuildButton" type="button">应用并重建</button>
+            <p class="hint">
+              修改后会整个 <code>dispose()</code> + 重新 <code>new CyExcelCore()</code>——
+              行高 / overscan 目前不支持热更新（<code>LayoutEngine</code> 构造后只读）。冻结行列
+              选项虽然存在，但 <code>ContentLayerRenderer</code> 还不会绘制冻结区域（见右下角
+              "尚未实现"），所以这里先不放这个开关。
+            </p>
+          </section>
+
+          <section class="panel">
+            <h2>读取 / 写入单元格</h2>
+            <div class="cell-form">
+              <label>行 <input id="cellRow" type="number" min="0" value="0" /></label>
+              <label>列 <select id="cellColumn"></select></label>
+              <input id="cellValue" type="text" placeholder="单元格值" aria-label="单元格值" />
+              <div class="cell-form-actions">
+                <button class="button" id="readCellButton" type="button">读取</button>
+                <button class="button primary" id="writeCellButton" type="button">写入</button>
+              </div>
+            </div>
+            <p class="hint" id="cellFormResult">调用 <code>core.getCell()</code> / <code>core.setCell()</code>，直接命中真实 Store。</p>
+          </section>
+
+          <section class="panel">
+            <h2>操作提示（真实交互）</h2>
+            <ul class="hint-list">
+              <li>点击 / 拖拽会移动内部选中的单元格，用来决定双击 / Enter 编辑哪一格——
+                目前没有可视的选中高亮框（见"尚未实现"）</li>
+              <li>方向键、Tab、Home、End 移动这个内部选区</li>
+              <li>双击、按 Enter 或直接输入字符，会在对应格子位置弹出真实的编辑输入框</li>
+              <li>Esc 取消编辑；中文输入法组合期间不会提前提交</li>
+              <li>滚动会正确重绘可见行；编辑中滚动会按 <code>scrollCommitPolicy</code> 提交或取消</li>
+              <li>表格演示了全部 7 个内置 <code>CellType</code>（text / number / boolean / date /
+                select / array / json）加一个自定义的 <code>money</code> 类型（<code>extends:
+                "number"</code>，覆盖 <code>format()</code>）——右侧"读取 / 写入单元格"对每种
+                类型都做了对应的输入解析（数字、<code>true</code>/<code>false</code>、日期字符串、
+                逗号分隔的数组、合法 JSON）</li>
+            </ul>
+          </section>
+
+          <section class="panel">
+            <h2>性能读数</h2>
+            <p class="hint">页面自己测量，不是 <code>CyExcelCore</code> 内置指标。</p>
+            <dl class="metrics">
+              <dt>构造耗时</dt>
+              <dd id="metricConstruct">—</dd>
+              <dt>当前帧率</dt>
+              <dd id="metricFps">—</dd>
+            </dl>
+          </section>
+
+          <section class="panel muted">
+            <h2>尚未实现</h2>
+            <ul class="roadmap-list">
+              <li>真实表头（列标题 / 分组）</li>
+              <li>选中单元格 / 区域的可视高亮框（<code>SelectionLayerRenderer</code> 目前只清空图层）</li>
+              <li>冻结行列的实际绘制（选项存在，但冻结区域从未被画出来）</li>
+              <li>拖拽调整列宽</li>
+              <li>多区域选择</li>
+              <li>复制粘贴与 CopyPlan</li>
+              <li>右键菜单</li>
+              <li>Hook / Event 系统</li>
+              <li>多 Sheet</li>
+              <li>排序、过滤</li>
+              <li>主题着色画布内容（当前文字颜色写死，见下方网格说明）</li>
+              <li><code>&lt;cy-excel&gt;</code> 属性化配置入口</li>
+            </ul>
+          </section>
+        </aside>
+      </div>
+    </main>
+
+    <script type="module" src="./playground.js"></script>
+  </body>
+</html>

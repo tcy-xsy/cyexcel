@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel row header fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 400px;
+        height: 250px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore, createBasicContextMenuPlugin } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+      const columns = Array.from({ length: 5 }, (_unused, index) => ({
+        id: `c${index}`,
+        field: `c${index}`,
+        width: 60,
+        header: `C${index}`
+      }));
+      const data = Array.from({ length: 30 }, (_unused, row) =>
+        Object.fromEntries(columns.map((column, index) => [column.field, `${row}-${index}`]))
+      );
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        data,
+        rowHeight: 20,
+        headerHeight: 20,
+        rowHeaderWidth: 40,
+        freeze: { rows: 2 },
+        plugins: [createBasicContextMenuPlugin()]
+      });
+
+      sheet.contextMenu.registerProvider({ name: "row-header-actions", target: "row-header" }, (menuContext) => [
+        { type: "action", id: "log-row-header", label: "Log Row Header", run: () => {
+          window.__rowHeaderMenuRuns = window.__rowHeaderMenuRuns ?? [];
+          window.__rowHeaderMenuRuns.push(menuContext.row);
+        } }
+      ]);
+
+      window.__sheet = sheet;
+      window.__cyexcelRowHeadersReady = true;
+    </script>
+  </body>
+</html>
