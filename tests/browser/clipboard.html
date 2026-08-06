@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel clipboard fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 520px;
+        height: 120px;
+      }
+      #scratch {
+        position: fixed;
+        top: 140px;
+        left: 0;
+        width: 300px;
+        height: 60px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <textarea id="scratch"></textarea>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+      const columns = [
+        { id: "name", field: "name", width: 100 },
+        { id: "age", field: "age", type: "number", width: 80 },
+        { id: "secret", field: "secret", width: 80, clipboard: { copy: false } },
+        { id: "locked", field: "locked", type: "number", width: 80, clipboard: { paste: false } },
+        { id: "tags", field: "tags", type: "array", width: 160 }
+      ];
+      const data = [
+        { name: "Alice", age: 30, secret: "s1", locked: 100, tags: ["red", "green", "blue", "yellow"] },
+        { name: "Bob", age: 40, secret: "s2", locked: 200, tags: ["x"] }
+      ];
+
+      const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+
+      window.__sheet = sheet;
+      window.__cyexcelClipboardReady = true;
+    </script>
+  </body>
+</html>
