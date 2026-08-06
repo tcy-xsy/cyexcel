@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel typed editors fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        /* Wide enough to show all 5 columns (total 710px) without needing to
+           scroll horizontally — this fixture is about editor interaction,
+           not scroll alignment (already covered by headers.spec.ts). */
+        width: 760px;
+        height: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import {
+        CyExcelCore,
+        createBooleanCellEditor,
+        createDateCellEditor,
+        createSelectCellEditor,
+        createTextAreaCellEditor
+      } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+
+      const STATUS_OPTIONS = [
+        { value: "draft", label: "Draft" },
+        { value: "active", label: "Active" },
+        { value: "archived", label: "Archived" }
+      ];
+
+      function validateJson(text) {
+        try {
+          JSON.parse(text);
+          return { valid: true };
+        } catch {
+          return { valid: false, message: "not valid JSON" };
+        }
+      }
+
+      const columns = [
+        // Explicitly opts into the checkbox editor — nothing about the
+        // "boolean" type does this automatically.
+        { id: "active", field: "active", width: 90, type: "boolean", createEditor: () => createBooleanCellEditor() },
+        // Explicitly opts into the native date-picker editor.
+        {
+          id: "joinedAt",
+          field: "joinedAt",
+          width: 130,
+          type: "date",
+          createEditor: () => createDateCellEditor()
+        },
+        // Explicitly opts into a dropdown, built from this column's own
+        // options — the editor itself doesn't know it's a "select" type.
+        {
+          id: "status",
+          field: "status",
+          width: 110,
+          type: "select",
+          options: STATUS_OPTIONS,
+          createEditor: (context) => createSelectCellEditor(context.column.options ?? [])
+        },
+        // Deliberately does NOT opt into any editor — stays on the default
+        // text editor, exercising only the parse()/serialize() round-trip
+        // fix for the "array" type.
+        { id: "tags", field: "tags", width: 180, type: "array" },
+        // Explicitly opts into a multi-line editor with JSON syntax
+        // validation on commit.
+        {
+          id: "meta",
+          field: "meta",
+          width: 200,
+          type: "json",
+          createEditor: () => createTextAreaCellEditor({ validate: validateJson })
+        }
+      ];
+
+      const data = Array.from({ length: 10 }, (_unused, index) => ({
+        active: index % 2 === 0,
+        joinedAt: new Date(Date.UTC(2026, 0, 1 + index)),
+        status: STATUS_OPTIONS[index % STATUS_OPTIONS.length].value,
+        tags: [`tag-${index}`, `group-${index % 3}`],
+        meta: { id: index, note: `row ${index}` }
+      }));
+
+      const sheet = new CyExcelCore(container, { columns, data, rowHeight: 28 });
+
+      window.__sheet = sheet;
+      window.__cyexcelTypedEditorsReady = true;
+    </script>
+  </body>
+</html>
