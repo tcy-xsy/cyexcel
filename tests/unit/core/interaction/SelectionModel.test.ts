@@ -139,3 +139,84 @@ describe("SelectionModel bounds", () => {
     expect(() => new SelectionModel(bounds)).toThrow(CyExcelError);
   });
 });
+
+describe("SelectionModel.setBounds", () => {
+  it("without a rowChange, just clamps the current selection into the new bounds", () => {
+    const model = createModel(10, 5);
+    model.selectCell(8, 2);
+
+    model.setBounds({ rowCount: 5, columnCount: 5 });
+
+    expect(model.snapshot.active).toEqual({ row: 4, column: 2 });
+    expect(model.bounds).toEqual({ rowCount: 5, columnCount: 5 });
+  });
+
+  it("with an insert rowChange, follows the selected row to its new position", () => {
+    const model = createModel(10, 5);
+    model.selectCell(6, 2);
+
+    model.setBounds(
+      { rowCount: 12, columnCount: 5 },
+      { operation: "insert", start: 2, count: 2 }
+    );
+
+    expect(model.snapshot.active.row).toBe(8); // row 6 -> 8 after inserting 2 rows above it
+  });
+
+  it("with a delete rowChange, a selection outside the deleted band follows its row", () => {
+    const model = createModel(10, 5);
+    model.selectCell(8, 2);
+
+    model.setBounds(
+      { rowCount: 7, columnCount: 5 },
+      { operation: "delete", start: 2, count: 3 }
+    );
+
+    expect(model.snapshot.active.row).toBe(5); // row 8 -> 5 after deleting 3 rows above it
+  });
+
+  it("with a delete rowChange, a selection that was inside the deleted band lands on the deletion point (clamped into the new bounds)", () => {
+    const model = createModel(10, 5);
+    model.selectCell(3, 2); // inside [2, 5)
+
+    model.setBounds(
+      { rowCount: 7, columnCount: 5 },
+      { operation: "delete", start: 2, count: 3 }
+    );
+
+    expect(model.snapshot.active.row).toBe(2);
+  });
+
+  it("with a move rowChange, a selection on the moved row follows it to the new position", () => {
+    const model = createModel(6, 5);
+    model.selectCell(1, 2); // one of the two rows being moved (rows 1-2)
+
+    model.setBounds(
+      { rowCount: 6, columnCount: 5 },
+      { operation: "move", start: 1, count: 2, target: 5 }
+    );
+
+    // [0,1,2,3,4,5] -> moveRows(1,2,5) -> row 1 ends up at index 3.
+    expect(model.snapshot.active.row).toBe(3);
+  });
+
+  it("also remaps the anchor, not just the active cell, so a range selection stays intact", () => {
+    const model = createModel(10, 5);
+    model.selectCell(4, 1);
+    model.extendTo(6, 3); // anchor stays at (4,1), active moves to (6,3)
+
+    model.setBounds(
+      { rowCount: 12, columnCount: 5 },
+      { operation: "insert", start: 0, count: 2 }
+    );
+
+    expect(model.snapshot.anchor.row).toBe(6);
+    expect(model.snapshot.active.row).toBe(8);
+  });
+
+  it("rejects invalid bounds the same way the constructor does", () => {
+    const model = createModel(5, 5);
+
+    expect(() => model.setBounds({ rowCount: -1, columnCount: 5 })).toThrow(CyExcelError);
+  });
+});

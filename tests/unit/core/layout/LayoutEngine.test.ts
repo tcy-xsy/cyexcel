@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CyExcelError, LayoutEngine } from "../../../../src/core";
+import { CyExcelError, CyExcelErrorCode, LayoutEngine } from "../../../../src/core";
 
 describe("LayoutEngine construction", () => {
   const base = { rowCount: 10, columnCount: 2, rowHeight: 20, columnWidths: [50, 60] };
@@ -315,5 +315,191 @@ describe("LayoutEngine performance guard: 1,000,000 rows is not scanned", () => 
     const elapsed = performance.now() - start;
 
     expect(elapsed).toBeLessThan(5);
+  });
+});
+
+describe("LayoutEngine.getColumnLeft", () => {
+  it("returns the same x offset as getCellRect without needing a row", () => {
+    const layout = new LayoutEngine({
+      rowCount: 5,
+      columnCount: 3,
+      rowHeight: 20,
+      columnWidths: [50, 60, 70]
+    });
+
+    expect(layout.getColumnLeft(0)).toBe(0);
+    expect(layout.getColumnLeft(1)).toBe(50);
+    expect(layout.getColumnLeft(2)).toBe(110);
+    expect(layout.getColumnLeft(2)).toBe(layout.getCellRect(0, 2).x);
+  });
+
+  it("falls back to 0 for an out-of-range column, same as getCellRect", () => {
+    const layout = new LayoutEngine({
+      rowCount: 5,
+      columnCount: 3,
+      rowHeight: 20,
+      columnWidths: [50, 60, 70]
+    });
+
+    expect(layout.getColumnLeft(99)).toBe(0);
+  });
+});
+
+describe("LayoutEngine.setColumnWidth", () => {
+  function createLayout(): LayoutEngine {
+    return new LayoutEngine({
+      rowCount: 5,
+      columnCount: 3,
+      rowHeight: 20,
+      columnWidths: [50, 60, 70]
+    });
+  }
+
+  it("updates the column's own width", () => {
+    const layout = createLayout();
+
+    layout.setColumnWidth(0, 120);
+
+    expect(layout.getColumnWidth(0)).toBe(120);
+  });
+
+  it("shifts every subsequent column's offset by the width delta, leaving earlier ones untouched", () => {
+    const layout = createLayout();
+
+    layout.setColumnWidth(0, 120); // was 50, delta +70
+
+    expect(layout.getColumnLeft(0)).toBe(0); // unaffected — before the resized column
+    expect(layout.getColumnLeft(1)).toBe(120); // was 50, now shifted by +70
+    expect(layout.getColumnLeft(2)).toBe(180); // was 110, now shifted by +70
+    expect(layout.getTotalWidth()).toBe(120 + 60 + 70);
+  });
+
+  it("getCellRect reflects the new width and shifted offsets immediately", () => {
+    const layout = createLayout();
+
+    layout.setColumnWidth(1, 200);
+
+    expect(layout.getCellRect(2, 1)).toEqual({ x: 50, y: 40, width: 200, height: 20 });
+    expect(layout.getCellRect(2, 2).x).toBe(250);
+  });
+
+  it("bumps version by exactly 1 per successful call, starting at 0", () => {
+    const layout = createLayout();
+    expect(layout.version).toBe(0);
+
+    layout.setColumnWidth(0, 100);
+    expect(layout.version).toBe(1);
+
+    layout.setColumnWidth(1, 90);
+    expect(layout.version).toBe(2);
+  });
+
+  it("throws and leaves state/version unchanged for a negative or non-finite width", () => {
+    const layout = createLayout();
+
+    expect(() => layout.setColumnWidth(0, -1)).toThrow(CyExcelError);
+    expect(() => layout.setColumnWidth(0, Number.NaN)).toThrow(CyExcelError);
+    try {
+      layout.setColumnWidth(0, -1);
+    } catch (error) {
+      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.InvalidOptions);
+    }
+    expect(layout.getColumnWidth(0)).toBe(50);
+    expect(layout.version).toBe(0);
+  });
+
+  it("throws for an out-of-range column index", () => {
+    const layout = createLayout();
+
+    expect(() => layout.setColumnWidth(99, 100)).toThrow(CyExcelError);
+    expect(layout.version).toBe(0);
+  });
+
+  it("allows a width of 0 (hidden column)", () => {
+    const layout = createLayout();
+
+    layout.setColumnWidth(0, 0);
+
+    expect(layout.getColumnWidth(0)).toBe(0);
+    expect(layout.getColumnLeft(1)).toBe(0);
+  });
+});
+
+describe("LayoutEngine.setRowCount", () => {
+  it("updates rowCount and getTotalHeight immediately", () => {
+    const layout = new LayoutEngine({ rowCount: 5, columnCount: 1, rowHeight: 20, columnWidths: [50] });
+
+    layout.setRowCount(8);
+
+    expect(layout.rowCount).toBe(8);
+    expect(layout.getTotalHeight()).toBe(160);
+  });
+
+  it("bumps version by exactly 1 per successful call, starting at 0", () => {
+    const layout = new LayoutEngine({ rowCount: 5, columnCount: 1, rowHeight: 20, columnWidths: [50] });
+    expect(layout.version).toBe(0);
+
+    layout.setRowCount(8);
+    expect(layout.version).toBe(1);
+
+    layout.setRowCount(3);
+    expect(layout.version).toBe(2);
+  });
+
+  it("re-clamps frozenRowCount against the new rowCount when it shrinks below the frozen band", () => {
+    const layout = new LayoutEngine({
+      rowCount: 10,
+      columnCount: 1,
+      rowHeight: 20,
+      columnWidths: [50],
+      freeze: { rows: 4 }
+    });
+    expect(layout.frozenRowCount).toBe(4);
+
+    layout.setRowCount(2);
+
+    expect(layout.frozenRowCount).toBe(2);
+  });
+
+  it("recovers frozen rows on a later grow, re-clamping against the originally requested freeze.rows", () => {
+    const layout = new LayoutEngine({
+      rowCount: 10,
+      columnCount: 1,
+      rowHeight: 20,
+      columnWidths: [50],
+      freeze: { rows: 4 }
+    });
+
+    layout.setRowCount(2); // frozenRowCount clamps to 2
+    layout.setRowCount(10); // grows back — should recover the originally requested 4, not stay at 2
+
+    expect(layout.frozenRowCount).toBe(4);
+  });
+
+  it("does not touch column state", () => {
+    const layout = new LayoutEngine({ rowCount: 5, columnCount: 2, rowHeight: 20, columnWidths: [50, 60] });
+
+    layout.setRowCount(8);
+
+    expect(layout.getColumnWidth(0)).toBe(50);
+    expect(layout.getColumnLeft(1)).toBe(50);
+  });
+
+  it("throws and leaves state/version unchanged for a negative or non-integer rowCount", () => {
+    const layout = new LayoutEngine({ rowCount: 5, columnCount: 1, rowHeight: 20, columnWidths: [50] });
+
+    expect(() => layout.setRowCount(-1)).toThrow(CyExcelError);
+    expect(() => layout.setRowCount(1.5)).toThrow(CyExcelError);
+    expect(layout.rowCount).toBe(5);
+    expect(layout.version).toBe(0);
+  });
+
+  it("allows a rowCount of 0", () => {
+    const layout = new LayoutEngine({ rowCount: 5, columnCount: 1, rowHeight: 20, columnWidths: [50] });
+
+    layout.setRowCount(0);
+
+    expect(layout.rowCount).toBe(0);
+    expect(layout.getTotalHeight()).toBe(0);
   });
 });

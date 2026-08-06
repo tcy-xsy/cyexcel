@@ -92,6 +92,234 @@ describe("ContentLayerRenderer.paintContent — full repaint stays clipped to th
   });
 });
 
+describe("ContentLayerRenderer.paintContent — scroll offset translation", () => {
+  it("draws visible cells at their viewport-relative position, not their absolute content position", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(100, 10); // rowHeight 20, columnWidths 50
+    const renderer = new ContentLayerRenderer({
+      ctx,
+      layout,
+      getCellValue: (row, column) => `${row}:${column}`
+    });
+    renderer.setViewport({ scrollTop: 45, scrollLeft: 30, width: 200, height: 100 });
+
+    renderer.paintContent({
+      kind: "regions",
+      ranges: [{ startRow: 3, startColumn: 1, endRow: 3, endColumn: 1 }]
+    });
+
+    // Absolute rect for (row 3, column 1): x = 1 * 50 = 50, y = 3 * 20 = 60.
+    // Viewport-relative (after subtracting scrollLeft/scrollTop): x = 20, y = 15.
+    const clearRectCall = ctx.calls.find((call) => call.method === "clearRect");
+    expect(clearRectCall?.args.slice(0, 2)).toEqual([20, 15]);
+
+    const fillTextCall = ctx.calls.find((call) => call.method === "fillText");
+    expect(fillTextCall?.args[1]).toBe(20 + 4); // rect.x + DEFAULT_PADDING
+    expect(fillTextCall?.args[2]).toBe(15 + 10); // rect.y + rowHeight / 2
+  });
+
+  it("passes the translated rect to custom painters too, not the absolute one", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(100, 10);
+    const seenRects: Array<{ x: number; y: number }> = [];
+    const renderer = new ContentLayerRenderer({
+      ctx,
+      layout,
+      getCellValue: () => "x",
+      painter: (context) => {
+        seenRects.push({ x: context.rect.x, y: context.rect.y });
+      }
+    });
+    renderer.setViewport({ scrollTop: 45, scrollLeft: 30, width: 200, height: 100 });
+
+    renderer.paintContent({
+      kind: "regions",
+      ranges: [{ startRow: 3, startColumn: 1, endRow: 3, endColumn: 1 }]
+    });
+
+    expect(seenRects).toEqual([{ x: 20, y: 15 }]);
+  });
+});
+
+describe("ContentLayerRenderer — frozen rows/columns (Step 9)", () => {
+  function createFrozenLayout(): LayoutEngine {
+    return new LayoutEngine({
+      rowCount: 20,
+      columnCount: 20,
+      rowHeight: 20,
+      columnWidths: Array.from({ length: 20 }, () => 50),
+      freeze: { rows: 1, columns: 1 }
+    });
+  }
+
+  it("paints all four quadrants on a full repaint: frozen corner, frozen row band, frozen column band, scrollable body", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createFrozenLayout();
+    const renderer = new ContentLayerRenderer({
+      ctx,
+      layout,
+      getCellValue: (row, column) => `${row}:${column}`
+    });
+    // Scrolled deep enough that row 0/column 0 (the frozen band) are nowhere
+    // near the scrollable body's current position.
+    renderer.setViewport({ scrollTop: 200, scrollLeft: 100, width: 150, height: 100 });
+
+    renderer.paintContent({ kind: "full" });
+
+    const fillTextCalls = ctx.calls.filter((call) => call.method === "fillText");
+    const painted = new Set(fillTextCalls.map((call) => call.args[0]));
+
+    // Visible columns for this viewport are [3, 5] (see getVisibleColumnRange
+    // math: frozenWidth 50 + scrollLeft 100 = contentLeft 150 -> column 3).
+    expect(painted.has("0:0")).toBe(true); // frozen corner
+    expect(painted.has("0:4")).toBe(true); // frozen row band (row 0, a scrollable column)
+    expect(painted.has("11:0")).toBe(true); // frozen column band (column 0, a scrollable row)
+    expect(painted.has("11:4")).toBe(true); // scrollable body
+  });
+
+  it("keeps a frozen row's y fixed and a frozen column's x fixed regardless of scroll", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createFrozenLayout();
+    const renderer = new ContentLayerRenderer({
+      ctx,
+      layout,
+      getCellValue: () => "x"
+    });
+    renderer.setViewport({ scrollTop: 200, scrollLeft: 100, width: 150, height: 100 });
+
+    renderer.paintContent({ kind: "full" });
+
+    const clearRectCalls = ctx.calls.filter((call) => call.method === "clearRect");
+    // Frozen corner cell (0, 0): absolute rect is {x:0, y:0}; neither axis
+    // should be shifted by scroll since both row 0 and column 0 are frozen.
+    expect(clearRectCalls.some((call) => call.args[0] === 0 && call.args[1] === 0)).toBe(true);
+  });
+
+  it("region dirty invalidation repaints a frozen cell (previously unreachable)", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createFrozenLayout();
+    const renderer = new ContentLayerRenderer({
+      ctx,
+      layout,
+      getCellValue: (row, column) => `${row}:${column}`
+    });
+    renderer.setViewport({ scrollTop: 200, scrollLeft: 100, width: 150, height: 100 });
+
+    renderer.paintContent({
+      kind: "regions",
+      ranges: [{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 }]
+    });
+
+    const fillTextCalls = ctx.calls.filter((call) => call.method === "fillText");
+    expect(fillTextCalls.map((call) => call.args[0])).toEqual(["0:0"]);
+  });
+
+  it("clips each quadrant's drawing with save/clip/restore", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createFrozenLayout();
+    const renderer = new ContentLayerRenderer({
+      ctx,
+      layout,
+      getCellValue: () => "x"
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 150, height: 100 });
+
+    renderer.paintContent({ kind: "full" });
+
+    const methodCounts = (method: string) => ctx.calls.filter((call) => call.method === method).length;
+    const cellCount = ctx.calls.filter((call) => call.method === "fillText").length;
+    expect(methodCounts("save")).toBeGreaterThan(0);
+    expect(methodCounts("save")).toBe(methodCounts("restore"));
+    // One save/clip/restore per quadrant (region clipping) plus one
+    // additional save/restore per cell (state isolation between cells —
+    // see the "canvas state isolation" describe block below) — clip only
+    // happens at the quadrant level, so it's a strict subset of save.
+    expect(methodCounts("clip")).toBeGreaterThan(0);
+    expect(methodCounts("clip")).toBeLessThan(methodCounts("save"));
+    expect(methodCounts("save")).toBe(methodCounts("clip") + cellCount);
+  });
+
+  it("degenerates to a single unclipped-by-freeze region when nothing is frozen (no regression)", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(10, 10); // no freeze option — matches every pre-Step-9 test's setup
+    const renderer = new ContentLayerRenderer({
+      ctx,
+      layout,
+      getCellValue: (row, column) => `${row}:${column}`
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
+
+    renderer.paintContent({ kind: "full" });
+
+    // Exactly one quadrant is non-empty when frozenRowCount/frozenColumnCount
+    // are both 0, so exactly one clip region is entered — "save" itself is
+    // no longer 1-to-1 with quadrants once per-cell isolation (below) is
+    // counted too, so this asserts on "clip" instead.
+    expect(ctx.calls.filter((call) => call.method === "clip")).toHaveLength(1);
+  });
+});
+
+describe("ContentLayerRenderer — canvas state isolation between cells", () => {
+  it("wraps each cell's painter call in its own save/restore, independent of the quadrant-level clip", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(1, 3);
+    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 150, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    // 3 cells, 1 quadrant: 1 save+clip+restore for the quadrant, plus one
+    // save+restore per cell.
+    expect(ctx.calls.filter((call) => call.method === "fillText")).toHaveLength(3);
+    expect(ctx.calls.filter((call) => call.method === "save")).toHaveLength(4);
+    expect(ctx.calls.filter((call) => call.method === "restore")).toHaveLength(4);
+    expect(ctx.calls.filter((call) => call.method === "clip")).toHaveLength(1);
+  });
+
+  it("does not let one cell's painter-modified ctx state leak into the next cell's default painting", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(1, 2);
+    const renderer = new ContentLayerRenderer({
+      ctx,
+      layout,
+      getCellValue: (_row, column) => (column === 0 ? "custom" : "plain"),
+      painter: (context) => {
+        if (context.column === 0) {
+          // Simulates a custom CanvasCellRenderer that changes ctx state and
+          // never restores it itself — ContentLayerRenderer must isolate
+          // this from column 1, which relies on the framework leaving it a
+          // clean, known state (exactly what happened with the real
+          // playground bug this test is guarding against).
+          context.ctx.font = "16px serif";
+          context.ctx.fillText(String(context.value), context.rect.x, context.rect.y);
+          return;
+        }
+        // Column 1 deliberately never sets font itself — same shape as
+        // createColumnAwarePainter's default text path before its own fix.
+        context.ctx.fillText(String(context.value), context.rect.x, context.rect.y);
+      }
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    const fontCalls = ctx.calls.filter((call) => call.method === "set:font");
+    // Column 0 sets "16px serif"; by the time column 1 is painted, a
+    // restore() must have already reset it back to whatever it was before
+    // column 0 ran (RecordingCanvasContext doesn't simulate save/restore
+    // state snapshotting itself, so this asserts on the call shape instead:
+    // a restore() must appear between the two cells' calls).
+    const restoreIndex = ctx.calls.findIndex(
+      (call, index) => call.method === "restore" && index > ctx.calls.indexOf(fontCalls[0]!)
+    );
+    const column1FillTextIndex = ctx.calls.findIndex(
+      (call, index) => call.method === "fillText" && call.args[0] === "plain" && index > restoreIndex
+    );
+    expect(restoreIndex).toBeGreaterThan(-1);
+    expect(column1FillTextIndex).toBeGreaterThan(restoreIndex);
+  });
+});
+
 describe("ContentLayerRenderer error isolation", () => {
   it("falls back to the default painter and reports onError when a custom painter throws", () => {
     const ctx = new RecordingCanvasContext();
@@ -157,6 +385,116 @@ describe("ContentLayerRenderer synchronous renderer contract", () => {
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
 
     expect(() => renderer.paintContent({ kind: "full" })).not.toThrow();
+  });
+});
+
+describe("ContentLayerRenderer — gridlines", () => {
+  it("strokes a gridline around each painted cell by default", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(1, 2);
+    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    const strokeRectCalls = ctx.calls.filter((call) => call.method === "strokeRect");
+    expect(strokeRectCalls).toEqual([
+      { method: "strokeRect", args: [0, 0, 50, 20] },
+      { method: "strokeRect", args: [50, 0, 50, 20] }
+    ]);
+  });
+
+  it("does not stroke gridlines when showGridLines is false", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(1, 2);
+    const renderer = new ContentLayerRenderer({
+      ctx,
+      layout,
+      getCellValue: () => "x",
+      showGridLines: false
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    expect(ctx.calls.filter((call) => call.method === "strokeRect")).toHaveLength(0);
+  });
+
+  it("still strokes a gridline around a cell whose custom painter throws (default-painter fallback path)", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(1, 1);
+    const renderer = new ContentLayerRenderer({
+      ctx,
+      layout,
+      getCellValue: () => "x",
+      painter: () => {
+        throw new Error("boom");
+      },
+      onError: () => {}
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    expect(ctx.calls.filter((call) => call.method === "strokeRect")).toHaveLength(1);
+  });
+});
+
+describe("ContentLayerRenderer — frozen row/column separators", () => {
+  it("draws no separators when nothing is frozen", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(5, 5);
+    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 100 });
+
+    renderer.paintContent({ kind: "full" });
+
+    // fillRect is only ever used for separators in this renderer — none of
+    // them should appear when frozenRowCount/frozenColumnCount are both 0.
+    expect(ctx.calls.filter((call) => call.method === "fillRect")).toHaveLength(0);
+  });
+
+  it("draws a horizontal separator at the frozen row boundary and a vertical one at the frozen column boundary", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = new LayoutEngine({
+      rowCount: 10,
+      columnCount: 10,
+      rowHeight: 20,
+      columnWidths: Array.from({ length: 10 }, () => 50),
+      freeze: { rows: 2, columns: 3 }
+    });
+    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 200, height: 150 });
+
+    renderer.paintContent({ kind: "full" });
+
+    const fillRectCalls = ctx.calls.filter((call) => call.method === "fillRect");
+    // Row separator: y = frozenRowCount(2) * rowHeight(20) = 40, centered
+    // 2px band -> starts at 39, spans the viewport width.
+    expect(fillRectCalls).toContainEqual({ method: "fillRect", args: [0, 39, 200, 2] });
+    // Column separator: x = sum of first 3 column widths = 150, same 2px band.
+    expect(fillRectCalls).toContainEqual({ method: "fillRect", args: [149, 0, 2, 150] });
+  });
+
+  it("still draws separators for a regions (non-full) repaint", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = new LayoutEngine({
+      rowCount: 10,
+      columnCount: 10,
+      rowHeight: 20,
+      columnWidths: Array.from({ length: 10 }, () => 50),
+      freeze: { rows: 1, columns: 0 }
+    });
+    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 200, height: 150 });
+
+    renderer.paintContent({
+      kind: "regions",
+      ranges: [{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 }]
+    });
+
+    const fillRectCalls = ctx.calls.filter((call) => call.method === "fillRect");
+    expect(fillRectCalls).toEqual([{ method: "fillRect", args: [0, 19, 200, 2] }]);
   });
 });
 

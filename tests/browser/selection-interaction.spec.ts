@@ -60,6 +60,28 @@ test("dragging the mouse selects a normalized range, regardless of direction", a
   expect(backward.range).toEqual(forward.range);
 });
 
+test("a real mouse click with a couple pixels of jitter across a row boundary selects only one cell", async ({
+  page
+}) => {
+  await gotoFixture(page);
+  const box = await page.locator("#grid-a").boundingBox();
+  if (!box) {
+    throw new Error("missing bounding box for #grid-a");
+  }
+
+  // rowHeight is 20, so y=19 is row 0 and y=21 is row 1 — without a drag
+  // threshold this 2px of incidental movement between mousedown and
+  // mouseup reads as a drag and extends the selection into row 1, which is
+  // exactly the reported "clicking sometimes selects multiple cells" bug.
+  await page.mouse.move(box.x + 10, box.y + 19);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 10, box.y + 21);
+  await page.mouse.up();
+
+  const selection = await readSelection(page, "__gridASelection");
+  expect(selection.range).toEqual({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 });
+});
+
 test("keyboard navigation moves the active cell", async ({ page }) => {
   await gotoFixture(page);
 

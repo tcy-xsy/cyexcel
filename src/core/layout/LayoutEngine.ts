@@ -139,15 +139,18 @@ function validateLayoutOptions(options: LayoutOptions): void {
  * `toPhysicalPixelSize` (./dpr.ts) for the physical-pixel concern.
  */
 export class LayoutEngine {
-  readonly #rowCount: number;
+  #rowCount: number;
   readonly #columnCount: number;
   readonly #rowHeight: number;
-  readonly #columnWidths: readonly number[];
-  readonly #columnOffsets: readonly number[];
-  readonly #frozenRowCount: number;
+  #columnWidths: number[];
+  #columnOffsets: number[];
+  /** The freeze.rows the caller originally asked for, before clamping to the current rowCount — setRowCount() re-clamps against this, not against the previous #frozenRowCount, so a shrink-then-grow sequence can recover frozen rows instead of only ever losing them. */
+  readonly #requestedFrozenRows: number;
+  #frozenRowCount: number;
   readonly #frozenColumnCount: number;
   readonly #overscanRows: number;
   readonly #overscanColumns: number;
+  #version = 0;
 
   constructor(options: LayoutOptions) {
     validateLayoutOptions(options);
@@ -155,9 +158,10 @@ export class LayoutEngine {
     this.#rowCount = options.rowCount;
     this.#columnCount = options.columnCount;
     this.#rowHeight = options.rowHeight;
-    this.#columnWidths = options.columnWidths;
+    this.#columnWidths = [...options.columnWidths];
     this.#columnOffsets = buildColumnOffsets(options.columnWidths);
-    this.#frozenRowCount = Math.min(options.freeze?.rows ?? 0, options.rowCount);
+    this.#requestedFrozenRows = options.freeze?.rows ?? 0;
+    this.#frozenRowCount = Math.min(this.#requestedFrozenRows, options.rowCount);
     this.#frozenColumnCount = Math.min(
       options.freeze?.columns ?? 0,
       options.columnCount
@@ -186,8 +190,63 @@ export class LayoutEngine {
     return this.#frozenColumnCount;
   }
 
+  /** Bumped by exactly 1 on every successful setColumnWidth()/setRowCount() call; starts at 0. */
+  get version(): number {
+    return this.#version;
+  }
+
   getColumnWidth(column: number): number {
     return this.#columnWidths[column] ?? 0;
+  }
+
+  /** Same x a row-0 getCellRect() would report, without needing a row index — for header code that has no row. */
+  getColumnLeft(column: number): number {
+    return this.#columnOffsets[column] ?? 0;
+  }
+
+  /**
+   * Resizes one column. Every later column's offset shifts by the width
+   * delta (a column's absolute width still requires knowing everything to
+   * its left, so a single-column change unavoidably moves everything after
+   * it) — but that's a plain shift by a constant, not a full recompute from
+   * scratch. `version` is the one thing callers should actually watch:
+   * ColumnManager/HeaderManager's own cached RuntimeColumn/RuntimeHeader
+   * arrays are untouched (this doesn't re-run their merge chains), only
+   * `version` changes, so a render path that caches "have I painted this
+   * version yet" knows to repaint without anything upstream re-resolving.
+   */
+  setColumnWidth(column: number, width: number): void {
+    if (!isNonNegativeInteger(column) || column >= this.#columnCount) {
+      throw invalidLayoutOption("column", column);
+    }
+    if (!isNonNegativeFinite(width)) {
+      throw invalidLayoutOption("width", width);
+    }
+
+    const delta = width - (this.#columnWidths[column] as number);
+    this.#columnWidths[column] = width;
+    for (let index = column + 1; index < this.#columnOffsets.length; index += 1) {
+      this.#columnOffsets[index] = (this.#columnOffsets[index] as number) + delta;
+    }
+    this.#version += 1;
+  }
+
+  /**
+   * Row-structure counterpart to setColumnWidth() — but much simpler,
+   * because unlike per-column widths there's no cached per-row offset
+   * table to shift: `getCellRect()`'s y is always `row * rowHeight`,
+   * computed fresh every call. Re-clamps `frozenRowCount` against the
+   * *originally requested* freeze.rows (not the previous frozenRowCount),
+   * so a shrink that clips frozen rows can recover them on a later grow.
+   */
+  setRowCount(rowCount: number): void {
+    if (!isNonNegativeInteger(rowCount)) {
+      throw invalidLayoutOption("rowCount", rowCount);
+    }
+
+    this.#rowCount = rowCount;
+    this.#frozenRowCount = Math.min(this.#requestedFrozenRows, rowCount);
+    this.#version += 1;
   }
 
   getTotalWidth(): number {

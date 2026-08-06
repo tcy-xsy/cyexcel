@@ -152,6 +152,40 @@ describe("PointerController drag", () => {
       endColumn: 0
     });
   });
+
+  it("does not extend the selection for pointer movement within the click jitter threshold, even across a cell boundary", () => {
+    const layout = createLayout(); // rowHeight 20, so y=19 is row 0, y=21 is row 1
+    const selection = new SelectionModel({ rowCount: 20, columnCount: 10 });
+    const controller = new PointerController({ layout, selection });
+    controller.setViewport(VIEWPORT);
+
+    controller.handlePointerDown({ x: 10, y: 19 });
+    controller.handlePointerMove({ x: 10, y: 21 }); // 2px of real-world click jitter
+
+    expect(selection.snapshot.range).toEqual({
+      startRow: 0,
+      startColumn: 0,
+      endRow: 0,
+      endColumn: 0
+    });
+  });
+
+  it("extends the selection once movement exceeds the jitter threshold, and keeps extending for the rest of the drag", () => {
+    const layout = createLayout();
+    const selection = new SelectionModel({ rowCount: 20, columnCount: 10 });
+    const controller = new PointerController({ layout, selection });
+    controller.setViewport(VIEWPORT);
+
+    controller.handlePointerDown({ x: 10, y: 10 }); // row 0
+    controller.handlePointerMove({ x: 10, y: 50 }); // well past the threshold -> row 2
+    expect(selection.snapshot.active).toEqual({ row: 2, column: 0 });
+
+    controller.handlePointerMove({ x: 10, y: 15 }); // small move back toward the start point
+    // Once real dragging has begun, every subsequent move keeps extending,
+    // even a small one — the threshold only guards the *first* move off
+    // the down point, not the whole gesture.
+    expect(selection.snapshot.active).toEqual({ row: 0, column: 0 });
+  });
 });
 
 describe("PointerController with frozen rows/columns and scroll", () => {

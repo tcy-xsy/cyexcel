@@ -81,14 +81,41 @@ test("double-click opens an editor positioned at the cell rect", async ({ page }
   expect(style).toEqual({ left: "0px", top: "0px", width: "120px", height: "24px" });
 });
 
+test("double-click places the cursor at the end of the text instead of selecting it all", async ({
+  page
+}) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  await page.mouse.dblclick(box.x + 10, box.y + 10); // cell (0, 0), value "Item 0"
+
+  const input = page.locator("#app input");
+  await expect(input).toBeVisible();
+  const selection = await input.evaluate((el: HTMLInputElement) => ({
+    start: el.selectionStart,
+    end: el.selectionEnd,
+    length: el.value.length
+  }));
+  // Not select-all (which would be {start: 0, end: length}) — the cursor
+  // sits at the end, so typing continues/appends instead of replacing
+  // everything, matching Excel's double-click/F2 behavior.
+  expect(selection).toEqual({ start: selection.length, end: selection.length, length: selection.length });
+
+  // Typing now appends rather than replacing the selected-all text.
+  await page.keyboard.type("!");
+  await expect(input).toHaveValue("Item 0!");
+});
+
 test("typing a new value and pressing Enter commits one undoable/redoable change", async ({
   page
 }) => {
   await gotoFixture(page);
   const box = await getContentCanvasBox(page);
 
-  await page.mouse.dblclick(box.x + 10, box.y + 10); // initial value "Item 0", selected on focus
-  await page.keyboard.type("Changed");
+  await page.mouse.dblclick(box.x + 10, box.y + 10); // initial value "Item 0"
+  // The cursor sits at the end on open (no more select-all — see the
+  // dedicated cursor-position test), so replace the whole value explicitly.
+  await page.locator("#app input").fill("Changed");
   await page.keyboard.press("Enter");
 
   await expect(page.locator("#app input")).toHaveCount(0);
@@ -161,7 +188,7 @@ test("scrolling commits the active edit per the default scrollCommitPolicy", asy
   const box = await getContentCanvasBox(page);
 
   await page.mouse.dblclick(box.x + 10, box.y + 10);
-  await page.keyboard.type("ScrolledAway");
+  await page.locator("#app input").fill("ScrolledAway");
 
   await page.locator("#app").evaluate((el) => {
     const scroller = el.firstElementChild as HTMLElement;
@@ -171,6 +198,228 @@ test("scrolling commits the active edit per the default scrollCommitPolicy", asy
 
   await expect(page.locator("#app input")).toHaveCount(0);
   expect(await getCell(page, 0, 0)).toBe("ScrolledAway");
+});
+
+test("scrolling repaints the canvas instead of leaving the previous rows on screen", async ({
+  page
+}) => {
+  await gotoFixture(page);
+
+  const sampleTopLeft = () =>
+    page.evaluate(() => {
+      const canvas = document.querySelectorAll("#app canvas")[0] as HTMLCanvasElement;
+      const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+      const dpr = window.devicePixelRatio || 1;
+      const { data } = ctx.getImageData(
+        Math.round(2 * dpr),
+        Math.round(2 * dpr),
+        Math.round(100 * dpr),
+        Math.round(16 * dpr)
+      );
+      return Array.from(data);
+    });
+
+  const before = await sampleTopLeft();
+
+  await page.locator("#app").evaluate((el) => {
+    const scroller = el.firstElementChild as HTMLElement;
+    scroller.scrollTop = 200; // past several rows at rowHeight 24
+    scroller.dispatchEvent(new Event("scroll"));
+  });
+  // The repaint is scheduled via requestAnimationFrame, not synchronous.
+  await page.waitForFunction(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  );
+
+  const after = await sampleTopLeft();
+
+  // Whatever was painted at the top-left corner before the scroll must not
+  // still be there after — the previously visible rows scrolled out and
+  // different rows scrolled in. Before the ContentLayerRenderer fix, this
+  // region was byte-identical because cell rects were never translated by
+  // the scroll offset, so the newly "visible" rows were drawn off-canvas
+  // and the stale pixels from row 0 were never cleared.
+  expect(after).not.toEqual(before);
+});
+
+test("the selection box repaints after scrolling instead of staying frozen at its old screen position", async ({
+  page
+}) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  await page.mouse.click(box.x + 10, box.y + 10); // select cell (0, 0)
+  await page.waitForFunction(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  );
+
+  const sampleSelectionCanvas = () =>
+    page.evaluate(() => {
+      const canvas = document.querySelectorAll("#app canvas")[1] as HTMLCanvasElement;
+      const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+      return Array.from(ctx.getImageData(0, 0, canvas.width, canvas.height).data);
+    });
+
+  const before = await sampleSelectionCanvas();
+
+  await page.locator("#app").evaluate((el) => {
+    const scroller = el.firstElementChild as HTMLElement;
+    scroller.scrollTop = 500;
+    scroller.dispatchEvent(new Event("scroll"));
+  });
+  await page.waitForFunction(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  );
+
+  const after = await sampleSelectionCanvas();
+
+  // Cell (0, 0) scrolled far out of view, so its selection box should no
+  // longer be drawn where it used to be — `invalidateAll()` (called on
+  // every scroll) only marked the content layer dirty, never selection, so
+  // paintSelection() was never re-invoked and the box just sat at its last
+  // painted screen position regardless of scroll.
+  expect(after).not.toEqual(before);
+});
+
+test("double-clicking a cell after scrolling opens an editor positioned inside the viewport", async ({
+  page
+}) => {
+  await gotoFixture(page);
+
+  await page.locator("#app").evaluate((el) => {
+    const scroller = el.firstElementChild as HTMLElement;
+    scroller.scrollTop = 600; // deep enough that row 0's absolute position (y=0) is long gone
+    scroller.dispatchEvent(new Event("scroll"));
+  });
+  await page.waitForFunction(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  );
+
+  const box = await getContentCanvasBox(page);
+  // scrollTop 600 at rowHeight 24 puts row 25 right at the top of the viewport.
+  await page.mouse.dblclick(box.x + 10, box.y + 10);
+
+  const input = page.locator("#app input");
+  await expect(input).toBeVisible();
+  const style = await input.evaluate((el: HTMLInputElement) => ({ left: el.style.left, top: el.style.top }));
+  // Viewport-relative, not row 25's absolute content position (600px) — and
+  // still visible/editable, not silently torn down by a scroll-into-view
+  // triggering the scroll-commit path before the assertion runs.
+  expect(style).toEqual({ left: "0px", top: "0px" });
+  expect(await getCell(page, 25, 0)).toBe("Item 25");
+});
+
+test("the selection box hides while editing instead of doubling up with the editor's own border", async ({
+  page
+}) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  const sampleSelectionCanvas = () =>
+    page.evaluate(() => {
+      const canvas = document.querySelectorAll("#app canvas")[1] as HTMLCanvasElement;
+      const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
+      let nonTransparent = 0;
+      const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      for (let i = 3; i < data.length; i += 4) {
+        if ((data[i] ?? 0) > 0) {
+          nonTransparent += 1;
+        }
+      }
+      return nonTransparent;
+    });
+
+  await page.mouse.click(box.x + 10, box.y + 10); // select cell (0, 0)
+  await page.waitForFunction(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  );
+  expect(await sampleSelectionCanvas()).toBeGreaterThan(0); // the box is drawn while just selected
+
+  await page.mouse.dblclick(box.x + 10, box.y + 10); // start editing that same cell
+  await page.waitForFunction(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  );
+  expect(await sampleSelectionCanvas()).toBe(0); // hidden — the editor's own border is the indicator now
+
+  await page.keyboard.press("Escape"); // cancel back to plain selection
+  await page.waitForFunction(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+  );
+  expect(await sampleSelectionCanvas()).toBeGreaterThan(0); // reappears once editing ends
+});
+
+test("keyboard navigation past the visible viewport scrolls the container to keep the active cell in view", async ({
+  page
+}) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  await page.mouse.click(box.x + 10, box.y + 10); // select cell (0, 0)
+  // Container is 300px tall at rowHeight 24 — ~12 rows visible. 20 presses
+  // moves the active cell well past that without any scrolling to follow it.
+  for (let i = 0; i < 20; i += 1) {
+    await page.keyboard.press("ArrowDown");
+  }
+
+  const scrollTop = await page
+    .locator("#app")
+    .evaluate((el) => (el.firstElementChild as HTMLElement).scrollTop);
+  expect(scrollTop).toBeGreaterThan(0);
+
+  // Navigating back up past the top of the now-scrolled view should scroll
+  // back toward 0, not leave the active cell stranded above the fold.
+  for (let i = 0; i < 20; i += 1) {
+    await page.keyboard.press("ArrowUp");
+  }
+  const scrollTopAfterUp = await page
+    .locator("#app")
+    .evaluate((el) => (el.firstElementChild as HTMLElement).scrollTop);
+  expect(scrollTopAfterUp).toBe(0);
+});
+
+test("keyboard focus returns to the content canvas after committing an edit, so Enter/arrow keys keep working", async ({
+  page
+}) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  await page.mouse.click(box.x + 10, box.y + 10); // select cell (0, 0)
+  await page.keyboard.press("Enter"); // start editing
+  await page.keyboard.press("Enter"); // commit unchanged — moveActive(1, 0) makes (1, 0) active
+  await expect(page.locator("#app input")).toHaveCount(0);
+
+  const activeIsCanvas = await page.evaluate(() => document.activeElement?.tagName === "CANVAS");
+  expect(activeIsCanvas).toBe(true);
+
+  // Enter must still reach the canvas's keydown handler and open an editor
+  // for the now-active cell (1, 0) — not silently do nothing.
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#app input")).toHaveValue("Item 1");
+  await page.keyboard.press("Escape");
+
+  const activeIsCanvasAfterCancel = await page.evaluate(
+    () => document.activeElement?.tagName === "CANVAS"
+  );
+  expect(activeIsCanvasAfterCancel).toBe(true);
+
+  // Arrow keys must still reach the canvas too, moving active to (2, 0).
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#app input")).toHaveValue("Item 2");
+});
+
+test("keyboard focus returns to the content canvas after canceling an edit", async ({ page }) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  await page.mouse.dblclick(box.x + 10, box.y + 10);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#app input")).toHaveCount(0);
+
+  const activeIsCanvas = await page.evaluate(
+    () => document.activeElement?.tagName === "CANVAS"
+  );
+  expect(activeIsCanvas).toBe(true);
 });
 
 test("repeated edit cycles leave no editor DOM behind", async ({ page }) => {

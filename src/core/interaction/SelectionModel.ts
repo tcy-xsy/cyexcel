@@ -1,4 +1,5 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
+import { remapRowIndex, type RowStructureChange } from "../layout";
 import type { CellRange } from "../types";
 
 export type SelectionKind = "cell" | "row" | "column" | "all";
@@ -79,7 +80,7 @@ function computeRange(
  * a multi-region `ranges` array is left for a later P1 step.
  */
 export class SelectionModel {
-  readonly #bounds: SelectionBounds;
+  #bounds: SelectionBounds;
   #kind: SelectionKind = "cell";
   #anchor: CellPosition = { row: 0, column: 0 };
   #active: CellPosition = { row: 0, column: 0 };
@@ -91,6 +92,31 @@ export class SelectionModel {
 
   get bounds(): SelectionBounds {
     return this.#bounds;
+  }
+
+  /**
+   * Updates the bounds a selection is clamped into — e.g. after a
+   * structural row operation changes `rowCount`. Without `rowChange`, the
+   * current active/anchor positions are just clamped into the new bounds
+   * (fine for a plain column-count change). With `rowChange`, both
+   * positions are first remapped via `remapRowIndex()` so a selection
+   * follows the *same logical row* through an insert/delete/move instead
+   * of landing wherever clamping happens to leave it — e.g. a selection on
+   * row 10 should still be on row 10's data after two rows are inserted
+   * above it (now row 12), not clamped back to row 10's new, different
+   * content.
+   */
+  setBounds(bounds: SelectionBounds, rowChange?: RowStructureChange): void {
+    validateBounds(bounds);
+    this.#bounds = bounds;
+
+    if (rowChange) {
+      this.#anchor = { ...this.#anchor, row: remapRowIndex(this.#anchor.row, rowChange) };
+      this.#active = { ...this.#active, row: remapRowIndex(this.#active.row, rowChange) };
+    }
+
+    this.#anchor = this.#clampPosition(this.#anchor.row, this.#anchor.column);
+    this.#active = this.#clampPosition(this.#active.row, this.#active.column);
   }
 
   get snapshot(): SelectionSnapshot {

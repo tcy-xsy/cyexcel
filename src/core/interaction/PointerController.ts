@@ -19,6 +19,16 @@ interface PointerModifiers {
 }
 
 const NO_HEADERS: HeaderLayout = { rowHeaderWidth: 0, columnHeaderHeight: 0 };
+/**
+ * Real mouse/trackpad clicks almost never land pointerup at the exact
+ * pixel pointerdown fired at — a couple of pixels of incidental movement
+ * is normal and shouldn't be mistaken for an intentional drag. Without a
+ * threshold, a click landing near a row/column boundary (rows are often
+ * only 20-30px tall) would extend the selection into the next cell purely
+ * from that jitter, which reads as "clicking sometimes selects multiple
+ * cells" — a real, reported bug, not a hypothetical.
+ */
+const DRAG_THRESHOLD_PX = 4;
 
 function frozenColumnWidth(layout: LayoutEngine): number {
   let width = 0;
@@ -58,6 +68,8 @@ export class PointerController {
   readonly #onSelectionChange: ((snapshot: SelectionSnapshot) => void) | undefined;
   #viewport: ViewportState = { scrollTop: 0, scrollLeft: 0, width: 0, height: 0 };
   #dragging = false;
+  #dragStartPoint: { readonly x: number; readonly y: number } | null = null;
+  #dragThresholdExceeded = false;
 
   constructor(options: PointerControllerOptions) {
     this.#layout = options.layout;
@@ -91,12 +103,22 @@ export class PointerController {
     }
 
     this.#dragging = true;
+    this.#dragStartPoint = point;
+    this.#dragThresholdExceeded = false;
     this.#notify();
   }
 
   handlePointerMove(point: { x: number; y: number }): void {
     if (!this.#dragging) {
       return;
+    }
+    if (!this.#dragThresholdExceeded) {
+      const start = this.#dragStartPoint as { x: number; y: number };
+      const distance = Math.hypot(point.x - start.x, point.y - start.y);
+      if (distance < DRAG_THRESHOLD_PX) {
+        return;
+      }
+      this.#dragThresholdExceeded = true;
     }
     const { row, column } = this.#resolveGridPosition(point);
     this.#selection.extendTo(row, column);
@@ -105,6 +127,8 @@ export class PointerController {
 
   handlePointerUp(): void {
     this.#dragging = false;
+    this.#dragStartPoint = null;
+    this.#dragThresholdExceeded = false;
   }
 
   attach(element: HTMLElement): Disposer {
