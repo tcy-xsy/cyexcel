@@ -5,11 +5,13 @@ import {
   CommandManager,
   CyExcelError,
   CyExcelErrorCode,
+  HookManager,
+  PRODUCTION_HOOK_REGISTRY,
   SetCellCommand,
   SetRangeCommand,
   TableStore
 } from "../../../../src/core";
-import type { Command } from "../../../../src/core";
+import type { BeforeCommandContext, BeforeTransactionCommitContext, Command } from "../../../../src/core";
 
 function createStore() {
   const rows = [
@@ -167,6 +169,63 @@ describe("CommandManager beforeCommit", () => {
     expect(store.getCell(0, 0)).toBe("A");
     expect(store.getCell(0, 1)).toBe(1);
     expect(manager.historySize).toBe(0);
+  });
+});
+
+describe("CommandManager — shared HookManager", () => {
+  it("hooks.tap('beforeCommand', ...) is equivalent to the beforeCommit option", () => {
+    const store = createStore();
+    const hooks = new HookManager({ registry: PRODUCTION_HOOK_REGISTRY });
+    hooks.tap("beforeCommand", { name: "reject-set-cell" }, (context: BeforeCommandContext) => {
+      if (context.command.type === "set-cell") {
+        context.cancel("no set-cell allowed");
+      }
+    });
+    const manager = new CommandManager(store, { hooks });
+
+    expect(() => manager.execute(new SetCellCommand(store, 0, 0, "X"))).toThrow(CyExcelError);
+    expect(store.version).toBe(0);
+  });
+
+  it("beforeTransactionCommit cancels and rolls back the whole transaction after every command already ran", () => {
+    const store = createStore();
+    const hooks = new HookManager({ registry: PRODUCTION_HOOK_REGISTRY });
+    const seenCommandCount: number[] = [];
+    hooks.tap("beforeTransactionCommit", { name: "cross-cell-check" }, (context: BeforeTransactionCommitContext) => {
+      seenCommandCount.push(context.commands.length);
+      context.cancel("cross-cell validation failed");
+    });
+    const manager = new CommandManager(store, { hooks });
+
+    expect(() => {
+      manager.transaction(() => {
+        manager.execute(new SetCellCommand(store, 0, 0, "X"));
+        manager.execute(new SetCellCommand(store, 0, 1, 42));
+      });
+    }).toThrow(CyExcelError);
+
+    // Both commands had already executed by the time beforeTransactionCommit ran.
+    expect(seenCommandCount).toEqual([2]);
+    // ...but the cancellation rolled both of them back.
+    expect(store.getCell(0, 0)).toBe("A");
+    expect(store.getCell(0, 1)).toBe(1);
+    expect(manager.historySize).toBe(0);
+  });
+
+  it("a transaction that isn't cancelled commits normally through beforeTransactionCommit", () => {
+    const store = createStore();
+    const hooks = new HookManager({ registry: PRODUCTION_HOOK_REGISTRY });
+    let calls = 0;
+    hooks.tap("beforeTransactionCommit", { name: "observe-only" }, () => {
+      calls += 1;
+    });
+    const manager = new CommandManager(store, { hooks });
+
+    manager.execute(new SetCellCommand(store, 0, 0, "X"));
+
+    expect(calls).toBe(1);
+    expect(store.getCell(0, 0)).toBe("X");
+    expect(manager.historySize).toBe(1);
   });
 });
 

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel context menu fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 400px;
+        height: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore, createBasicContextMenuPlugin } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+      const columns = [
+        { id: "name", field: "name", width: 100 },
+        { id: "age", field: "age", type: "number", width: 100 }
+      ];
+      const data = [
+        { name: "Alice", age: 30 },
+        { name: "Bob", age: 40 }
+      ];
+
+      window.__cellActionRuns = [];
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        data,
+        rowHeight: 24,
+        headerHeight: 24,
+        plugins: [createBasicContextMenuPlugin()]
+      });
+
+      sheet.contextMenu.registerProvider({ name: "cell-actions", target: "cell" }, (menuContext) => [
+        {
+          type: "action",
+          id: "log-cell",
+          label: "Log Cell",
+          run: () => {
+            window.__cellActionRuns.push({ target: menuContext.target, row: menuContext.row, column: menuContext.column });
+          }
+        }
+      ]);
+
+      sheet.contextMenu.registerProvider({ name: "column-header-actions", target: "column-header" }, (menuContext) => [
+        {
+          type: "action",
+          id: "log-column-header",
+          label: "Log Column Header",
+          run: () => {
+            window.__cellActionRuns.push({ target: menuContext.target, column: menuContext.column });
+          }
+        }
+      ]);
+
+      sheet.contextMenu.registerProvider({ name: "blank-actions", target: "blank" }, (menuContext) => [
+        {
+          type: "action",
+          id: "log-blank",
+          label: "Log Blank",
+          run: () => {
+            window.__cellActionRuns.push({ target: menuContext.target });
+          }
+        }
+      ]);
+
+      window.__sheet = sheet;
+      window.__cyexcelContextMenuReady = true;
+    </script>
+  </body>
+</html>

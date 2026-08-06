@@ -1,18 +1,52 @@
 import { mergePatches, type TableStore } from "../data";
 import { CyExcelError, CyExcelErrorCode } from "../errors";
 import { HistoryManager, type HistoryEntry } from "../history";
+import {
+  BEFORE_COMMAND_HOOK,
+  BEFORE_TRANSACTION_COMMIT_HOOK,
+  HookManager,
+  createCancellableContext,
+  type CancellableContext,
+  type HookRegistry
+} from "../hooks";
 import type { Command, CommandContext, Patch } from "../types";
+
+/** Context for the `beforeCommand` Hook — fires once per Command, before it executes. */
+export interface BeforeCommandContext extends CancellableContext {
+  readonly command: Command;
+  readonly transactionId: string;
+}
+
+/** Context for the `beforeTransactionCommit` Hook — fires once per transaction, after every Command in it has executed, before the History entry is written. */
+export interface BeforeTransactionCommitContext extends CancellableContext {
+  readonly commands: readonly Command[];
+  readonly patches: readonly Patch[];
+  readonly transactionId: string;
+}
+
+/** Used when no shared HookManager is injected — just enough of the registry for this module's own two hook names, defined from the same constants CyExcelCore's production registry uses (see src/core/hooks/registry.ts). */
+const STANDALONE_HOOK_REGISTRY: HookRegistry = {
+  beforeCommand: BEFORE_COMMAND_HOOK,
+  beforeTransactionCommit: BEFORE_TRANSACTION_COMMIT_HOOK
+};
 
 export interface CommandManagerOptions {
   readonly historyLimit?: number;
   readonly historyByteLimit?: number;
   /**
-   * Minimal synchronous cancellation point, checked before every single
-   * command executes (not once per transaction). Returning `false` cancels
-   * the whole transaction: already-executed commands in it are rolled back,
-   * nothing is written, and no History entry is recorded. This is a plain
-   * constructor option, not a registrable/stackable Hook API — the real
-   * HookManager lands in Step 11 and will subsume this.
+   * Shares a HookManager with the rest of a CyExcelCore instance so
+   * `sheet.hooks.tap("beforeCommand", ...)` actually participates in real
+   * command execution. Defaults to a private HookManager scoped to just
+   * `beforeCommand`/`beforeTransactionCommit`, so this class stays fully
+   * standalone-constructible for tests that don't care about Hooks.
+   */
+  readonly hooks?: HookManager;
+  /**
+   * Sugar for `hooks.tap("beforeCommand", ...)`, kept for backward
+   * compatibility with Step 3's original shape — checked before every
+   * single command executes (not once per transaction). Returning `false`
+   * cancels the whole transaction: already-executed commands in it are
+   * rolled back, nothing is written, and no History entry is recorded.
    */
   readonly beforeCommit?: (command: Command, context: CommandContext) => boolean;
 }
@@ -30,9 +64,7 @@ interface TransactionFrame {
 export class CommandManager {
   readonly #store: TableStore;
   readonly #history: HistoryManager;
-  readonly #beforeCommit:
-    | ((command: Command, context: CommandContext) => boolean)
-    | undefined;
+  readonly #hooks: HookManager;
   #frame: TransactionFrame | null = null;
   #nextTransactionId = 1;
 
@@ -42,7 +74,20 @@ export class CommandManager {
       maxEntries: options.historyLimit,
       maxBytes: options.historyByteLimit
     });
-    this.#beforeCommit = options.beforeCommit;
+    this.#hooks = options.hooks ?? new HookManager({ registry: STANDALONE_HOOK_REGISTRY });
+
+    if (options.beforeCommit) {
+      const beforeCommit = options.beforeCommit;
+      this.#hooks.tap(
+        "beforeCommand",
+        { name: "legacy-beforeCommit-option" },
+        (context: BeforeCommandContext) => {
+          if (!beforeCommit(context.command, { transactionId: context.transactionId })) {
+            context.cancel();
+          }
+        }
+      );
+    }
   }
 
   get store(): TableStore {
@@ -106,6 +151,20 @@ export class CommandManager {
       return [];
     }
 
+    const commitContext = createCancellableContext<Omit<BeforeTransactionCommitContext, keyof CancellableContext>>({
+      commands: frame.commands,
+      patches: frame.patches,
+      transactionId: frame.transactionId
+    });
+    this.#hooks.runBail("beforeTransactionCommit", commitContext);
+    if (commitContext.cancelled) {
+      this.#rollback(frame);
+      throw new CyExcelError(
+        CyExcelErrorCode.CommandCancelled,
+        commitContext.reason ?? "Transaction was cancelled before commit"
+      );
+    }
+
     const mergedPatches = mergePatches(frame.patches);
     this.#history.push({ commands: frame.commands, patches: mergedPatches });
     return mergedPatches;
@@ -126,15 +185,19 @@ export class CommandManager {
     // #frame before calling fn() — never null in practice.
     const frame = this.#frame as TransactionFrame;
 
-    const context: CommandContext = { transactionId: frame.transactionId };
-
-    if (this.#beforeCommit && !this.#beforeCommit(command, context)) {
+    const beforeCommandContext = createCancellableContext<Omit<BeforeCommandContext, keyof CancellableContext>>({
+      command,
+      transactionId: frame.transactionId
+    });
+    this.#hooks.runBail("beforeCommand", beforeCommandContext);
+    if (beforeCommandContext.cancelled) {
       throw new CyExcelError(
         CyExcelErrorCode.CommandCancelled,
-        `Command "${command.type}" was cancelled before commit`
+        beforeCommandContext.reason ?? `Command "${command.type}" was cancelled before commit`
       );
     }
 
+    const context: CommandContext = { transactionId: frame.transactionId };
     const patches = command.execute(context);
     frame.commands.push(command);
     frame.patches.push(...(Array.isArray(patches) ? patches : [patches]));
