@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel fill-handle fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 500px;
+        height: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+
+      // Column layout (each 60px wide, rows 20px tall):
+      //   0 neighbor   — 10 non-empty rows (0-9), used as the dblclick auto-fill reference.
+      //   1 dblTarget  — row 0 only, filled via dblclick auto-fill matching column 0's length.
+      //   2 dragCopy   — row 0 only, filled via a single-value drag-copy.
+      //   3 dragSeq    — rows 0-2 (1, 2, 3), extended via a numeric linear-sequence drag.
+      //   4 undoTarget — row 0 only, drag-filled then undone.
+      //   5 readonly   — clipboard.paste: false, row 0 only; must stay blank in the extended region.
+      //   6 normal     — row 0 only, paired with column 5 in the same drag gesture.
+      const columns = [
+        { id: "neighbor", field: "neighbor", width: 60, header: "N" },
+        { id: "dblTarget", field: "dblTarget", width: 60, header: "D" },
+        { id: "dragCopy", field: "dragCopy", width: 60, header: "C" },
+        { id: "dragSeq", field: "dragSeq", width: 60, header: "S" },
+        { id: "undoTarget", field: "undoTarget", width: 60, header: "U" },
+        { id: "readonly", field: "readonly", width: 60, header: "R", clipboard: { paste: false } },
+        { id: "normal", field: "normal", width: 60, header: "M" }
+      ];
+
+      const data = Array.from({ length: 30 }, (_unused, row) => ({
+        neighbor: row < 10 ? `N${row}` : undefined,
+        dblTarget: row === 0 ? "Y" : undefined,
+        dragCopy: row === 0 ? "X" : undefined,
+        dragSeq: row === 0 ? 1 : row === 1 ? 2 : row === 2 ? 3 : undefined,
+        undoTarget: row === 0 ? "Z" : undefined,
+        readonly: row === 0 ? "RO" : undefined,
+        normal: row === 0 ? "OK" : undefined
+      }));
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        data,
+        rowHeight: 20
+      });
+
+      window.__sheet = sheet;
+      window.__cyexcelFillHandleReady = true;
+    </script>
+  </body>
+</html>

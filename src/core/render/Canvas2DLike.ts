@@ -15,9 +15,11 @@ export interface Canvas2DLike {
   rect(x: number, y: number, width: number, height: number): void;
   clip(): void;
   scale(x: number, y: number): void;
+  setLineDash(segments: readonly number[]): void;
   fillStyle: string;
   strokeStyle: string;
   font: string;
   textBaseline: string;
   textAlign: string;
+  lineWidth: number;
 }

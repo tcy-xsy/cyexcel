@@ -18,6 +18,7 @@ export class RecordingCanvasContext implements Canvas2DLike {
   #font = "";
   #textBaseline = "";
   #textAlign = "";
+  #lineWidth = 1;
 
   fillRect(x: number, y: number, width: number, height: number): void {
     this.calls.push({ method: "fillRect", args: [x, y, width, height] });
@@ -57,6 +58,10 @@ export class RecordingCanvasContext implements Canvas2DLike {
 
   scale(x: number, y: number): void {
     this.calls.push({ method: "scale", args: [x, y] });
+  }
+
+  setLineDash(segments: readonly number[]): void {
+    this.calls.push({ method: "setLineDash", args: [segments] });
   }
 
   get fillStyle(): string {
@@ -102,5 +107,14 @@ export class RecordingCanvasContext implements Canvas2DLike {
   set textAlign(value: string) {
     this.#textAlign = value;
     this.calls.push({ method: "set:textAlign", args: [value] });
+  }
+
+  get lineWidth(): number {
+    return this.#lineWidth;
+  }
+
+  set lineWidth(value: number) {
+    this.#lineWidth = value;
+    this.calls.push({ method: "set:lineWidth", args: [value] });
   }
 }
