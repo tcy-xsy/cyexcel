@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ArrayDataSource, CyExcelError, CyExcelErrorCode, TableStore } from "../../../../src/core";
+import type { DataSource } from "../../../../src/core";
 import { createCountingDataSource } from "../../../helpers/createCountingDataSource";
 
 function createStore() {
@@ -140,5 +141,97 @@ describe("TableStore does not scan unrelated rows", () => {
     expect(result.patches).toEqual([{ type: "cell-value", row: 10, column: 2 }]);
     expect(source.readCount).toBeLessThanOrEqual(1);
     expect(source.writeCount).toBe(1);
+  });
+});
+
+describe("TableStore — structural row operations", () => {
+  it("insertRows emits a row-structure Patch and bumps the version", () => {
+    const { store } = createStore();
+
+    const result = store.insertRows(1, [["X", 10, []]]);
+
+    expect(result.patches).toEqual([{ type: "row-structure", operation: "insert", start: 1, count: 1 }]);
+    expect(result.version).toBe(1);
+    expect(store.getCell(1, 0)).toBe("X");
+    expect(store.getCell(2, 0)).toBe("B");
+  });
+
+  it("deleteRows emits a row-structure Patch and bumps the version", () => {
+    const { store } = createStore();
+
+    const result = store.deleteRows(0, 1);
+
+    expect(result.patches).toEqual([{ type: "row-structure", operation: "delete", start: 0, count: 1 }]);
+    expect(result.version).toBe(1);
+    expect(store.getCell(0, 0)).toBe("B");
+  });
+
+  it("moveRows emits a row-structure Patch (including target) and bumps the version", () => {
+    const { store } = createStore();
+
+    const result = store.moveRows(0, 1, 3);
+
+    expect(result.patches).toEqual([
+      { type: "row-structure", operation: "move", start: 0, count: 1, target: 3 }
+    ]);
+    expect(result.version).toBe(1);
+  });
+
+  it("throws StructuralModificationNotSupported when the DataSource doesn't implement insertRows", () => {
+    // A plain-object DataSource (e.g. a remote/computed one) that never
+    // declared insertRows — not an ArrayDataSource with the method deleted,
+    // since that would still be found via the prototype chain.
+    const source: DataSource = {
+      getRowCount: () => 1,
+      getColumnCount: () => 1,
+      getCell: () => "A",
+      setCell: () => {}
+    };
+    const store = new TableStore(source);
+
+    try {
+      store.insertRows(0, [["B"]]);
+      expect.unreachable("expected insertRows to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CyExcelError);
+      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.StructuralModificationNotSupported);
+    }
+  });
+
+  it("throws StructuralModificationNotSupported when the DataSource doesn't implement deleteRows", () => {
+    const source: DataSource = {
+      getRowCount: () => 1,
+      getColumnCount: () => 1,
+      getCell: () => "A",
+      setCell: () => {}
+    };
+    const store = new TableStore(source);
+
+    expect(() => store.deleteRows(0, 1)).toThrow(CyExcelError);
+  });
+
+  it("throws StructuralModificationNotSupported when the DataSource doesn't implement moveRows", () => {
+    const source: DataSource = {
+      getRowCount: () => 2,
+      getColumnCount: () => 1,
+      getCell: () => "A",
+      setCell: () => {}
+    };
+    const store = new TableStore(source);
+
+    expect(() => store.moveRows(0, 1, 1)).toThrow(CyExcelError);
+  });
+
+  it("a rejected structural operation leaves the version unchanged", () => {
+    const source: DataSource = {
+      getRowCount: () => 1,
+      getColumnCount: () => 1,
+      getCell: () => "A",
+      setCell: () => {}
+    };
+    const store = new TableStore(source);
+
+    expect(() => store.insertRows(0, [["B"]])).toThrow(CyExcelError);
+    expect(store.version).toBe(0);
   });
 });

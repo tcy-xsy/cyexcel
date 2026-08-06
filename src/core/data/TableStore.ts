@@ -24,6 +24,10 @@ export class TableStore {
     return this.#version;
   }
 
+  getColumnCount(): number {
+    return this.#dataSource.getColumnCount();
+  }
+
   getCell(row: number, column: number): unknown {
     assertValidCoordinate(row, column);
     this.#assertColumnExists(column);
@@ -68,6 +72,40 @@ export class TableStore {
     this.#dataSource.setCell(row, column, updater(current));
 
     return this.#commit([{ type: "cell-value", row, column }]);
+  }
+
+  /** Throws StructuralModificationNotSupported if the underlying DataSource doesn't implement insertRows(). */
+  insertRows(start: number, rows: readonly (readonly unknown[])[]): TableStoreCommitResult {
+    if (!this.#dataSource.insertRows) {
+      throw this.#structuralModificationNotSupported("insertRows");
+    }
+    this.#dataSource.insertRows(start, rows);
+    return this.#commit([{ type: "row-structure", operation: "insert", start, count: rows.length }]);
+  }
+
+  /** Throws StructuralModificationNotSupported if the underlying DataSource doesn't implement deleteRows(). */
+  deleteRows(start: number, count: number): TableStoreCommitResult {
+    if (!this.#dataSource.deleteRows) {
+      throw this.#structuralModificationNotSupported("deleteRows");
+    }
+    this.#dataSource.deleteRows(start, count);
+    return this.#commit([{ type: "row-structure", operation: "delete", start, count }]);
+  }
+
+  /** Throws StructuralModificationNotSupported if the underlying DataSource doesn't implement moveRows(). */
+  moveRows(start: number, count: number, target: number): TableStoreCommitResult {
+    if (!this.#dataSource.moveRows) {
+      throw this.#structuralModificationNotSupported("moveRows");
+    }
+    this.#dataSource.moveRows(start, count, target);
+    return this.#commit([{ type: "row-structure", operation: "move", start, count, target }]);
+  }
+
+  #structuralModificationNotSupported(method: string): CyExcelError {
+    return new CyExcelError(
+      CyExcelErrorCode.StructuralModificationNotSupported,
+      `This DataSource does not support ${method}()`
+    );
   }
 
   #assertColumnExists(column: number): void {
