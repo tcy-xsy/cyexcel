@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel — Vue</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      p {
+        margin: 12px;
+      }
+      #app {
+        margin: 0 12px;
+      }
+      .sheet-host {
+        width: 600px;
+        height: 300px;
+        border: 1px solid #d1d5db;
+      }
+    </style>
+    <!-- CDN-only, no local bundler: Vue isn't a dependency of this repo,
+         only of this one example page. A render function (h()) is used
+         instead of a template, so no Single-File-Component compiler is
+         needed either. -->
+    <script type="importmap">
+      {
+        "imports": {
+          "vue": "https://esm.sh/vue@3"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <p>
+      <code>CyExcelCore</code> mounted/disposed from a Vue component's
+      <code>onMounted</code>/<code>onUnmounted</code> hooks — no Web
+      Component, no Vue-specific adapter package (future, post-1.0 work).
+    </p>
+    <div id="app"></div>
+    <script type="module" src="./App.js"></script>
+  </body>
+</html>

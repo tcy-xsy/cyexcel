@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel dist/cyexcel.umd.cjs smoke test</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 300px;
+        height: 150px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <!-- Real global UMD script tag, no <script type="module">, no import
+         statement at all — this is what an actual npm consumer's
+         require("cyexcel") (or a plain <script src> in a non-module page)
+         resolves to. Regression test for the bug where this bundle used to
+         only export defineCyExcel, not CyExcelCore. -->
+    <script src="/dist/cyexcel.umd.cjs"></script>
+    <script>
+      var columns = [
+        { id: "a", field: "a", width: 60 },
+        { id: "b", field: "b", width: 60 }
+      ];
+      var data = Array.from({ length: 10 }, function (_unused, row) {
+        return { a: row + "-a", b: row + "-b" };
+      });
+
+      var sheet = new CyExcel.CyExcelCore(document.getElementById("app"), { columns: columns, data: data });
+
+      window.__sheet = sheet;
+      window.__cyexcelDistUmdReady = true;
+    </script>
+  </body>
+</html>

@@ -1,0 +1,44 @@
+/**
+ * Type-checked (never executed, never imported by a test runner) against
+ * `tsconfig.consumer.json`'s `paths`, which map the bare `"cyexcel"`/
+ * `"cyexcel/core"`/`"cyexcel/register"` specifiers to the actual built
+ * `dist/types/**\/*.d.ts` output — the same specifiers a real npm consumer
+ * would use, resolved against the same files `package.json`'s `exports`
+ * map points at. If this fails to compile, the shipped `.d.ts` files don't
+ * actually match what `exports`/the built JS provide. Same
+ * `@ts-expect-error`-assertion style as `tests/types/core-types.ts`, which
+ * checks the source (not built) types instead.
+ */
+import { CyExcelCore, DEFAULT_CYEXCEL_TAG_NAME } from "cyexcel";
+import type { CyExcelCoreOptions } from "cyexcel";
+import { CyExcelCore as CoreCyExcelCore } from "cyexcel/core";
+import { defineCyExcel } from "cyexcel/register";
+
+// --- "cyexcel" re-exports the same CyExcelCore as "cyexcel/core" --------
+
+const sameClass: typeof CyExcelCore = CoreCyExcelCore;
+void sameClass;
+
+// --- CyExcelCoreOptions: fixed shape, columns/data optional --------------
+
+const options: CyExcelCoreOptions = {
+  columns: [{ id: "name", field: "name", width: 120 }],
+  data: [{ name: "Ada" }],
+  rowHeight: 24
+};
+void options;
+
+// --- CyExcelCore actually constructs from a real HTMLElement -------------
+
+declare const container: HTMLElement;
+const sheet = new CyExcelCore(container, options);
+sheet.setCell(0, 0, "Grace");
+const value: unknown = sheet.getCell(0, 0);
+void value;
+
+// --- "cyexcel/register" exposes the registration entry points ------------
+
+const tagName: string = DEFAULT_CYEXCEL_TAG_NAME;
+void tagName;
+const registered: CustomElementConstructor = defineCyExcel();
+void registered;

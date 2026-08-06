@@ -2,6 +2,13 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
+  // Playwright's own default testMatch also picks up "*.test.ts" — harmless
+  // everywhere else in the repo (Playwright is only ever pointed at
+  // tests/browser or tests/e2e, which have no .test.ts files), but
+  // tests/build/ mixes real Vitest *.test.ts files alongside Playwright
+  // *.spec.ts fixtures in the same directory, so the collision needs an
+  // explicit fix rather than continuing to rely on directory separation.
+  testMatch: "**/*.spec.ts",
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,

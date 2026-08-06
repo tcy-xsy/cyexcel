@@ -3,7 +3,11 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["tests/unit/**/*.test.ts"],
+    // tests/build/**/*.test.ts depends on a prior `pnpm build` (it imports
+    // from dist/), so it's excluded from plain `vitest run` and only run
+    // via the separate `pnpm test:build` script (`vitest run tests/build`,
+    // passed as an explicit path filter) — never as part of `test:unit`.
+    include: ["tests/unit/**/*.test.ts", "tests/build/**/*.test.ts"],
     coverage: {
       provider: "v8",
       include: ["src/core/**/*.ts"],

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel dist/core.js ESM smoke test</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 300px;
+        height: 150px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <!-- Imports the real BUILT artifact (requires `pnpm build` to have run
+         first), not /src/... like every other browser fixture — this is
+         what an actual npm consumer's `cyexcel/core` import resolves to. -->
+    <script type="module">
+      import { CyExcelCore } from "/dist/core.js";
+
+      const columns = [
+        { id: "a", field: "a", width: 60 },
+        { id: "b", field: "b", width: 60 }
+      ];
+      const data = Array.from({ length: 10 }, (_unused, row) => ({ a: `${row}-a`, b: `${row}-b` }));
+
+      const sheet = new CyExcelCore(document.getElementById("app"), { columns, data });
+
+      window.__sheet = sheet;
+      window.__cyexcelDistEsmReady = true;
+    </script>
+  </body>
+</html>
