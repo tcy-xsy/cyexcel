@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel row-reorder fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 400px;
+        height: 250px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+      const columns = Array.from({ length: 5 }, (_unused, index) => ({
+        id: `c${index}`,
+        field: `c${index}`,
+        width: 60,
+        header: `C${index}`
+      }));
+      const data = Array.from({ length: 30 }, (_unused, row) =>
+        Object.fromEntries(columns.map((column, index) => [column.field, `${row}-${index}`]))
+      );
+
+      let lastPointerId = null;
+      document.addEventListener(
+        "pointerdown",
+        (event) => {
+          lastPointerId = event.pointerId;
+        },
+        true
+      );
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        data,
+        rowHeight: 20,
+        headerHeight: 20,
+        rowHeaderWidth: 40,
+        freeze: { rows: 2 },
+        rowReorder: true
+      });
+
+      const rowReorderTargetAt = (clientY) => {
+        const rowHeader = document.querySelectorAll("#app canvas")[3];
+        const localY = clientY - rowHeader.getBoundingClientRect().top - 20;
+        const scene = sheet.scene;
+        const selection = sheet.selection;
+        const hoveredRow = scene.resolveRow(localY);
+        const midpoint = scene.getRowBoundaryY(hoveredRow) + scene.getRowHeight(hoveredRow) / 2;
+        const target = localY < midpoint ? hoveredRow : hoveredRow + 1;
+        const sourceCount = selection.range.endRow - selection.range.startRow + 1;
+        const finalRow = target > selection.range.startRow ? target - sourceCount : target;
+        return {
+          target,
+          finalRow,
+          scrollTop: document.querySelector("#app").firstElementChild.scrollTop
+        };
+      };
+
+      window.__sheet = sheet;
+      window.__rowReorderTargetAt = rowReorderTargetAt;
+      window.__finishStationaryRowReorder = (clientY) => {
+        if (lastPointerId === null) throw new Error("missing active pointer id");
+        const result = rowReorderTargetAt(clientY);
+        window.dispatchEvent(
+          new PointerEvent("pointerup", {
+            pointerId: lastPointerId,
+            isPrimary: true,
+            button: 0,
+            clientY
+          })
+        );
+        return result;
+      };
+      window.__cyexcelRowReorderReady = true;
+    </script>
+  </body>
+</html>

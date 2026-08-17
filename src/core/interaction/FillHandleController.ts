@@ -1,20 +1,23 @@
-import type { LayoutEngine, ViewportState } from "../layout";
-import { getSelectionBottomRightRect } from "../layout";
+import type { SceneSnapshot, SurfacePoint } from "../scene";
 import { SELECTION_HANDLE_SIZE } from "../render/theme";
-import type { CellRange, Disposer } from "../types";
+import type { CellRange } from "../types";
 import type { SelectionSnapshot } from "./SelectionModel";
 
 export interface FillHandleControllerOptions {
-  readonly layout: LayoutEngine;
-  readonly getSelection: () => SelectionSnapshot;
   /** Fired on every preview change during a drag, and with `null` when the drag ends or produces no extension. */
   readonly onFillPreviewChange?: (range: CellRange | null) => void;
-  /** Fired once, on pointerup, only when the drag actually extended the selection. */
-  readonly onFillCommit: (sourceRange: CellRange, targetRange: CellRange) => void;
+}
+
+/** Immutable mutation intent returned to the input owner after a valid pointerup. */
+export interface FillHandleCommitIntent {
+  readonly sourceRange: CellRange;
+  readonly targetRange: CellRange;
+  readonly structureVersion: number;
 }
 
 interface DragState {
   readonly sourceRange: CellRange;
+  readonly structureVersion: number;
 }
 
 /**
@@ -25,14 +28,6 @@ interface DragState {
  */
 const HANDLE_HIT_PADDING = 3;
 
-function resolveRow(y: number, layout: LayoutEngine, viewport: ViewportState): number {
-  return layout.getRowAtY(Math.max(0, y + viewport.scrollTop));
-}
-
-function resolveColumn(x: number, layout: LayoutEngine, viewport: ViewportState): number {
-  return layout.getColumnAtX(Math.max(0, x + viewport.scrollLeft));
-}
-
 /**
  * Hit-tests a point (in the same contentCanvas-relative coordinate space
  * PointerController uses) against the current selection's fill handle.
@@ -41,20 +36,29 @@ function resolveColumn(x: number, layout: LayoutEngine, viewport: ViewportState)
  * without needing a full drag gesture.
  */
 export function isPointOnFillHandle(
-  point: { readonly x: number; readonly y: number },
+  point: SurfacePoint<"body">,
   range: CellRange,
-  layout: LayoutEngine,
-  viewport: ViewportState
+  scene: SceneSnapshot
 ): boolean {
-  const rect = getSelectionBottomRightRect(range, layout, viewport);
-  const cornerX = rect.x + rect.width;
-  const cornerY = rect.y + rect.height;
-  const half = SELECTION_HANDLE_SIZE / 2 + HANDLE_HIT_PADDING;
+  const fragment = scene.getSelectionHandleFragment(range, SELECTION_HANDLE_SIZE);
+  if (!fragment) {
+    return false;
+  }
+  const left = Math.max(fragment.rect.x - HANDLE_HIT_PADDING, fragment.clipRect.x);
+  const top = Math.max(fragment.rect.y - HANDLE_HIT_PADDING, fragment.clipRect.y);
+  const right = Math.min(
+    fragment.rect.x + fragment.rect.width + HANDLE_HIT_PADDING,
+    fragment.clipRect.x + fragment.clipRect.width
+  );
+  const bottom = Math.min(
+    fragment.rect.y + fragment.rect.height + HANDLE_HIT_PADDING,
+    fragment.clipRect.y + fragment.clipRect.height
+  );
   return (
-    point.x >= cornerX - half &&
-    point.x <= cornerX + half &&
-    point.y >= cornerY - half &&
-    point.y <= cornerY + half
+    point.x >= left &&
+    point.x < right &&
+    point.y >= top &&
+    point.y < bottom
   );
 }
 
@@ -62,28 +66,20 @@ export function isPointOnFillHandle(
  * Drag-to-fill state machine: hit-tests the fill handle, tracks a drag
  * extending the selection down or right (never up/left — see
  * doc/progress.md's fill-handle patch scope notes), and reports a preview
- * range as the pointer moves plus a final commit on pointerup. Mirrors
- * PointerController's own split of pure logic vs. a real-DOM `attach()` so
- * the drag math is unit-testable without a browser.
+ * range as the pointer moves plus a final commit on pointerup. Every input
+ * is explicitly body-surface-local and carries the immutable
+ * Scene/selection/version captured by the caller's interaction frame. The
+ * controller owns gesture state only; DOM listeners, coordinate conversion,
+ * pointer capture, and mutation scheduling belong to the input layer. A
+ * successful pointerup returns an intent instead of committing by callback.
  */
 export class FillHandleController {
-  readonly #layout: LayoutEngine;
-  readonly #getSelection: () => SelectionSnapshot;
   readonly #onFillPreviewChange: (range: CellRange | null) => void;
-  readonly #onFillCommit: (sourceRange: CellRange, targetRange: CellRange) => void;
-  #viewport: ViewportState = { scrollTop: 0, scrollLeft: 0, width: 0, height: 0 };
   #drag: DragState | null = null;
   #previewRange: CellRange | null = null;
 
   constructor(options: FillHandleControllerOptions) {
-    this.#layout = options.layout;
-    this.#getSelection = options.getSelection;
     this.#onFillPreviewChange = options.onFillPreviewChange ?? ((): void => {});
-    this.#onFillCommit = options.onFillCommit;
-  }
-
-  setViewport(viewport: ViewportState): void {
-    this.#viewport = viewport;
   }
 
   get previewRange(): CellRange | null {
@@ -94,26 +90,47 @@ export class FillHandleController {
     return this.#drag !== null;
   }
 
-  isPointOnHandle(point: { readonly x: number; readonly y: number }): boolean {
-    return isPointOnFillHandle(point, this.#getSelection().range, this.#layout, this.#viewport);
+  isPointOnHandle(
+    point: SurfacePoint<"body">,
+    selection: SelectionSnapshot,
+    scene: SceneSnapshot
+  ): boolean {
+    return isPointOnFillHandle(point, selection.range, scene);
   }
 
   /** Returns whether the point hit the handle and a drag was started — callers use this to decide whether to suppress their own pointerdown handling. */
-  handlePointerDown(point: { readonly x: number; readonly y: number }): boolean {
-    if (!this.isPointOnHandle(point)) {
+  handlePointerDown(
+    point: SurfacePoint<"body">,
+    selection: SelectionSnapshot,
+    scene: SceneSnapshot,
+    structureVersion: number
+  ): boolean {
+    if (!this.isPointOnHandle(point, selection, scene)) {
       return false;
     }
-    this.#drag = { sourceRange: this.#getSelection().range };
+    this.#drag = {
+      sourceRange: Object.freeze({ ...selection.range }),
+      structureVersion
+    };
     return true;
   }
 
-  handlePointerMove(point: { readonly x: number; readonly y: number }): void {
-    if (!this.#drag) {
+  handlePointerMove(
+    point: SurfacePoint<"body">,
+    scene: SceneSnapshot,
+    structureVersion: number
+  ): void {
+    const drag = this.#drag;
+    if (!drag) {
       return;
     }
-    const { sourceRange } = this.#drag;
-    const pointerRow = resolveRow(point.y, this.#layout, this.#viewport);
-    const pointerColumn = resolveColumn(point.x, this.#layout, this.#viewport);
+    if (structureVersion !== drag.structureVersion) {
+      this.cancel();
+      return;
+    }
+    const { sourceRange } = drag;
+    const pointerRow = scene.resolveRow(point.y);
+    const pointerColumn = scene.resolveColumn(point.x);
     const rowExtension = Math.max(0, pointerRow - sourceRange.endRow);
     const columnExtension = Math.max(0, pointerColumn - sourceRange.endColumn);
 
@@ -128,55 +145,36 @@ export class FillHandleController {
     this.#onFillPreviewChange(preview);
   }
 
-  handlePointerUp(): void {
-    if (!this.#drag) {
-      return;
+  handlePointerUp(structureVersion: number): FillHandleCommitIntent | null {
+    const drag = this.#drag;
+    if (!drag) {
+      return null;
     }
-    const { sourceRange } = this.#drag;
+    if (structureVersion !== drag.structureVersion) {
+      this.cancel();
+      return null;
+    }
+    const { sourceRange } = drag;
     const target = this.#previewRange;
     this.#drag = null;
     this.#previewRange = null;
     this.#onFillPreviewChange(null);
-    if (target) {
-      this.#onFillCommit(sourceRange, target);
-    }
+    return target
+      ? Object.freeze({
+          sourceRange,
+          targetRange: Object.freeze({ ...target }),
+          structureVersion: drag.structureVersion
+        })
+      : null;
   }
 
-  /**
-   * Registers on `element` (the same contentCanvas PointerController
-   * attaches to) for pointerdown, and on `window` for pointermove/pointerup
-   * — matching PointerController's own attach() so a drag that leaves the
-   * canvas mid-gesture still tracks correctly. Must be attached BEFORE
-   * PointerController's own attach() so a handle hit can
-   * stopImmediatePropagation() and pre-empt PointerController's
-   * click-to-select behavior for that gesture — see CyExcelCore's
-   * constructor ordering.
-   */
-  attach(element: HTMLElement): Disposer {
-    const toPoint = (event: PointerEvent): { x: number; y: number } => {
-      const rect = element.getBoundingClientRect();
-      return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    };
-    const onPointerDown = (event: PointerEvent): void => {
-      if (this.handlePointerDown(toPoint(event))) {
-        event.stopImmediatePropagation();
-      }
-    };
-    const onPointerMove = (event: PointerEvent): void => {
-      this.handlePointerMove(toPoint(event));
-    };
-    const onPointerUp = (): void => {
-      this.handlePointerUp();
-    };
-
-    element.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-
-    return () => {
-      element.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-    };
+  /** Discards an active drag and preview without committing. Idempotent while idle. */
+  cancel(): void {
+    if (!this.#drag) {
+      return;
+    }
+    this.#drag = null;
+    this.#previewRange = null;
+    this.#onFillPreviewChange(null);
   }
 }

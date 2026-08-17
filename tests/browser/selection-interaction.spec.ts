@@ -6,15 +6,20 @@ interface CellPosition {
   readonly column: number;
 }
 
+interface CellRange {
+  readonly startRow: number;
+  readonly startColumn: number;
+  readonly endRow: number;
+  readonly endColumn: number;
+}
+
 interface SelectionSnapshot {
   readonly active: CellPosition;
-  readonly range: {
-    readonly startRow: number;
-    readonly startColumn: number;
-    readonly endRow: number;
-    readonly endColumn: number;
-  };
+  readonly range: CellRange;
+  readonly ranges: readonly CellRange[];
 }
+
+const MOD = process.platform === "darwin" ? "Meta" : "Control";
 
 interface FixtureWindow {
   __cyexcelSelectionReady?: boolean;
@@ -107,4 +112,40 @@ test("keyboard events only affect the focused instance", async ({ page }) => {
 
   expect(afterA.active).toEqual({ row: 0, column: 2 });
   expect(afterB.active).toEqual(beforeB.active);
+});
+
+test(`${MOD}+click adds a disconnected region instead of replacing the selection`, async ({ page }) => {
+  await gotoFixture(page);
+  const box = await page.locator("#grid-a").boundingBox();
+  if (!box) {
+    throw new Error("missing bounding box for #grid-a");
+  }
+
+  await page.mouse.click(box.x + 10, box.y + 10); // selects (0, 0)
+  await page.keyboard.down(MOD);
+  await page.mouse.click(box.x + 260, box.y + 110); // adds (5, 5)
+  await page.keyboard.up(MOD);
+
+  const selection = await readSelection(page, "__gridASelection");
+  expect(selection.ranges).toEqual([
+    { startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 },
+    { startRow: 5, startColumn: 5, endRow: 5, endColumn: 5 }
+  ]);
+});
+
+test("a plain click after a multi-region selection collapses back to a single region", async ({ page }) => {
+  await gotoFixture(page);
+  const box = await page.locator("#grid-a").boundingBox();
+  if (!box) {
+    throw new Error("missing bounding box for #grid-a");
+  }
+
+  await page.mouse.click(box.x + 10, box.y + 10);
+  await page.keyboard.down(MOD);
+  await page.mouse.click(box.x + 260, box.y + 110);
+  await page.keyboard.up(MOD);
+  await page.mouse.click(box.x + 60, box.y + 30); // plain click, no modifier
+
+  const selection = await readSelection(page, "__gridASelection");
+  expect(selection.ranges).toEqual([{ startRow: 1, startColumn: 1, endRow: 1, endColumn: 1 }]);
 });

@@ -19,42 +19,29 @@
     <div id="grid-b" class="grid" tabindex="0"></div>
     <script type="module">
       import {
-        KeyboardController,
-        LayoutEngine,
-        PointerController,
-        SelectionModel
+        CyExcelCore
       } from "/src/core/index.ts";
 
       function setup(containerId, globalName) {
         const container = document.getElementById(containerId);
-        const layout = new LayoutEngine({
-          rowCount: 20,
-          columnCount: 10,
+        const sheet = new CyExcelCore(container, {
+          data: Array.from({ length: 20 }, () => ({})),
+          columns: Array.from({ length: 10 }, (_unused, column) => ({
+            id: `column-${column}`,
+            width: 50
+          })),
           rowHeight: 20,
-          columnWidths: Array.from({ length: 10 }, () => 50)
+          showGridLines: false
         });
-        const selection = new SelectionModel({ rowCount: 20, columnCount: 10 });
-        const viewport = { scrollTop: 0, scrollLeft: 0, width: 500, height: 400 };
-
-        const publish = (snapshot) => {
-          window[globalName] = snapshot;
-        };
-        publish(selection.snapshot);
-
-        const pointer = new PointerController({
-          layout,
-          selection,
-          onSelectionChange: publish
+        Object.defineProperty(window, globalName, {
+          configurable: true,
+          get: () => sheet.selection
         });
-        pointer.setViewport(viewport);
-        pointer.attach(container);
-
-        const keyboard = new KeyboardController({ selection, onSelectionChange: publish });
-        keyboard.attach(container);
+        return sheet;
       }
 
-      setup("grid-a", "__gridASelection");
-      setup("grid-b", "__gridBSelection");
+      window.__gridASheet = setup("grid-a", "__gridASelection");
+      window.__gridBSheet = setup("grid-b", "__gridBSelection");
 
       window.__cyexcelSelectionReady = true;
     </script>

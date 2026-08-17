@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { KeyboardController, SelectionModel } from "../../../../src/core";
-import type { SelectionSnapshot } from "../../../../src/core";
+import { KeyboardController, SelectionModel } from "../../../../src/core/interaction";
+import type { SelectionSnapshot } from "../../../../src/core/interaction";
 
 function createController(rowCount = 20, columnCount = 10) {
   const selection = new SelectionModel({ rowCount, columnCount });

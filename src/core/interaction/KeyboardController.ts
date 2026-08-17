@@ -21,7 +21,7 @@ const ARROW_DELTAS: Readonly<Record<string, readonly [number, number]>> = {
  * Keyboard input for selection. Listeners are always attached to a specific
  * element (never window/document) — that's the entire mechanism behind "an
  * unfocused table doesn't hijack page shortcuts" and "only the focused
- * instance reacts": native DOM event routing already guarantees both.
+ * instance responds": native DOM event routing already guarantees both.
  */
 export class KeyboardController {
   readonly #selection: SelectionModel;

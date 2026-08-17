@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel resize gesture fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 360px;
+        height: 220px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      let rejectedCommand = null;
+      let rejectedTransactionCommand = null;
+      let lastPointerId = null;
+      const timeline = [];
+      document.addEventListener(
+        "pointerdown",
+        (event) => {
+          lastPointerId = event.pointerId;
+        },
+        true
+      );
+
+      const columns = [80, 90, 100, 110, 120].map((width, index) => ({
+        id: `c${index}`,
+        field: `c${index}`,
+        width,
+        header: `C${index}`
+      }));
+      const paintedWidths = [];
+      columns[0].renderer = {
+        kind: "canvas",
+        paint({ rect }) {
+          paintedWidths.push(rect.width);
+        }
+      };
+      const data = Array.from({ length: 30 }, (_unused, row) =>
+        Object.fromEntries(columns.map((column, columnIndex) => [column.field, `${row}:${columnIndex}`]))
+      );
+      const sheet = new CyExcelCore(document.getElementById("app"), {
+        columns,
+        data,
+        rowHeight: 24,
+        headerHeight: 20,
+        rowHeaderWidth: 40
+      });
+
+      sheet.hooks.tap("beforeCommand", { name: "resize-gesture-rejection" }, (context) => {
+        if (context.command.type === rejectedCommand) {
+          context.cancel(`rejected ${rejectedCommand}`);
+        }
+      });
+      sheet.hooks.tap(
+        "beforeTransactionCommit",
+        { name: "resize-gesture-transaction-rejection" },
+        (context) => {
+          if (context.commands.some((command) => command.type === rejectedTransactionCommand)) {
+            context.cancel(`rejected transaction ${rejectedTransactionCommand}`);
+          }
+        }
+      );
+      sheet.events.on("change", ({ patches }) => {
+        timeline.push({ kind: "change", patchTypes: patches.map((patch) => patch.type) });
+      });
+      sheet.events.on("error", ({ error, eventName }) => {
+        timeline.push({ kind: "error", eventName, message: String(error?.message ?? error) });
+      });
+
+      window.__sheet = sheet;
+      window.__resizeTimeline = timeline;
+      window.__rejectResizeCommand = (type) => {
+        rejectedCommand = type;
+      };
+      window.__rejectResizeTransaction = (type) => {
+        rejectedTransactionCommand = type;
+      };
+      window.__lastResizePointerId = () => lastPointerId;
+      window.__resizeCanvasHasCapture = (kind) => {
+        if (lastPointerId === null) return false;
+        const index = kind === "column" ? 2 : 3;
+        const canvas = document.querySelectorAll("#app canvas")[index];
+        return canvas?.hasPointerCapture(lastPointerId) ?? false;
+      };
+      window.__sceneIdentity = () => ({
+        generation: sheet.scene.version,
+        viewportGeneration: sheet.scene.viewportVersion,
+        modelVersion: sheet.scene.modelVersion,
+        layoutVersion: sheet.scene.layoutVersion
+      });
+      window.__lastPaintedWidth = () => paintedWidths.at(-1);
+      window.__dispatchResizePointerCancel = () => {
+        if (lastPointerId === null) return;
+        window.dispatchEvent(
+          new PointerEvent("pointercancel", {
+            pointerId: lastPointerId,
+            isPrimary: true,
+            bubbles: true
+          })
+        );
+      };
+      window.__dispatchUnrelatedResizePointerCancel = () => {
+        if (lastPointerId === null) return;
+        window.dispatchEvent(
+          new PointerEvent("pointercancel", {
+            pointerId: lastPointerId + 100,
+            isPrimary: true,
+            bubbles: true
+          })
+        );
+      };
+      window.__throwOnResizePointerCapture = (kind) => {
+        const index = kind === "column" ? 2 : 3;
+        const canvas = document.querySelectorAll("#app canvas")[index];
+        Object.defineProperty(canvas, "setPointerCapture", {
+          configurable: true,
+          value() {
+            throw new Error("forced pointer capture failure");
+          }
+        });
+      };
+      window.__cyexcelResizeGestureReady = true;
+    </script>
+  </body>
+</html>

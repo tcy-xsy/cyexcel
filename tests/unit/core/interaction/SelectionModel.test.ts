@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { CyExcelError, SelectionModel } from "../../../../src/core";
+import { CyExcelError } from "../../../../src/core/errors";
+import { SelectionModel } from "../../../../src/core/interaction";
 
 function createModel(rowCount = 20, columnCount = 10): SelectionModel {
   return new SelectionModel({ rowCount, columnCount });
@@ -218,5 +219,207 @@ describe("SelectionModel.setBounds", () => {
     const model = createModel(5, 5);
 
     expect(() => model.setBounds({ rowCount: -1, columnCount: 5 })).toThrow(CyExcelError);
+  });
+});
+
+describe("SelectionModel.setBounds — columnChange", () => {
+  it("with an insert columnChange, follows the selected column to its new position", () => {
+    const model = createModel(5, 10);
+    model.selectCell(2, 6);
+
+    model.setBounds(
+      { rowCount: 5, columnCount: 12 },
+      undefined,
+      { operation: "insert", start: 2, count: 2 }
+    );
+
+    expect(model.snapshot.active.column).toBe(8); // column 6 -> 8 after inserting 2 columns before it
+  });
+
+  it("with a delete columnChange, a selection outside the deleted band follows its column", () => {
+    const model = createModel(5, 10);
+    model.selectCell(2, 8);
+
+    model.setBounds(
+      { rowCount: 5, columnCount: 7 },
+      undefined,
+      { operation: "delete", start: 2, count: 3 }
+    );
+
+    expect(model.snapshot.active.column).toBe(5); // column 8 -> 5 after deleting 3 columns before it
+  });
+
+  it("with a move columnChange, a selection on the moved column follows it to the new position", () => {
+    const model = createModel(5, 6);
+    model.selectCell(2, 1); // one of the two columns being moved (columns 1-2)
+
+    model.setBounds(
+      { rowCount: 5, columnCount: 6 },
+      undefined,
+      { operation: "move", start: 1, count: 2, target: 5 }
+    );
+
+    expect(model.snapshot.active.column).toBe(3);
+  });
+
+  it("also remaps the anchor, not just the active cell", () => {
+    const model = createModel(5, 10);
+    model.selectCell(1, 4);
+    model.extendTo(3, 6); // anchor stays at (1,4), active moves to (3,6)
+
+    model.setBounds(
+      { rowCount: 5, columnCount: 12 },
+      undefined,
+      { operation: "insert", start: 0, count: 2 }
+    );
+
+    expect(model.snapshot.anchor.column).toBe(6);
+    expect(model.snapshot.active.column).toBe(8);
+  });
+
+  it("remaps every frozen region in #otherRanges, not just the active one", () => {
+    const model = createModel(5, 10);
+    model.selectCell(1, 1);
+    model.addRange(1, 6);
+
+    model.setBounds(
+      { rowCount: 5, columnCount: 12 },
+      undefined,
+      { operation: "insert", start: 0, count: 2 }
+    );
+
+    expect(model.snapshot.ranges).toEqual([
+      { startRow: 1, startColumn: 3, endRow: 1, endColumn: 3 },
+      { startRow: 1, startColumn: 8, endRow: 1, endColumn: 8 }
+    ]);
+  });
+
+  it("rowChange and columnChange can both apply in the same setBounds call", () => {
+    const model = createModel(10, 10);
+    model.selectCell(5, 5);
+
+    model.setBounds(
+      { rowCount: 12, columnCount: 12 },
+      { operation: "insert", start: 0, count: 2 },
+      { operation: "insert", start: 0, count: 2 }
+    );
+
+    expect(model.snapshot.active).toEqual({ row: 7, column: 7 });
+  });
+});
+
+describe("SelectionModel multi-region selection", () => {
+  it("range always equals the last entry in ranges", () => {
+    const model = createModel();
+
+    const snapshot = model.selectCell(2, 2);
+
+    expect(snapshot.ranges).toEqual([snapshot.range]);
+  });
+
+  it("addRange freezes the current active range and starts a new one", () => {
+    const model = createModel();
+    model.selectCell(1, 1);
+
+    const snapshot = model.addRange(3, 3);
+
+    expect(snapshot.ranges).toEqual([
+      { startRow: 1, startColumn: 1, endRow: 1, endColumn: 1 },
+      { startRow: 3, startColumn: 3, endRow: 3, endColumn: 3 }
+    ]);
+    expect(snapshot.range).toEqual({ startRow: 3, startColumn: 3, endRow: 3, endColumn: 3 });
+    expect(snapshot.kind).toBe("cell");
+  });
+
+  it("extendTo after addRange only extends the new active range, not the frozen one", () => {
+    const model = createModel();
+    model.selectCell(1, 1);
+    model.addRange(3, 3);
+
+    const snapshot = model.extendTo(5, 5);
+
+    expect(snapshot.ranges).toEqual([
+      { startRow: 1, startColumn: 1, endRow: 1, endColumn: 1 },
+      { startRow: 3, startColumn: 3, endRow: 5, endColumn: 5 }
+    ]);
+  });
+
+  it("addRow freezes the active range and starts a new full-width row selection", () => {
+    const model = createModel(20, 10);
+    model.selectCell(1, 1);
+
+    const snapshot = model.addRow(4);
+
+    expect(snapshot.kind).toBe("row");
+    expect(snapshot.ranges).toEqual([
+      { startRow: 1, startColumn: 1, endRow: 1, endColumn: 1 },
+      { startRow: 4, startColumn: 0, endRow: 4, endColumn: 9 }
+    ]);
+  });
+
+  it("addColumn freezes the active range and starts a new full-height column selection", () => {
+    const model = createModel(20, 10);
+    model.selectCell(1, 1);
+
+    const snapshot = model.addColumn(3);
+
+    expect(snapshot.kind).toBe("column");
+    expect(snapshot.ranges).toEqual([
+      { startRow: 1, startColumn: 1, endRow: 1, endColumn: 1 },
+      { startRow: 0, startColumn: 3, endRow: 19, endColumn: 3 }
+    ]);
+  });
+
+  it.each([
+    ["selectCell", (model: SelectionModel) => model.selectCell(0, 0)],
+    ["selectRow", (model: SelectionModel) => model.selectRow(0)],
+    ["selectColumn", (model: SelectionModel) => model.selectColumn(0)],
+    ["selectAll", (model: SelectionModel) => model.selectAll()]
+  ])("%s clears any previously frozen regions", (_label, act) => {
+    const model = createModel();
+    model.selectCell(1, 1);
+    model.addRange(3, 3);
+    expect(model.snapshot.ranges.length).toBe(2);
+
+    const snapshot = act(model);
+
+    expect(snapshot.ranges.length).toBe(1);
+  });
+
+  it("moveActiveTo without extend clears frozen regions (plain arrow-key navigation collapses multi-select)", () => {
+    const model = createModel();
+    model.selectCell(1, 1);
+    model.addRange(3, 3);
+
+    const snapshot = model.moveActiveTo(5, 5);
+
+    expect(snapshot.ranges.length).toBe(1);
+  });
+
+  it("moveActiveTo with extend keeps frozen regions intact and only extends the active one", () => {
+    const model = createModel();
+    model.selectCell(1, 1);
+    model.addRange(3, 3);
+
+    const snapshot = model.moveActiveTo(5, 5, true);
+
+    expect(snapshot.ranges.length).toBe(2);
+    expect(snapshot.range).toEqual({ startRow: 3, startColumn: 3, endRow: 5, endColumn: 5 });
+  });
+
+  it("setBounds with a rowChange remaps every frozen region, not just the active one", () => {
+    const model = createModel(10, 5);
+    model.selectCell(1, 1);
+    model.addRange(6, 2);
+
+    model.setBounds(
+      { rowCount: 12, columnCount: 5 },
+      { operation: "insert", start: 0, count: 2 }
+    );
+
+    expect(model.snapshot.ranges).toEqual([
+      { startRow: 3, startColumn: 1, endRow: 3, endColumn: 1 },
+      { startRow: 8, startColumn: 2, endRow: 8, endColumn: 2 }
+    ]);
   });
 });
