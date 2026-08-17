@@ -2,11 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   assertValidCoordinate,
-  assertValidCyExcelOptions,
-  assertValidRange,
-  CyExcelError,
-  CyExcelErrorCode
-} from "../../../src/core";
+  assertValidRange
+} from "../../../src/core/validation";
+import { CyExcelError, CyExcelErrorCode } from "../../../src/core/errors";
 
 function expectSync(result: unknown): void {
   expect(result).toBeUndefined();
@@ -63,41 +61,6 @@ describe("assertValidRange", () => {
     } catch (error) {
       expect(error).toBeInstanceOf(CyExcelError);
       expect((error as CyExcelError).code).toBe(CyExcelErrorCode.InvalidRange);
-    }
-  });
-});
-
-describe("assertValidCyExcelOptions", () => {
-  it("accepts options with no constrained fields set", () => {
-    expectSync(assertValidCyExcelOptions({}));
-  });
-
-  it("accepts valid rowHeight, overscan, and freeze values", () => {
-    expectSync(
-      assertValidCyExcelOptions({
-        rowHeight: 32,
-        headerHeight: 40,
-        overscanRows: 5,
-        overscanColumns: 2,
-        freeze: { rows: 1, columns: 1 }
-      })
-    );
-  });
-
-  it.each([
-    ["negative rowHeight", { rowHeight: -1 }],
-    ["non-finite headerHeight", { headerHeight: Number.POSITIVE_INFINITY }],
-    ["non-integer overscanRows", { overscanRows: 1.5 }],
-    ["negative overscanColumns", { overscanColumns: -1 }],
-    ["negative freeze.rows", { freeze: { rows: -1 } }],
-    ["negative freeze.columns", { freeze: { columns: -1 } }]
-  ])("rejects %s with a stable error code", (_label, options) => {
-    try {
-      assertValidCyExcelOptions(options);
-      expect.unreachable("expected assertValidCyExcelOptions to throw");
-    } catch (error) {
-      expect(error).toBeInstanceOf(CyExcelError);
-      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.InvalidOptions);
     }
   });
 });

@@ -36,6 +36,7 @@
       const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
 
       window.__sheet = sheet;
+      window.__originalData = data;
       window.__cyexcelFullLoopReady = true;
     </script>
   </body>

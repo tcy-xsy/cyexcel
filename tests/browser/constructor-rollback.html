@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel constructor rollback fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+      }
+
+      #app {
+        width: 320px;
+        height: 180px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"><span data-constructor-sentinel></span></div>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      function captureError(error) {
+        return {
+          name: error instanceof Error ? error.name : typeof error,
+          message: error instanceof Error ? error.message : String(error),
+          code:
+            typeof error === "object" && error !== null && "code" in error
+              ? String(error.code)
+              : null
+        };
+      }
+
+      function runFailedConstruction(create) {
+        const app = document.getElementById("app");
+        const baselineChildren = new Set(app.children);
+        const pointerdownListeners = new Set();
+        let pointerdownAdds = 0;
+        let pairedPointerdownRemoves = 0;
+        const originalAddEventListener = window.addEventListener;
+        const originalRemoveEventListener = window.removeEventListener;
+
+        function usesCapture(options) {
+          return typeof options === "boolean" ? options : Boolean(options?.capture);
+        }
+
+        window.addEventListener = function (type, listener, options) {
+          if (type === "pointerdown" && usesCapture(options)) {
+            pointerdownAdds += 1;
+            pointerdownListeners.add(listener);
+          }
+          return originalAddEventListener.call(this, type, listener, options);
+        };
+        window.removeEventListener = function (type, listener, options) {
+          if (
+            type === "pointerdown" &&
+            usesCapture(options) &&
+            pointerdownListeners.delete(listener)
+          ) {
+            pairedPointerdownRemoves += 1;
+          }
+          return originalRemoveEventListener.call(this, type, listener, options);
+        };
+
+        let error = null;
+        try {
+          create(app);
+        } catch (caught) {
+          error = captureError(caught);
+        } finally {
+          window.addEventListener = originalAddEventListener;
+          window.removeEventListener = originalRemoveEventListener;
+        }
+
+        return {
+          error,
+          host: {
+            baselineChildCount: baselineChildren.size,
+            childCount: app.children.length,
+            addedChildCount: [...app.children].filter((child) => !baselineChildren.has(child)).length,
+            sentinelPresent: app.querySelector("[data-constructor-sentinel]") !== null
+          },
+          pointerdown: {
+            added: pointerdownAdds,
+            pairedRemoved: pairedPointerdownRemoves,
+            outstanding: pointerdownListeners.size
+          }
+        };
+      }
+
+      window.__runPluginSetupRollback = () => {
+        let cleanupCalls = 0;
+        const result = runFailedConstruction((app) => {
+          new CyExcelCore(app, {
+            columns: [{ id: "value" }],
+            data: [{ value: "kept" }],
+            plugins: [
+              {
+                name: "installed-first",
+                setup() {
+                  return () => {
+                    cleanupCalls += 1;
+                  };
+                }
+              },
+              {
+                name: "throws-second",
+                setup() {
+                  throw new Error("plugin-b-setup-failed");
+                }
+              }
+            ]
+          });
+        });
+        return { ...result, cleanupCalls };
+      };
+
+      window.__runUnknownCellTypeRollback = () => {
+        let cleanupCalls = 0;
+        const result = runFailedConstruction((app) => {
+          new CyExcelCore(app, {
+            columns: [{ id: "value", type: "missing-cell-type" }],
+            data: [{ value: "kept" }],
+            plugins: [
+              {
+                name: "installed-before-column-resolution",
+                setup() {
+                  return () => {
+                    cleanupCalls += 1;
+                  };
+                }
+              }
+            ]
+          });
+        });
+        return { ...result, cleanupCalls };
+      };
+
+      window.__cyexcelConstructorRollbackReady = true;
+    </script>
+  </body>
+</html>

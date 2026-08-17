@@ -1,10 +1,11 @@
 import {
   CellTypeRegistry,
   ColumnManager,
+  DEFAULT_COLUMN_WIDTH,
   DOMCellManager,
   createColumnAwarePainter,
-  dispatchCellAction,
   registerBuiltinCellTypes,
+  snapshotColumnDefinitions,
   type CellTypeDefinition,
   type ColumnDefinition,
   type RuntimeColumn
@@ -27,48 +28,135 @@ import {
   InsertRowsCommand,
   DeleteRowsCommand,
   MoveRowsCommand,
-  CommandManager
+  InsertColumnsCommand,
+  DeleteColumnsCommand,
+  MoveColumnsCommand,
+  HideColumnCommand,
+  ShowColumnCommand,
+  ResizeRowCommand,
+  SetRowHeightsCommand,
+  ResizeColumnCommand,
+  dispatchCellAction,
+  type CommandManager
 } from "./commands";
-import { ArrayDataSource, TableStore, type ArrayDataSourceColumn } from "./data";
+import { ArrayDataSource, TableStore, createChangeSet, type ArrayDataSourceColumn } from "./data";
 import type { CellEditorFactory } from "./editors";
 import { EditorManager } from "./editors";
+import { CyExcelError, CyExcelErrorCode } from "./errors";
 import { EventBus } from "./events";
 import {
   DomHeaderManager,
   HeaderCanvasRenderer,
   HeaderManager,
   RowHeaderCanvasRenderer,
+  type HeaderAction,
   type HeaderGroupDefinition,
   type RuntimeHeader
 } from "./headers";
 import { HookManager, PRODUCTION_HOOK_REGISTRY } from "./hooks";
 import {
   FillHandleController,
+  HeaderResizeController,
+  HeaderSelectionController,
+  InputRouter,
+  InteractionFrameProvider,
   KeyboardController,
   PointerController,
+  PointerInteractionSession,
+  RowReorderController,
   SelectionModel,
   computeFillValues,
-  isPointOnFillHandle
+  declineInput,
+  getDeclaredDomPointerInputTarget,
+  handleInput,
+  nativeInputTarget,
+  noInputTarget,
+  surfaceInputTarget,
+  isPointOnFillHandle,
+  type InteractionFrame,
+  type HeaderResizeIntent,
+  type InputCandidateContext,
+  type InputSurfacePolicyContext,
+  type InputTargetResolution,
+  type SelectionSnapshot
 } from "./interaction";
-import { LayoutEngine, toViewportRect, type ViewportState } from "./layout";
+import {
+  LayoutEngine,
+  SkeletonSnapshot,
+  validateAxisChange,
+  ViewportSnapshot,
+  type LayoutRoot,
+  type ViewportState
+} from "./layout";
+import { InitializationRollback } from "./lifecycle";
 import { ContextMenuService, classifyContextMenuTarget } from "./menu";
+import { DeferredMutationQueue } from "./model";
 import { PluginManager, type CyExcelPlugin } from "./plugins";
 import {
+  SceneSnapshot,
+  SurfaceHost,
+  clientPoint,
+  type SurfacePoint,
+  type SurfaceId,
+  type SurfaceSetSnapshot
+} from "./scene";
+import { ShortcutRegistry, type ShortcutHandler } from "./shortcuts";
+import {
   ContentLayerRenderer,
+  CanvasSurface,
   RenderScheduler,
   SelectionLayerRenderer,
-  configureCanvasForDpr,
+  computeWrappedCellHeight,
   type Canvas2DLike
 } from "./render";
-import type { CellRange, Command, DataSource, Disposer, Patch, RowData } from "./types";
+import { CELL_FONT, CELL_PADDING } from "./render/theme";
+import type {
+  CellRange,
+  Command,
+  DataSource,
+  Disposer,
+  Patch,
+  RowData
+} from "./types";
+import { GridStructureOwner, createGridCommandManager } from "./integration";
+import {
+  validateCyExcelCoreDataDimensions,
+  validateCyExcelCoreHeaderGeometry,
+  validateCyExcelCoreOptions
+} from "./validateCyExcelCoreOptions";
 
 export type CyExcelColumnConfig = ColumnDefinition;
 
+/** Emitted after a custom canvas header hitTest returns an action. */
+export interface CyExcelHeaderActionEvent {
+  readonly action: HeaderAction;
+  readonly column: number;
+  readonly header: RuntimeHeader;
+  readonly structureVersion: number;
+}
+
 export interface CyExcelCoreOptions {
   readonly columns?: readonly CyExcelColumnConfig[];
+  /**
+   * Row objects are kept by reference, not deep-cloned (matches
+   * ArrayDataSource's own contract when constructed directly via
+   * `dataSource`, and ADR 0001 §5's "complex values are atomic, no deep
+   * observation" applied one level up to the row wrapper itself — see
+   * Univer's `Worksheet` constructor / `ObjectMatrix` for the same choice
+   * in an established OSS spreadsheet). Two consequences: `setCell()` etc.
+   * mutate the exact row objects passed in here, and — the one to actually
+   * watch for — mutating a row object in this array yourself *after*
+   * construction changes what the sheet reads back, but bypasses Command/
+   * Patch/History entirely, so nothing repaints, nothing becomes
+   * undoable, and no `change` event fires. Always go through
+   * `setCell()`/`setRange()`/`paste()` for edits; never mutate `data`'s
+   * row objects directly once they're handed to the constructor.
+   */
   readonly data?: readonly RowData[];
   readonly dataSource?: DataSource;
   readonly rowHeight?: number;
+  /** Row index -> explicit height, only for rows that differ from `rowHeight`. See LayoutOptions.rowHeights. */
+  readonly rowHeights?: ReadonlyMap<number, number>;
   readonly freeze?: {
     readonly rows?: number;
     readonly columns?: number;
@@ -98,10 +186,30 @@ export interface CyExcelCoreOptions {
    * band that displays it is.
    */
   readonly headerHeight?: number;
-  /** Two-level column groups drawn in a row above the column titles — only shown when `headerHeight > 0`. */
+  /** Arbitrary-depth nested column groups (Step 19), drawn in rows above the column titles — only shown when `headerHeight > 0`. */
   readonly headerGroups?: readonly HeaderGroupDefinition[];
+  /**
+   * When a column has no explicit `header`, show its spreadsheet-style
+   * letter (A, B, ..., Z, AA, ...) instead of falling back to its `id`.
+   * Default `false` — unset behavior (fall back to `id`) is unchanged. An
+   * explicit `header` always overrides the letter for that one column —
+   * letter and custom title are mutually exclusive per column (one row),
+   * not a separate always-visible letter row stacked on top — matching
+   * Univer's `customizeColumnHeader()` model.
+   */
+  readonly columnLetterFallback?: boolean;
   /** Pixel width of the row-number column on the left. 0 (default) means no row header band at all — same "unset is a no-op" precedent as headerHeight. */
   readonly rowHeaderWidth?: number;
+  /**
+   * Enables dragging the top/bottom edge of the current row selection to
+   * reorder rows (insert-style, via the same `moveRows()` Command path as
+   * the programmatic API and the row-header context menu — never an
+   * Excel-style destructive overwrite move). Default `false`: the row
+   * header's existing drag-to-select-multiple-rows gesture is completely
+   * unaffected either way, and with this off it's the only gesture the row
+   * header has, unchanged from before this option existed.
+   */
+  readonly rowReorder?: boolean;
   /** Draw a light gridline around every body cell. Default: true. */
   readonly showGridLines?: boolean;
   readonly clipboard?: ClipboardOptions;
@@ -110,9 +218,11 @@ export interface CyExcelCoreOptions {
 }
 
 const DEFAULT_ROW_HEIGHT = 24;
-const DEFAULT_COLUMN_WIDTH = 120;
-const DEFAULT_MIN_COLUMN_WIDTH = 20;
-const RESIZE_HANDLE_TOLERANCE = 4;
+const AUTO_HEIGHT_MAX_SYNC_PASSES = 2;
+/** How close to the body's top/bottom edge (in screen pixels) a row-reorder drag auto-scrolls the container — same idea as native drag-and-drop auto-scroll. */
+const ROW_REORDER_AUTO_SCROLL_EDGE_PX = 32;
+/** Fastest auto-scroll speed (px per animation frame), reached right at the edge; scales down to 0 at ROW_REORDER_AUTO_SCROLL_EDGE_PX away from it. */
+const ROW_REORDER_AUTO_SCROLL_MAX_SPEED = 16;
 
 interface DomLayer {
   readonly scroller: HTMLDivElement;
@@ -236,7 +346,12 @@ function createDom(container: HTMLElement, headerHeight: number, rowHeaderWidth:
   // the bottom of the scrollable content), it would never need to "stick"
   // while scrolled to the top and would sit far below the viewport instead.
   scroller.append(stickyLayer, spacer);
-  container.append(scroller);
+  try {
+    container.append(scroller);
+  } catch (error) {
+    scroller.remove();
+    throw error;
+  }
 
   return {
     scroller,
@@ -250,6 +365,17 @@ function createDom(container: HTMLElement, headerHeight: number, rowHeaderWidth:
     editorLayer,
     menuLayer
   };
+}
+
+function isNativePointerPathEntry(entry: unknown): boolean {
+  if (!(entry instanceof Element)) {
+    return false;
+  }
+  if (["input", "select", "textarea", "button", "option"].includes(entry.localName)) {
+    return true;
+  }
+  const contentEditable = entry.getAttribute("contenteditable");
+  return contentEditable !== null && contentEditable.toLowerCase() !== "false";
 }
 
 /**
@@ -329,7 +455,20 @@ function buildDataSource(
   if (options.dataSource) {
     return options.dataSource;
   }
-  const rows: RowData[] = options.data ? options.data.map((row) => ({ ...row })) : [];
+  // Shallow-copies only the *array* (cheap: one reference per row), not
+  // each row object — ArrayDataSource.insertRows()/deleteRows()/moveRows()
+  // splice() this array in place, so without even this much copying a
+  // structural edit would silently resize/reorder the caller's own array.
+  // Row objects themselves are intentionally left un-cloned: setCell()
+  // mutating them in place is ArrayDataSource's own tested contract
+  // (tests/unit/core/data/ArrayDataSource.test.ts), so cloning them here
+  // only for the `data` convenience path would make that path behave
+  // differently from constructing ArrayDataSource directly — for no
+  // documented reason, and at O(rows * columns) cost (the previous
+  // `options.data.map((row) => ({ ...row }))` here was the dominant cost
+  // behind Step 15's 1,000,000 x 50 first-paint benchmark taking 6-10s to
+  // construct; see doc/progress.md's Step 15 entry).
+  const rows: RowData[] = options.data ? [...options.data] : [];
   const arrayColumns: ArrayDataSourceColumn[] = columns.map((column) => ({
     id: column.id,
     field: column.field ?? column.id
@@ -346,6 +485,7 @@ function buildLayout(
     rowCount,
     columnCount: columns.length,
     rowHeight: options.rowHeight ?? DEFAULT_ROW_HEIGHT,
+    ...(options.rowHeights !== undefined ? { rowHeights: options.rowHeights } : {}),
     columnWidths: columns.map((column) => column.width ?? DEFAULT_COLUMN_WIDTH),
     ...(options.freeze !== undefined ? { freeze: options.freeze } : {}),
     ...(options.overscanRows !== undefined ? { overscanRows: options.overscanRows } : {}),
@@ -354,6 +494,25 @@ function buildLayout(
       : {})
   });
 }
+
+type CoreInteractionFrame = InteractionFrame<
+  SceneSnapshot,
+  SurfaceSetSnapshot,
+  SelectionSnapshot
+>;
+
+type CorePointerInputContext = InputCandidateContext<
+  CoreInteractionFrame,
+  PointerEvent,
+  EventTarget
+>;
+
+type HeaderGestureKind =
+  | "column-resize"
+  | "column-selection"
+  | "row-resize"
+  | "row-reorder"
+  | "row-selection";
 
 /**
  * The integration layer: DataSource -> TableStore -> CommandManager -> Patch
@@ -371,8 +530,15 @@ export class CyExcelCore {
   readonly #rowHeaderCanvas: HTMLCanvasElement;
   readonly #contentCanvas: HTMLCanvasElement;
   readonly #selectionCanvas: HTMLCanvasElement;
+  readonly #inputSurfaceOwners = new WeakMap<EventTarget, SurfaceId>();
+  readonly #surfaceHost: SurfaceHost;
+  /** Never appended to any DOM tree — exists purely so wrap-height measurement (#computeRequiredRowHeight()) has a real `measureText()` to call without touching #contentCanvas's own drawing state. */
+  readonly #measureCtx: Canvas2DLike;
+  /** Rows measured for the current data/column structure epoch. */
+  readonly #measuredWrapRows = new Set<number>();
 
-  readonly #columns: readonly CyExcelColumnConfig[];
+  #columns: readonly CyExcelColumnConfig[];
+  readonly #headerGroups: readonly HeaderGroupDefinition[];
   readonly #cellTypeRegistry: CellTypeRegistry;
   readonly #columnManager: ColumnManager;
   readonly #headerManager: HeaderManager;
@@ -383,15 +549,38 @@ export class CyExcelCore {
   readonly #store: TableStore;
   readonly #commandManager: CommandManager;
   readonly #layout: LayoutEngine;
+  #scene!: SceneSnapshot;
+  /**
+   * Publication identity, independent from the model/layout identities held
+   * by a Scene's Skeleton. Gesture previews and authoritative projections
+   * share this sequence, so no consumer can mistake different geometry for
+   * the same Scene merely because both came from one committed root.
+  */
+  #sceneGeneration = 0;
+  #publishedSceneGeneration = 0;
   readonly #renderScheduler: RenderScheduler;
   readonly #contentRenderer: ContentLayerRenderer;
   readonly #selectionRenderer: SelectionLayerRenderer;
   readonly #headerCanvasRenderer: HeaderCanvasRenderer;
   readonly #rowHeaderCanvasRenderer: RowHeaderCanvasRenderer;
+  readonly #headerCanvasSurface: CanvasSurface;
+  readonly #rowHeaderCanvasSurface: CanvasSurface;
+  readonly #contentCanvasSurface: CanvasSurface;
+  readonly #selectionCanvasSurface: CanvasSurface;
   readonly #domHeaderManager: DomHeaderManager;
   readonly #selectionModel: SelectionModel;
+  readonly #structureOwner: GridStructureOwner;
   readonly #pointerController: PointerController;
   readonly #fillHandleController: FillHandleController;
+  readonly #headerResizeController: HeaderResizeController;
+  readonly #headerSelectionController: HeaderSelectionController;
+  readonly #inputRouter: InputRouter<
+    CoreInteractionFrame,
+    PointerEvent,
+    void,
+    EventTarget
+  >;
+  readonly #rowReorderController: RowReorderController | undefined;
   readonly #keyboardController: KeyboardController;
   readonly #editorManager: EditorManager;
   readonly #domCellManager: DOMCellManager;
@@ -400,21 +589,53 @@ export class CyExcelCore {
   readonly #events: EventBus;
   readonly #contextMenuService: ContextMenuService;
   readonly #pluginManager: PluginManager;
+  readonly #shortcuts: ShortcutRegistry;
   readonly #scrollCommitPolicy: "commit" | "cancel";
-  readonly #detachPointer: Disposer;
-  readonly #detachFillHandle: Disposer;
+  readonly #overscanRows: number;
+  readonly #overscanColumns: number;
 
-  #resizeDrag: { readonly column: number; readonly startX: number; readonly startWidth: number } | null =
-    null;
+  #bodyInteractionSession: PointerInteractionSession | null = null;
+  #bodyGesture: {
+    readonly kind: "fill" | "selection";
+    readonly structureVersion: number;
+  } | null = null;
+  #headerInteractionSession: PointerInteractionSession | null = null;
+  #headerGesture: {
+    readonly kind: HeaderGestureKind;
+    readonly structureVersion: number;
+  } | null = null;
+  /** Last pointer position seen during an armed row-reorder drag — the auto-scroll loop re-evaluates against this on every animation frame, not just on the pointermove events that update it, since scrolling needs to keep happening even while the pointer itself stays still near an edge. */
+  #rowReorderLastClientY: number | null = null;
+  #rowReorderAutoScrollFrame: number | null = null;
+  #autoHeightContinuationFrame: number | null = null;
+  #finalizationDepth = 0;
+  readonly #mutationIntents: DeferredMutationQueue;
+  readonly #interactionFrames: InteractionFrameProvider<
+    SceneSnapshot,
+    SurfaceSetSnapshot,
+    SelectionSnapshot
+  >;
+  #structureGeneration = 0;
   #disposed = false;
 
   constructor(container: HTMLElement, options: CyExcelCoreOptions = {}) {
-    this.#columns = options.columns ?? [];
+    validateCyExcelCoreOptions(options);
+
+    // Copied, not aliased — insertColumns()/deleteColumns()/moveColumns()
+    // splice this array in place (mirrors buildDataSource()'s identical
+    // reasoning for `options.data`, a few lines below), so without this
+    // much copying a structural column change would silently resize/
+    // reorder the caller's own `options.columns` array.
+    this.#columns = snapshotColumnDefinitions(options.columns ?? []);
+    this.#headerGroups = options.headerGroups ?? [];
     this.#scrollCommitPolicy = options.scrollCommitPolicy ?? "commit";
+    this.#overscanRows = options.overscanRows ?? 0;
+    this.#overscanColumns = options.overscanColumns ?? 0;
 
     this.#headerManager = new HeaderManager({
       columns: this.#columns,
-      groups: options.headerGroups ?? []
+      groups: this.#headerGroups,
+      columnLetterFallback: options.columnLetterFallback ?? false
     });
     this.#columnHeaderHeight = options.headerHeight ?? 0;
     this.#groupHeaderHeight =
@@ -422,18 +643,68 @@ export class CyExcelCore {
         ? this.#columnHeaderHeight
         : 0;
     this.#rowHeaderWidth = options.rowHeaderWidth ?? 0;
+    validateCyExcelCoreHeaderGeometry(
+      this.#columnHeaderHeight,
+      this.#headerManager.groupDepth
+    );
 
+    const dataSource = buildDataSource(options, this.#columns);
+    const initialDimensions = {
+      rowCount: dataSource.getRowCount(),
+      columnCount: dataSource.getColumnCount()
+    };
+    validateCyExcelCoreDataDimensions(
+      options,
+      initialDimensions,
+      this.#columns.length
+    );
+    this.#dataSource = dataSource;
+    this.#layout = buildLayout(options, this.#columns, initialDimensions.rowCount);
+
+    const initialization = new InitializationRollback();
+    try {
     const dom = createDom(
       container,
-      this.#columnHeaderHeight + this.#groupHeaderHeight,
+      this.#headerHeight(), // #headerManager/#columnHeaderHeight/#groupHeaderHeight are all assigned above
       this.#rowHeaderWidth
     );
+    initialization.defer(() => dom.scroller.remove());
+    initialization.defer(() => {
+      if (this.#autoHeightContinuationFrame !== null) {
+        cancelAnimationFrame(this.#autoHeightContinuationFrame);
+        this.#autoHeightContinuationFrame = null;
+      }
+    });
     this.#scroller = dom.scroller;
     this.#spacer = dom.spacer;
     this.#headerCanvas = dom.headerCanvas;
     this.#rowHeaderCanvas = dom.rowHeaderCanvas;
     this.#contentCanvas = dom.contentCanvas;
     this.#selectionCanvas = dom.selectionCanvas;
+    this.#inputSurfaceOwners.set(dom.contentCanvas, "body");
+    this.#inputSurfaceOwners.set(dom.domCellLayer, "body");
+    this.#inputSurfaceOwners.set(dom.editorLayer, "body");
+    this.#inputSurfaceOwners.set(dom.headerCanvas, "column-header");
+    this.#inputSurfaceOwners.set(dom.headerDomLayer, "column-header");
+    this.#inputSurfaceOwners.set(dom.menuLayer, "menu-overlay");
+    this.#surfaceHost = new SurfaceHost();
+    initialization.defer(() => this.#surfaceHost.dispose());
+    this.#surfaceHost.attach("body", this.#contentCanvas);
+    this.#surfaceHost.attach("column-header", this.#headerCanvas, { zIndex: 1 });
+    this.#surfaceHost.attach("row-header", this.#rowHeaderCanvas, {
+      region: { x: 0, y: this.#headerHeight() },
+      zIndex: 1
+    });
+    this.#surfaceHost.attach("corner", this.#rowHeaderCanvas, {
+      region: {
+        x: 0,
+        y: 0,
+        width: this.#rowHeaderWidth,
+        height: this.#headerHeight()
+      },
+      zIndex: 2
+    });
+    this.#surfaceHost.attach("menu-overlay", this.#scroller, { zIndex: 3 });
 
     // Constructed early — before the rest of the grid — so that any
     // `options.plugins` entry tapping "beforeInit" (fired a few lines
@@ -445,12 +716,39 @@ export class CyExcelCore {
     // registered Hook/listener/menu action actually runs, by which time
     // construction has finished.
     this.#hooks = new HookManager({ registry: PRODUCTION_HOOK_REGISTRY });
+    initialization.defer(() => this.#hooks.dispose());
     this.#events = new EventBus();
+    initialization.defer(() => this.#events.dispose());
+    this.#shortcuts = new ShortcutRegistry();
+    initialization.defer(() => this.#shortcuts.dispose());
     this.#contextMenuService = new ContextMenuService({
       container: dom.menuLayer,
       hooks: this.#hooks,
-      restoreFocus: () => this.#contentCanvas.focus()
+      restoreFocus: () => this.#contentCanvas.focus(),
+      // Keeps a menu opened near the right/bottom edge fully within the
+      // visible scroller instead of overflowing into (and being silently
+      // clipped, including its click handling, by) the scroller's own
+      // `overflow: auto` — see DefaultMenuRenderer's #clampToBounds() doc
+      // comment for the real user report this fixes.
+      getBounds: () => {
+        const surface = this.#surfaceHost.refresh().get("menu-overlay");
+        return surface
+          ? new DOMRect(
+              surface.clientOrigin.x,
+              surface.clientOrigin.y,
+              surface.cssSize.width,
+              surface.cssSize.height
+            )
+          : null;
+      },
+      // Forwards through the same public "error" event `EventBus`'s own
+      // listener-threw path uses (see EventBus.#reportError) — a menu
+      // action throwing (e.g. insertColumns() blocked by headerGroups) is
+      // otherwise only visible via console.error, which a host app has no
+      // way to respond to it.
+      onActionError: (itemId, error) => this.#events.emit("error", { error, eventName: `contextMenu:${itemId}` })
     });
+    initialization.defer(() => this.#contextMenuService.dispose());
     this.#pluginManager = new PluginManager({
       hooks: this.#hooks,
       events: this.#events,
@@ -460,12 +758,41 @@ export class CyExcelCore {
       paste: (pasteOptions) => this.#clipboardService.paste(pasteOptions),
       insertRows: (start, count) => this.insertRows(start, count),
       deleteRows: (start, count) => this.deleteRows(start, count),
-      moveRows: (start, count, target) => this.moveRows(start, count, target)
+      moveRows: (start, count, target) => this.moveRows(start, count, target),
+      insertColumns: (start, columns) => this.insertColumns(start, columns),
+      deleteColumns: (start, count) => this.deleteColumns(start, count),
+      moveColumns: (start, count, target) => this.moveColumns(start, count, target),
+      hideColumn: (column) => this.hideColumn(column),
+      hasHeaderGroups: () => this.#headerGroups.length > 0,
+      registerShortcut: (combo, handler) => this.registerShortcut(combo, handler)
     });
+    initialization.defer(() => this.#pluginManager.dispose());
     for (const plugin of options.plugins ?? []) {
       this.#pluginManager.use(plugin);
     }
     this.#hooks.runSeries("beforeInit", {});
+
+    // Built-ins register first (stack bottom), so a plugin/user combo
+    // registered later via registerShortcut() on the same combo naturally
+    // wins by default — see ShortcutRegistry's own doc comment for the
+    // conflict policy. Registered here (before #editorManager/#selectionModel
+    // exist) because these are just closures — nothing calls them until a
+    // real keydown arrives, by which time construction has finished; same
+    // "safe to reference not-yet-assigned fields in a deferred closure"
+    // reasoning #pluginManager's getCell/copy/paste already relies on above.
+    this.#shortcuts.register("Mod+Z", () => {
+      this.undo();
+    });
+    this.#shortcuts.register("Mod+Shift+Z", () => {
+      this.redo();
+    });
+    this.#shortcuts.register("Mod+Y", () => {
+      this.redo();
+    });
+    this.#shortcuts.register("Enter", () => {
+      const { active } = this.#selectionModel.snapshot;
+      this.#editorManager.startEdit(active.row, active.column);
+    });
 
     this.#cellTypeRegistry = new CellTypeRegistry();
     registerBuiltinCellTypes(this.#cellTypeRegistry);
@@ -478,90 +805,234 @@ export class CyExcelCore {
       hooks: this.#hooks
     });
 
-    this.#dataSource = buildDataSource(options, this.#columns);
     this.#store = new TableStore(this.#dataSource);
-    this.#commandManager = new CommandManager(this.#store, { hooks: this.#hooks });
+    initialization.defer(() => this.#store.coordinator.dispose());
 
-    this.#layout = buildLayout(options, this.#columns, this.#dataSource.getRowCount());
     this.#updateSpacerSize();
+    this.#refreshScene();
 
     const headerCtx = this.#headerCanvas.getContext("2d") as Canvas2DLike;
     const rowHeaderCtx = this.#rowHeaderCanvas.getContext("2d") as Canvas2DLike;
     const contentCtx = this.#contentCanvas.getContext("2d") as Canvas2DLike;
     const selectionCtx = this.#selectionCanvas.getContext("2d") as Canvas2DLike;
+    this.#headerCanvasSurface = new CanvasSurface(this.#headerCanvas, headerCtx);
+    this.#rowHeaderCanvasSurface = new CanvasSurface(this.#rowHeaderCanvas, rowHeaderCtx);
+    this.#contentCanvasSurface = new CanvasSurface(this.#contentCanvas, contentCtx);
+    this.#selectionCanvasSurface = new CanvasSurface(this.#selectionCanvas, selectionCtx);
+    this.#measureCtx = document.createElement("canvas").getContext("2d") as Canvas2DLike;
+    this.#measureCtx.font = CELL_FONT;
 
     this.#contentRenderer = new ContentLayerRenderer({
       ctx: contentCtx,
-      layout: this.#layout,
+      getScene: () => this.#scene,
       getCellValue: (row, column) => this.#store.getCell(row, column),
-      painter: createColumnAwarePainter(this.#columnManager.getColumns()),
+      painter: createColumnAwarePainter(() => this.#columnManager.getColumns()),
+      onError: (error, cell) =>
+        this.#events.emit("error", { error, eventName: `finalize:canvas-cell:${cell.row}:${cell.column}` }),
       ...(options.showGridLines !== undefined ? { showGridLines: options.showGridLines } : {})
     });
     this.#selectionRenderer = new SelectionLayerRenderer({
       ctx: selectionCtx,
-      layout: this.#layout,
+      getScene: () => this.#scene,
       getSelection: () => this.#selectionModel.snapshot,
       isVisible: () => !this.#editorManager.isEditing(),
       getFillPreviewRange: () => this.#fillHandleController.previewRange
     });
     this.#headerCanvasRenderer = new HeaderCanvasRenderer({
       ctx: headerCtx,
-      layout: this.#layout,
-      headerManager: this.#headerManager,
-      columnHeaderHeight: this.#columnHeaderHeight,
-      groupHeaderHeight: this.#groupHeaderHeight
+      getScene: () => this.#scene,
+      headerManager: this.#headerManager
     });
     this.#rowHeaderCanvasRenderer = new RowHeaderCanvasRenderer({
       ctx: rowHeaderCtx,
-      layout: this.#layout,
-      rowHeaderWidth: this.#rowHeaderWidth,
-      headerHeight: this.#columnHeaderHeight + this.#groupHeaderHeight
+      getScene: () => this.#scene,
+      // Safe to reference #rowReorderController before it's assigned below
+      // (only constructed when options.rowReorder is on) — same "closure
+      // over a not-yet-assigned field" pattern getFillPreviewRange already
+      // relies on a few lines down, for the same reason: nothing calls this
+      // until the first real paint(), by which point construction is done.
+      getReorderIndicatorRow: () => this.#rowReorderController?.indicatorRow ?? null
     });
     this.#domHeaderManager = new DomHeaderManager({
       container: dom.headerDomLayer,
-      layout: this.#layout,
-      headerManager: this.#headerManager,
-      columnHeaderHeight: this.#columnHeaderHeight,
-      groupHeaderHeight: this.#groupHeaderHeight
+      headerManager: this.#headerManager
     });
+    initialization.defer(() => this.#domHeaderManager.dispose());
 
     this.#renderScheduler = new RenderScheduler(
       {
-        paintContent: (dirty) => this.#contentRenderer.paintContent(dirty),
-        paintSelection: () => this.#selectionRenderer.paintSelection()
+        paintPresentation: (frame) => {
+          const { presentation } = frame.dirty;
+          if (presentation.domCells) {
+            this.#runFinalizer("dom-cells", () => this.#domCellManager.sync(frame.scene));
+          }
+          if (presentation.columnHeader) {
+            this.#runFinalizer("column-header-canvas", () =>
+              this.#headerCanvasRenderer.paint(frame.scene)
+            );
+          }
+          if (presentation.rowHeader) {
+            this.#runFinalizer("row-header-canvas", () =>
+              this.#rowHeaderCanvasRenderer.paint(frame.scene)
+            );
+          }
+          if (presentation.domHeaders) {
+            this.#runFinalizer("dom-headers", () => this.#domHeaderManager.sync(frame.scene));
+          }
+        },
+        paintContent: (frame) =>
+          this.#contentRenderer.paintContent(frame.dirty.content, frame.scene),
+        paintSelection: (frame) => this.#selectionRenderer.paintSelection(frame.scene)
       },
       {
         frameScheduler: {
           requestFrame: (callback) => requestAnimationFrame(callback),
           cancelFrame: (handle) => cancelAnimationFrame(handle)
-        }
+        },
+        revisionGate: this.#store.coordinator.revisionGate,
+        getScene: () => this.#scene,
+        onFrameError: (error) =>
+          this.#events.emit("error", { error, eventName: "finalize:render-frame" })
       }
     );
+    initialization.defer(() => this.#renderScheduler.dispose());
+    this.#mutationIntents = new DeferredMutationQueue({
+      revisionGate: this.#store.coordinator.revisionGate,
+      isGuarded: () => this.#finalizationDepth > 0,
+      beforeRun: () => this.#cancelResizeGesture(true),
+      onError: (error) => this.#events.emit("error", { error, eventName: "deferred-mutation" })
+    });
+    initialization.defer(() => this.#mutationIntents.dispose());
 
     this.#selectionModel = new SelectionModel({
-      rowCount: this.#dataSource.getRowCount(),
+      rowCount: initialDimensions.rowCount,
       columnCount: this.#columns.length
     });
-
-    // Attached (and its own pointerdown registered) BEFORE PointerController
-    // below, so a handle hit can stopImmediatePropagation() and pre-empt
-    // PointerController's click-to-select for that gesture — DOM listeners
-    // on the same element+event type fire in registration order. See
-    // FillHandleController.attach()'s doc comment.
-    this.#fillHandleController = new FillHandleController({
-      layout: this.#layout,
+    this.#interactionFrames = new InteractionFrameProvider({
+      revisionGate: this.#store.coordinator.revisionGate,
+      intentQueue: this.#mutationIntents,
+      getScene: () => this.#scene,
+      // Client origins can change after ancestor scroll/reflow without a
+      // resize event. Measure once inside every short interaction lease.
+      getSurfaces: () => this.#surfaceHost.refresh(),
       getSelection: () => this.#selectionModel.snapshot,
-      onFillPreviewChange: () => this.#renderScheduler.invalidateSelection(),
-      onFillCommit: (sourceRange, targetRange) => this.#commitFill(sourceRange, targetRange)
+      getStructureVersion: () => this.#structureGeneration
     });
-    this.#detachFillHandle = this.#fillHandleController.attach(this.#contentCanvas);
+    this.#structureOwner = new GridStructureOwner({
+      getColumns: () => this.#columns,
+      replaceColumns: (columns) => {
+        this.#columns = columns;
+      },
+      headerGroups: this.#headerGroups,
+      columnManager: this.#columnManager,
+      headerManager: this.#headerManager,
+      layout: this.#layout,
+      selection: this.#selectionModel
+    });
+    this.#commandManager = createGridCommandManager({
+      store: this.#store,
+      layout: this.#layout,
+      structureOwner: this.#structureOwner,
+      hooks: this.#hooks
+    });
+
+    // Off by default. Without this candidate, row-header routing falls
+    // through from resize directly to ordinary row selection.
+    this.#rowReorderController = options.rowReorder
+      ? new RowReorderController({
+          onIndicatorChange: () =>
+            this.#renderScheduler.invalidatePresentation({ rowHeader: true })
+        })
+      : undefined;
+
+    this.#headerResizeController = new HeaderResizeController({
+      getColumnLimits: (column) => {
+        const definition = this.#columns[column];
+        return definition
+          ? {
+              ...(definition.minWidth !== undefined ? { minSize: definition.minWidth } : {}),
+              ...(definition.maxWidth !== undefined ? { maxSize: definition.maxWidth } : {})
+            }
+          : undefined;
+      }
+    });
+    this.#headerSelectionController = new HeaderSelectionController();
+
+    this.#fillHandleController = new FillHandleController({
+      onFillPreviewChange: () => this.#renderScheduler.invalidateSelection()
+    });
 
     this.#pointerController = new PointerController({
-      layout: this.#layout,
       selection: this.#selectionModel,
       onSelectionChange: () => this.#renderScheduler.invalidateSelection()
     });
-    this.#detachPointer = this.#pointerController.attach(this.#contentCanvas);
+    this.#inputRouter = new InputRouter({
+      surfacePolicy: (context) => this.#resolvePointerInputTarget(context)
+    });
+    initialization.defer(() => this.#inputRouter.dispose());
+    this.#inputRouter.register({
+      id: "body-fill-handle",
+      surface: "body",
+      priority: 300,
+      route: (context) => this.#routeBodyFill(context)
+    });
+    this.#inputRouter.register({
+      id: "body-canvas-cell",
+      surface: "body",
+      priority: 200,
+      route: (context) => this.#routeBodyCanvasAction(context)
+    });
+    this.#inputRouter.register({
+      id: "body-selection",
+      surface: "body",
+      priority: 100,
+      route: (context) => {
+        this.#startBodySelection(context);
+        return handleInput(undefined);
+      }
+    });
+    this.#inputRouter.register({
+      id: "column-header-resize",
+      surface: "column-header",
+      priority: 300,
+      route: (context) => this.#routeHeaderResize(context, "column-resize")
+    });
+    this.#inputRouter.register({
+      id: "column-header-canvas-action",
+      surface: "column-header",
+      priority: 200,
+      route: (context) => this.#routeHeaderCanvasAction(context)
+    });
+    this.#inputRouter.register({
+      id: "column-header-selection",
+      surface: "column-header",
+      priority: 100,
+      route: (context) => this.#routeHeaderSelection(context, "column-selection")
+    });
+    this.#inputRouter.register({
+      id: "row-header-resize",
+      surface: "row-header",
+      priority: 300,
+      route: (context) => this.#routeHeaderResize(context, "row-resize")
+    });
+    this.#inputRouter.register({
+      id: "row-header-reorder",
+      surface: "row-header",
+      priority: 200,
+      route: (context) => this.#routeRowReorder(context)
+    });
+    this.#inputRouter.register({
+      id: "row-header-selection",
+      surface: "row-header",
+      priority: 100,
+      route: (context) => this.#routeHeaderSelection(context, "row-selection")
+    });
+    this.#inputRouter.register({
+      id: "corner-selection",
+      surface: "corner",
+      priority: 100,
+      route: (context) => this.#routeHeaderSelection(context, null)
+    });
 
     this.#keyboardController = new KeyboardController({
       selection: this.#selectionModel,
@@ -570,12 +1041,13 @@ export class CyExcelCore {
 
     this.#editorManager = new EditorManager({
       container: dom.editorLayer,
-      layout: this.#layout,
+      getScene: () => this.#scene,
       ...(options.editorFactory !== undefined ? { editorFactory: options.editorFactory } : {}),
       getCellValue: (row, column) => this.#store.getCell(row, column),
-      commitValue: (row, column, value) => {
-        this.#applyCommand(new SetCellCommand(this.#store, row, column, this.#parseEditedValue(row, column, value)));
-      },
+      commitValue: (row, column, value) =>
+        this.#enqueueMutationPromise(() => {
+          this.#applyCommandNow(new SetCellCommand(row, column, this.#parseEditedValue(row, column, value)));
+        }),
       // Pure forwarding to whatever the column's own CellType declares —
       // EditorManager itself never decides which editor a column gets, and
       // neither does this integration layer; a column that doesn't declare
@@ -612,16 +1084,19 @@ export class CyExcelCore {
         this.#contentCanvas.focus();
       }
     });
+    initialization.defer(() => this.#editorManager.dispose());
 
     this.#domCellManager = new DOMCellManager({
       container: dom.domCellLayer,
-      layout: this.#layout,
       getColumn: (column) => this.#columnManager.getColumn(column),
       getCellValue: (row, column) => this.#store.getCell(row, column),
       commitValue: (row, column, value) => {
-        this.#applyCommand(new SetCellCommand(this.#store, row, column, this.#parseEditedValue(row, column, value)));
+        void this.#enqueueMutationPromise(() => {
+          this.#applyCommandNow(new SetCellCommand(row, column, this.#parseEditedValue(row, column, value)));
+        }).catch((error: unknown) => this.#events.emit("error", { error, eventName: "deferred-dom-commit" }));
       }
     });
+    initialization.defer(() => this.#domCellManager.dispose());
 
     this.#clipboardService = new ClipboardService({
       getCellValue: (row, column) => this.#store.getCell(row, column),
@@ -631,7 +1106,8 @@ export class CyExcelCore {
       parseValue: (row, column, text) => this.#parseEditedValue(row, column, text),
       getSelectionRange: () => this.#selectionModel.snapshot.range,
       getStoreVersion: () => this.#store.version,
-      applyRangeCommand: (range, values) => this.#applyCommand(new SetRangeCommand(this.#store, range, values)),
+      applyRangeCommand: (range, values) =>
+        this.#enqueueMutationPromise(() => this.#applyCommandNow(new SetRangeCommand(range, values))),
       io: createBrowserClipboardIO(),
       // `Worker`'s real `onmessage`/`onerror` setters are typed against
       // `MessageEvent`, narrower than the structural `SerializeWorkerLike`
@@ -644,14 +1120,26 @@ export class CyExcelCore {
         }) as unknown as SerializeWorkerLike,
       ...(options.clipboard !== undefined ? { options: options.clipboard } : {})
     });
+    initialization.defer(() => this.#clipboardService.dispose());
 
     this.#resizeCanvases();
     this.#syncViewport();
     this.#renderScheduler.invalidateAll();
 
+    initialization.defer(() => {
+      this.#contentCanvas.removeEventListener("dblclick", this.#handleDblClick);
+      this.#contentCanvas.removeEventListener("keydown", this.#handleKeyDown);
+      this.#scroller.removeEventListener("pointerdown", this.#handleDelegatedPointerDown, true);
+      this.#contentCanvas.removeEventListener("copy", this.#handleCopyEvent);
+      this.#contentCanvas.removeEventListener("paste", this.#handlePasteEvent);
+      this.#scroller.removeEventListener("scroll", this.#handleScroll);
+      this.#scroller.removeEventListener("contextmenu", this.#handleContextMenu);
+      this.#headerCanvas.removeEventListener("pointermove", this.#handleHeaderPointerHover);
+      this.#rowHeaderCanvas.removeEventListener("pointermove", this.#handleRowHeaderPointerHover);
+    });
     this.#contentCanvas.addEventListener("dblclick", this.#handleDblClick);
     this.#contentCanvas.addEventListener("keydown", this.#handleKeyDown);
-    this.#contentCanvas.addEventListener("pointerdown", this.#handleCellHitTest);
+    this.#scroller.addEventListener("pointerdown", this.#handleDelegatedPointerDown, true);
     this.#contentCanvas.addEventListener("copy", this.#handleCopyEvent);
     this.#contentCanvas.addEventListener("paste", this.#handlePasteEvent);
     this.#scroller.addEventListener("scroll", this.#handleScroll);
@@ -663,13 +1151,17 @@ export class CyExcelCore {
 
     // A 0-height header canvas (the default — see CyExcelCoreOptions.headerHeight)
     // never receives pointer events, so this is a no-op unless headers are enabled.
-    this.#headerCanvas.addEventListener("pointerdown", this.#handleHeaderPointerDown);
+    this.#headerCanvas.addEventListener("pointermove", this.#handleHeaderPointerHover);
     // Same story for a 0-width row header canvas — see CyExcelCoreOptions.rowHeaderWidth.
-    this.#rowHeaderCanvas.addEventListener("pointerdown", this.#handleRowHeaderPointerDown);
-    window.addEventListener("pointermove", this.#handleHeaderPointerMove);
-    window.addEventListener("pointerup", this.#handleHeaderPointerUp);
+    this.#rowHeaderCanvas.addEventListener("pointermove", this.#handleRowHeaderPointerHover);
 
+    this.#pluginManager.activate();
     this.#events.emit("ready", undefined);
+    initialization.commit();
+    } catch (error) {
+      initialization.rollback();
+      throw error;
+    }
   }
 
   get disposed(): boolean {
@@ -684,8 +1176,30 @@ export class CyExcelCore {
     return this.#events;
   }
 
+  /** The immutable Scene currently published to paint, overlay and hit-test consumers. */
+  get scene(): SceneSnapshot {
+    return this.#scene;
+  }
+
+  /** The immutable selection snapshot currently shared by paint and input. */
+  get selection(): SelectionSnapshot {
+    return this.#selectionModel.snapshot;
+  }
+
   get contextMenu(): ContextMenuService {
     return this.#contextMenuService;
+  }
+
+  /**
+   * Registers a keyboard shortcut (`"Mod+Shift+Z"`-style combo — see
+   * ShortcutRegistry.parseShortcut()). The built-in Mod+Z/Mod+Shift+Z/
+   * Mod+Y/Enter shortcuts are registered the same way at construction, so a
+   * combo registered here for the same combo overrides them by default
+   * (return `false` from `handler` to fall through to the older
+   * registration instead — see ShortcutRegistry's conflict policy).
+   */
+  registerShortcut(combo: string, handler: ShortcutHandler): Disposer {
+    return this.#shortcuts.register(combo, handler);
   }
 
   getCell(row: number, column: number): unknown {
@@ -701,33 +1215,186 @@ export class CyExcelCore {
   }
 
   setCell(row: number, column: number, value: unknown): void {
-    this.#applyCommand(new SetCellCommand(this.#store, row, column, value));
+    this.#enqueueOrRunMutation(() =>
+      this.#applyCommandNow(new SetCellCommand(row, column, value))
+    );
   }
 
-  /** Inserts `count` blank rows (every cell `undefined`) at `start`. To insert pre-filled rows, insert blank ones then setRange() over them. */
+  /**
+   * Inserts `count` blank rows (every cell `undefined`) at `start`. To
+   * insert pre-filled rows, insert blank ones then setRange() over them.
+   * The DataSource edit and the matching Layout/Selection roots are
+   * prepared together; live owners are changed only by the narrow commit.
+   * New rows are always default-height (no third `heights` argument here);
+   * a row wanting a custom height gets one via `setRowHeight()` afterward.
+   */
   insertRows(start: number, count = 1): void {
-    this.#cancelActiveEdit();
-    const rows = Array.from({ length: count }, () => new Array<unknown>(this.#columns.length).fill(undefined));
-    this.#applyCommand(new InsertRowsCommand(this.#store, start, rows, this.#hooks));
+    this.#enqueueOrRunMutation(() => {
+      validateAxisChange({ axis: "row", operation: "insert", start, count }, this.#dataSource.getRowCount());
+      this.#cancelActiveEdit();
+      const rows = Array.from({ length: count }, () => new Array<unknown>(this.#columns.length).fill(undefined));
+      this.#applyCommandNow(new InsertRowsCommand(start, rows));
+    });
   }
 
+  /** Deletes rows while the integration participant captures inverse layout state during prepare. */
   deleteRows(start: number, count = 1): void {
-    this.#cancelActiveEdit();
-    this.#applyCommand(new DeleteRowsCommand(this.#store, start, count, this.#hooks));
+    this.#enqueueOrRunMutation(() => {
+      validateAxisChange({ axis: "row", operation: "delete", start, count }, this.#dataSource.getRowCount());
+      this.#cancelActiveEdit();
+      this.#applyCommandNow(new DeleteRowsCommand(start, count));
+    });
   }
 
   /** `target` is the insertion index in the pre-move index space (same convention `ArrayDataSource.moveRows()` uses). */
   moveRows(start: number, count: number, target: number): void {
-    this.#cancelActiveEdit();
-    this.#applyCommand(new MoveRowsCommand(this.#store, start, count, target, this.#hooks));
+    this.#enqueueOrRunMutation(() => {
+      validateAxisChange({ axis: "row", operation: "move", start, count, target }, this.#dataSource.getRowCount());
+      this.#cancelActiveEdit();
+      this.#applyCommandNow(new MoveRowsCommand(start, count, target));
+    });
+  }
+
+  /** Sets an exact row height through Command/Mutation/History. */
+  setRowHeight(row: number, height: number): void {
+    this.#enqueueOrRunMutation(() => {
+      if (
+        row >= 0 &&
+        row < this.#layout.rowCount &&
+        this.#layout.getRowHeight(row) === height &&
+        this.#layout.getRowHeightProvenance(row) === "manual"
+      ) {
+        return;
+      }
+      this.#cancelActiveEdit();
+      this.#applyCommandNow(new ResizeRowCommand(row, height));
+    });
+  }
+
+  setColumnWidth(column: number, width: number): void {
+    this.#enqueueOrRunMutation(() => {
+      if (
+        column >= 0 &&
+        column < this.#layout.columnCount &&
+        this.#layout.getColumnRestoreWidth(column) === width
+      ) {
+        return;
+      }
+      this.#cancelActiveEdit();
+      this.#applyCommandNow(new ResizeColumnCommand(column, width));
+    });
+  }
+
+  /** Whether any column opted into `wrap: true` and uses the default (non-custom-renderer) paint path — the single cheap check every content-driven auto-height call site does first, so a table that never uses `wrap` pays nothing beyond this one `.some()` scan, never a per-row or per-edit measurement. */
+  #hasWrapColumns(): boolean {
+    return this.#columnManager.getColumns().some((column) => column.wrap && column.renderer === undefined);
+  }
+
+  /**
+   * The tallest height any wrap-enabled column's content needs for `row`,
+   * or just the default row height if none do. Never smaller than the
+   * default. Auto-owned rows can grow or shrink to this exact measurement;
+   * manual rows are filtered before this formatter work starts.
+   * `column.renderer !== undefined`
+   * columns are skipped — a custom canvas renderer paints itself, and a DOM
+   * renderer is owned entirely by `DOMCellManager`; `wrap` only has meaning
+   * for the built-in `drawFormattedText()` path (`createColumnAwarePainter`
+   * only wraps when there's no custom `renderer` at all).
+   */
+  #computeRequiredRowHeight(row: number, scene: SceneSnapshot): number {
+    const columns = this.#columnManager.getColumns();
+    let required = this.#layout.rowHeight;
+    for (let index = 0; index < columns.length; index += 1) {
+      const column = columns[index];
+      if (!column || !column.wrap || column.renderer !== undefined) {
+        continue;
+      }
+      const value = this.#store.getCell(row, index);
+      const text = column.format(value, { row, column });
+      const columnWidth = scene.getColumnWidth(index);
+      if (columnWidth <= CELL_PADDING * 2) {
+        continue;
+      }
+      const maxWidth = columnWidth - CELL_PADDING * 2;
+      const height = computeWrappedCellHeight(this.#measureCtx, text, maxWidth);
+      if (height > required) {
+        required = height;
+      }
+    }
+    return required;
+  }
+
+  /** Measures whatever rows are about to be painted (already-visible + overscan, per `getVisibleRowRange()`) that haven't been measured before — called from `#syncViewport()`, before painting. A no-op scan when the table has no wrap columns at all, and a no-op per-row once a row has been measured once (until an actual edit re-triggers it via `#invalidatePatches()`'s cell-value/range-value handling). */
+  #measureVisibleWrapRows(
+    scene: SceneSnapshot,
+    remainingFollowUpPasses: number
+  ): boolean {
+    if (!this.#hasWrapColumns()) {
+      return false;
+    }
+    return this.#measureAndResizeRows(
+      new Set(this.#visibleUnmeasuredWrapRows(scene)),
+      scene,
+      remainingFollowUpPasses
+    );
+  }
+
+  /**
+   * Inserts full column definitions at `start` — unlike `insertRows()`,
+   * there's no reasonable default to synthesize: a column needs at least an
+   * `id` (used as the `field` key unless overridden), and `insertRows()`'s
+   * "every cell undefined" default has no column-shaped equivalent. See the
+   * Step 17 plan's "key design decisions" §4.
+   */
+  insertColumns(start: number, columns: readonly CyExcelColumnConfig[]): void {
+    const inserted = snapshotColumnDefinitions(columns);
+    this.#enqueueOrRunMutation(() => {
+      this.#assertNoHeaderGroups("insert");
+      validateAxisChange({ axis: "column", operation: "insert", start, count: inserted.length }, this.#columns.length);
+      this.#cancelActiveEdit();
+      this.#applyCommandNow(new InsertColumnsCommand(start, inserted));
+    });
+  }
+
+  deleteColumns(start: number, count = 1): void {
+    this.#enqueueOrRunMutation(() => {
+      this.#assertNoHeaderGroups("delete");
+      validateAxisChange({ axis: "column", operation: "delete", start, count }, this.#columns.length);
+      this.#cancelActiveEdit();
+      this.#applyCommandNow(new DeleteColumnsCommand(start, count));
+    });
+  }
+
+  /** `target` is the insertion index in the pre-move index space (same convention `ArrayDataSource.moveColumns()` uses). */
+  moveColumns(start: number, count: number, target: number): void {
+    this.#enqueueOrRunMutation(() => {
+      this.#assertNoHeaderGroups("move");
+      validateAxisChange({ axis: "column", operation: "move", start, count, target }, this.#columns.length);
+      this.#cancelActiveEdit();
+      this.#applyCommandNow(new MoveColumnsCommand(start, count, target));
+    });
+  }
+
+  hideColumn(column: number): void {
+    this.#enqueueOrRunMutation(() => {
+      this.#cancelActiveEdit();
+      this.#applyCommandNow(new HideColumnCommand(column));
+    });
+  }
+
+  showColumn(column: number): void {
+    this.#enqueueOrRunMutation(() => {
+      this.#cancelActiveEdit();
+      this.#applyCommandNow(new ShowColumnCommand(column));
+    });
   }
 
   undo(): void {
-    this.#invalidatePatches(this.#commandManager.undo());
+    this.#enqueueOrRunMutation(() => this.#invalidatePatches(this.#commandManager.undo()));
   }
 
   redo(): void {
-    this.#invalidatePatches(this.#commandManager.redo());
+    this.#enqueueOrRunMutation(() => this.#invalidatePatches(this.#commandManager.redo()));
   }
 
   isEditing(): boolean {
@@ -768,16 +1435,27 @@ export class CyExcelCore {
 
   /** Re-reads the container's current size and repaints. No automatic ResizeObserver — call this explicitly. */
   resize(): void {
-    this.#resizeCanvases();
-    this.#syncViewport();
-    this.#renderScheduler.invalidateAll();
+    this.#enqueueOrRunMutation(() => {
+      this.#cancelHeaderGesture(true);
+      this.#resizeCanvases();
+      this.#syncViewport();
+      this.#renderScheduler.invalidateAll();
+    });
   }
 
   dispose(): void {
     if (this.#disposed) {
       return;
     }
+    this.#cancelHeaderGesture(false);
+    this.#cancelBodyGesture();
     this.#disposed = true;
+    this.#mutationIntents.dispose();
+    this.#stopRowReorderAutoScroll();
+    if (this.#autoHeightContinuationFrame !== null) {
+      cancelAnimationFrame(this.#autoHeightContinuationFrame);
+      this.#autoHeightContinuationFrame = null;
+    }
 
     this.#hooks.runSeries("beforeDestroy", {});
     this.#events.emit("destroy", undefined);
@@ -789,29 +1467,84 @@ export class CyExcelCore {
     this.#domHeaderManager.dispose();
     this.#renderScheduler.dispose();
     this.#clipboardService.dispose();
-    this.#detachPointer();
-    this.#detachFillHandle();
+    this.#store.coordinator.dispose();
+    this.#inputRouter.dispose();
 
     this.#contentCanvas.removeEventListener("dblclick", this.#handleDblClick);
     this.#contentCanvas.removeEventListener("keydown", this.#handleKeyDown);
-    this.#contentCanvas.removeEventListener("pointerdown", this.#handleCellHitTest);
+    this.#scroller.removeEventListener("pointerdown", this.#handleDelegatedPointerDown, true);
     this.#contentCanvas.removeEventListener("copy", this.#handleCopyEvent);
     this.#contentCanvas.removeEventListener("paste", this.#handlePasteEvent);
     this.#scroller.removeEventListener("scroll", this.#handleScroll);
     this.#scroller.removeEventListener("contextmenu", this.#handleContextMenu);
-    this.#headerCanvas.removeEventListener("pointerdown", this.#handleHeaderPointerDown);
-    this.#rowHeaderCanvas.removeEventListener("pointerdown", this.#handleRowHeaderPointerDown);
-    window.removeEventListener("pointermove", this.#handleHeaderPointerMove);
-    window.removeEventListener("pointerup", this.#handleHeaderPointerUp);
+    this.#headerCanvas.removeEventListener("pointermove", this.#handleHeaderPointerHover);
+    this.#rowHeaderCanvas.removeEventListener("pointermove", this.#handleRowHeaderPointerHover);
 
     this.#hooks.dispose();
     this.#events.dispose();
+    this.#shortcuts.dispose();
+    this.#surfaceHost.dispose();
 
     this.#scroller.remove();
   }
 
-  #applyCommand(command: Command): void {
+  #applyCommandNow(command: Command): void {
     this.#invalidatePatches(this.#commandManager.execute(command));
+  }
+
+  /** User renderers may dispatch commands; replay them after the current receipt is fully observed. */
+  #enqueueOrRunMutation(run: () => void): void {
+    this.#mutationIntents.enqueueOrRun(run);
+  }
+
+  #enqueueMutationPromise(run: () => void): Promise<void> {
+    return this.#mutationIntents.enqueuePromise(run);
+  }
+
+  #dispatchInteraction<TResult>(
+    eventName: string,
+    handler: (
+      frame: InteractionFrame<SceneSnapshot, SurfaceSetSnapshot, SelectionSnapshot>
+    ) => TResult
+  ): TResult | undefined {
+    try {
+      return this.#interactionFrames.dispatch(handler);
+    } catch (error) {
+      this.#events.emit("error", { error, eventName: `interaction:${eventName}` });
+      return undefined;
+    }
+  }
+
+  #withFinalization(run: () => void): void {
+    this.#finalizationDepth += 1;
+    try {
+      run();
+    } finally {
+      this.#finalizationDepth -= 1;
+      if (this.#finalizationDepth === 0) {
+        this.#mutationIntents.drain();
+      }
+    }
+  }
+
+  /**
+   * `headerGroups`' `HeaderGroupDefinition.columns` are plain column
+   * indices — a structural change would need to remap or invalidate them,
+   * which is deferred to Step 19 (arbitrary-depth grouped headers) when the
+   * group data structure gets redesigned anyway (see the Step 17 plan's
+   * "key design decisions" §5). Checked before `#cancelActiveEdit()` so a
+   * doomed call doesn't cancel an in-progress edit for nothing, and well
+   * before any Command runs, so a rejected call never leaves the Store/
+   * History committed while `#columns`/`ColumnManager`/`LayoutEngine` are
+   * still out of sync.
+   */
+  #assertNoHeaderGroups(operation: "insert" | "delete" | "move"): void {
+    if (this.#headerGroups.length > 0) {
+      throw new CyExcelError(
+        CyExcelErrorCode.HeaderGroupsBlockColumnStructureChange,
+        `Cannot ${operation} columns while headerGroups is configured — grouped headers reference column indices that a structural change would invalidate`
+      );
+    }
   }
 
   /**
@@ -851,60 +1584,317 @@ export class CyExcelCore {
     return runtimeColumn.parse ? runtimeColumn.parse(value, { row, column: runtimeColumn }) : value;
   }
 
-  #invalidatePatches(patches: readonly Patch[] | undefined): void {
+  #invalidatePatches(
+    patches: readonly Patch[] | undefined,
+    measurementPassesRemaining = AUTO_HEIGHT_MAX_SYNC_PASSES
+  ): void {
     if (!patches) {
       return;
     }
-    for (const patch of patches) {
-      this.#renderScheduler.invalidatePatch(patch);
-      if (patch.type === "row-structure") {
-        this.#applyRowStructureChange(patch);
+    // Capture the receipt-derived facts before any finalizer runs. A DOM
+    // renderer or auto-height change may synchronously dispatch another
+    // command and advance CommandManager.lastChangeSet reentrantly.
+    const changeSet =
+      this.#commandManager.lastChangeSet?.modelVersion === this.#store.version
+        ? this.#commandManager.lastChangeSet
+        : createChangeSet(this.#store.version, patches);
+    this.#withFinalization(() => {
+      let hasRowStructure = false;
+      let hasColumnStructure = false;
+      let hasColumnLayout = false;
+      for (const patch of patches) {
+        if (patch.type === "row-structure") {
+          hasRowStructure = true;
+        } else if (patch.type === "column-structure") {
+          hasColumnStructure = true;
+        } else if (patch.type === "column-layout") {
+          hasColumnLayout = true;
+        } else if (patch.type === "cell-value") {
+          this.#measuredWrapRows.delete(patch.row);
+        } else if (patch.type === "range-value") {
+          for (const row of this.#measuredWrapRows) {
+            if (row >= patch.range.startRow && row <= patch.range.endRow) {
+              this.#measuredWrapRows.delete(row);
+            }
+          }
+        } else if (patch.type === "full-reset") {
+          this.#measuredWrapRows.clear();
+        }
+      }
+
+      if (hasRowStructure || hasColumnStructure) {
+        // Undo/redo reaches this branch without going through the public
+        // structure facade. Cancel before any stale numeric editor anchor
+        // can commit into the newly published row/column order.
+        this.#cancelActiveEdit();
+        const nextStructureGeneration = this.#structureGeneration + 1;
+        if (!Number.isSafeInteger(nextStructureGeneration)) {
+          throw new RangeError("Structure generation exhausted");
+        }
+        this.#structureGeneration = nextStructureGeneration;
+        this.#cancelBodyGesture();
+        this.#cancelHeaderGesture(true);
+        this.#contextMenuService.close();
+      }
+
+      // The model revision and all authoritative structural roots are already
+      // committed. Derived bookkeeping and user formatters are finalizers too:
+      // failures are observable, but can neither escape nor suppress change.
+      if (hasRowStructure || hasColumnStructure || hasColumnLayout || patches.some((patch) => patch.type === "row-layout")) {
+        this.#runFinalizer("spacer", () => this.#updateSpacerSize());
+      }
+      if (hasRowStructure || hasColumnStructure || hasColumnLayout) {
+        this.#measuredWrapRows.clear();
+      }
+      if (
+        hasRowStructure ||
+        hasColumnStructure ||
+        hasColumnLayout ||
+        patches.some((patch) => patch.type === "row-layout")
+      ) {
+        this.#runFinalizer("selection-invalidation", () => this.#renderScheduler.invalidateSelection());
+      }
+
+      // Publish the exact receipt Scene before invoking formatter/user code.
+      // Measurement, hit-test and every later presentation consumer can now
+      // refer to the same model/layout basis instead of the previous receipt.
+      let receiptScene: SceneSnapshot | undefined;
+      const sceneReady = this.#runFinalizer("scene", () => {
+        receiptScene = this.#refreshScene(this.#readViewport());
+      });
+      if (sceneReady && receiptScene) {
+        this.#reprojectEditor(receiptScene);
+
+        const hasWrapColumns = this.#hasWrapColumns();
+        const visibleUnmeasuredRows = hasWrapColumns
+          ? this.#visibleUnmeasuredWrapRows(receiptScene)
+          : [];
+        const rowsToMeasure = new Set(visibleUnmeasuredRows);
+        if (!hasWrapColumns && hasColumnStructure) {
+          for (const [row, provenance] of this.#layout.root.rowHeightProvenance) {
+            if (
+              provenance === "auto" &&
+              receiptScene.getRowHeight(row) !== this.#layout.rowHeight
+            ) {
+              rowsToMeasure.add(row);
+            }
+          }
+        }
+        const rowResizeScheduled = measurementPassesRemaining > 0 && rowsToMeasure.size > 0
+          ? this.#measureAndResizeRows(
+              rowsToMeasure,
+              receiptScene,
+              measurementPassesRemaining - 1
+            )
+          : false;
+
+        for (const patch of patches) {
+          this.#runFinalizer("render-invalidation", () => this.#renderScheduler.invalidatePatch(patch));
+        }
+        if (!rowResizeScheduled) {
+          // Presentation renderers are observers of this committed receipt.
+          // Flush while finalization is guarded so renderer commands queue
+          // until change publication; a derived row-height receipt instead
+          // flushes both receipts against its final Scene.
+          this.#runFinalizer("render-frame", () => this.#renderScheduler.flushNow());
+        }
+        if (
+          measurementPassesRemaining === 0 &&
+          visibleUnmeasuredRows.length > 0
+        ) {
+          this.#scheduleAutoHeightContinuation();
+        }
+      }
+      this.#events.emit("change", {
+        patches: Object.freeze([...patches]),
+        changeSet
+      });
+    });
+  }
+
+  #runFinalizer(name: string, run: () => void): boolean {
+    try {
+      run();
+      return true;
+    } catch (error) {
+      this.#events.emit("error", { error, eventName: `finalize:${name}` });
+      return false;
+    }
+  }
+
+  #visibleUnmeasuredWrapRows(scene: SceneSnapshot): readonly number[] {
+    const rows = new Set<number>();
+    for (const pane of scene.getPanes("body")) {
+      for (let index = 0; index < pane.rows.count; index += 1) {
+        const row = pane.rows.start + index;
+        if (!this.#measuredWrapRows.has(row)) {
+          rows.add(row);
+        }
       }
     }
-    // A patch may have changed a DOM-rendered cell's value; sync() is cheap
-    // when nothing needs it (empty needed-set) and DOMCellManager only ever
-    // holds a viewport-bounded number of instances either way.
-    this.#domCellManager.sync(this.#readViewport());
-    this.#events.emit("change", { patches });
+    return [...rows];
+  }
+
+  /** Measures auto-owned rows, then queues one skip-history Command for the batch. */
+  #measureAndResizeRows(
+    rows: ReadonlySet<number>,
+    basisScene: SceneSnapshot,
+    remainingFollowUpPasses: number
+  ): boolean {
+    const basisModelVersion = this.#store.version;
+    const basisLayoutRoot = this.#layout.root;
+    if (
+      basisScene.modelVersion !== basisModelVersion ||
+      basisScene.layoutVersion !== basisLayoutRoot.version
+    ) {
+      throw new Error(
+        `Wrap measurement Scene basis ${basisScene.modelVersion}/${basisScene.layoutVersion} ` +
+        `does not match model/layout ${basisModelVersion}/${basisLayoutRoot.version}`
+      );
+    }
+
+    const updates: Array<{ readonly row: number; readonly height: number }> = [];
+    const measuredWithoutResize: number[] = [];
+    for (const row of rows) {
+      if ((basisLayoutRoot.rowHeightProvenance.get(row) ?? "default") === "manual") {
+        measuredWithoutResize.push(row);
+        continue;
+      }
+      try {
+        const required = this.#computeRequiredRowHeight(row, basisScene);
+        if (required !== basisScene.getRowHeight(row)) {
+          updates.push(Object.freeze({ row, height: required }));
+        } else {
+          measuredWithoutResize.push(row);
+        }
+      } catch (error) {
+        this.#events.emit("error", { error, eventName: "finalize:wrap-measurement" });
+      }
+    }
+    for (const row of measuredWithoutResize) {
+      this.#measuredWrapRows.add(row);
+    }
+    if (updates.length === 0) {
+      return false;
+    }
+    const frozenUpdates = Object.freeze(updates);
+    this.#enqueueOrRunMutation(() => {
+      // A formatter is user code and may have queued an earlier mutation
+      // while measurement was running. Never apply geometry measured from
+      // a model or Layout root that is no longer authoritative.
+      if (
+        this.#store.version !== basisModelVersion ||
+        this.#layout.root !== basisLayoutRoot
+      ) {
+        for (const { row } of frozenUpdates) {
+          this.#measuredWrapRows.delete(row);
+        }
+        this.#scheduleAutoHeightContinuation();
+        return;
+      }
+
+      let patches: readonly Patch[];
+      try {
+        patches = this.#commandManager.execute(
+          new SetRowHeightsCommand(frozenUpdates, "auto"),
+          { history: "skip" }
+        );
+      } catch (error) {
+        this.#events.emit("error", { error, eventName: "finalize:auto-height-command" });
+        // The originating receipt deliberately deferred its paint. If the
+        // derived commit is rejected, flush that already-published Scene so
+        // presentation still catches up with the committed model.
+        this.#withFinalization(() => {
+          this.#runFinalizer("render-frame", () => this.#renderScheduler.flushNow());
+        });
+        return;
+      }
+
+      for (const { row } of frozenUpdates) {
+        this.#measuredWrapRows.add(row);
+      }
+      this.#invalidatePatches(patches, remainingFollowUpPasses);
+      const rowLayoutPatches = Object.freeze(
+        patches.filter((patch): patch is Extract<Patch, { type: "row-layout" }> =>
+          patch.type === "row-layout"
+        )
+      );
+      if (rowLayoutPatches.length > 0) {
+        this.#events.emit("layout-change", {
+          layoutVersion: this.#layout.version,
+          patches: rowLayoutPatches
+        });
+      }
+    });
+    return true;
+  }
+
+  #scheduleAutoHeightContinuation(): void {
+    if (this.#disposed || this.#autoHeightContinuationFrame !== null) {
+      return;
+    }
+    this.#autoHeightContinuationFrame = requestAnimationFrame(() => {
+      this.#autoHeightContinuationFrame = null;
+      if (this.#disposed) {
+        return;
+      }
+      this.#enqueueOrRunMutation(() => this.#syncViewport());
+    });
   }
 
   /**
-   * `RenderScheduler.invalidatePatch()` already treats "row-structure" as
-   * "repaint everything" (content layer), but it doesn't know about
-   * `LayoutEngine`/`SelectionModel` — those need to actually catch up
-   * with the new row count, and the selection needs to follow whichever
-   * row it was on through the insert/delete/move (see
-   * `remapRowIndex()`/`SelectionModel.setBounds()`), not just get
-   * silently clamped.
+   * Layout and Selection roots were already published by the structure
+   * integration participant. This method only runs observer side effects.
+   * Also clears `#measuredWrapRows` wholesale — an insert/delete/move
+   * shifts which row every index refers to, so every entry in that set is
+   * a stale "row N was measured" claim about a row that may no longer be
+   * at N; clearing it is simpler and safer than trying to remap each entry
+   * the way `SelectionModel`/`LayoutEngine` do for their own per-row state,
+   * and just means the next `#syncViewport()` re-measures whatever's
+   * visible (cheap — bounded by viewport size, not row count).
    */
-  #applyRowStructureChange(patch: Extract<Patch, { type: "row-structure" }>): void {
-    const rowCount = this.#dataSource.getRowCount();
-    this.#layout.setRowCount(rowCount);
-    this.#selectionModel.setBounds(
-      { rowCount, columnCount: this.#columns.length },
-      {
-        operation: patch.operation,
-        start: patch.start,
-        count: patch.count,
-        ...(patch.target !== undefined ? { target: patch.target } : {})
+  /**
+   * The spacer's size is what determines the scroller's native
+   * `scrollWidth`/`scrollHeight` — `#resizeCanvases()` already computes the
+   * body's own width/height as `rect.width - rowHeaderWidth`/`rect.height -
+   * headerHeight()` (the row/column header bands are pinned, sharing the
+   * scroller's box rather than adding to it), so this needs the same
+   * `+rowHeaderWidth`/`+headerHeight()` to make the scroller's total extent
+   * match: without it, native max-scroll comes up exactly `rowHeaderWidth`px
+   * short horizontally and `headerHeight()`px short vertically, permanently
+   * hiding that many pixels of the last column/row behind nothing reachable
+   * by scrolling. Found via a real user report against the playground
+   * (10-column dataset, last column's text visibly clipped even scrolled
+   * all the way right) — see doc/progress.md's Step 18 patch entry.
+   */
+  #updateSpacerSize(root: LayoutRoot = this.#layout.root): void {
+    const totalWidth = root.columnAxis.getTotalWidth();
+    this.#spacer.style.width = `${totalWidth + this.#rowHeaderWidth}px`;
+    this.#spacer.style.height = `${root.rowMetrics.totalHeight + this.#headerHeight()}px`;
+  }
+
+  /** Publishes gesture-only geometry without changing the authoritative Layout root or History. */
+  #publishResizePreview(root: LayoutRoot): void {
+    this.#withFinalization(() => {
+      let preview: SceneSnapshot;
+      try {
+        preview = this.#createSceneSnapshot(this.#readViewport(), root);
+      } catch (error) {
+        this.#events.emit("error", { error, eventName: "finalize:resize-preview-scene" });
+        return;
       }
-    );
-    this.#updateSpacerSize();
-    // The selection box's on-screen position/size depends on the row it's
-    // anchored to, which may have just moved — invalidateAll() (already
-    // triggered by invalidatePatch() above) only marks the content layer
-    // dirty, same reasoning as #syncViewport()'s identical call after a
-    // scroll.
-    this.#renderScheduler.invalidateSelection();
+      this.#publishScene(preview);
+      this.#reprojectEditor(preview);
+      this.#runFinalizer("spacer", () => this.#updateSpacerSize(root));
+      this.#runFinalizer("render-invalidation", () => this.#renderScheduler.invalidateAll());
+      this.#runFinalizer("selection-invalidation", () => this.#renderScheduler.invalidateSelection());
+      this.#runFinalizer("render-frame", () => this.#renderScheduler.flushNow());
+    });
   }
 
-  #updateSpacerSize(): void {
-    this.#spacer.style.width = `${this.#layout.getTotalWidth()}px`;
-    this.#spacer.style.height = `${this.#layout.getTotalHeight()}px`;
-  }
-
+  /** Total pixel height of the column header band: the leaf title row plus every group row (Step 19 — `groupHeaderHeight` is a per-level height, multiplied by however many levels `#headerManager` actually resolved). */
   #headerHeight(): number {
-    return this.#columnHeaderHeight + this.#groupHeaderHeight;
+    return this.#columnHeaderHeight + this.#groupHeaderHeight * this.#headerManager.groupDepth;
   }
 
   #resizeCanvases(): void {
@@ -914,18 +1904,14 @@ export class CyExcelCore {
     const bodyHeight = Math.max(0, rect.height - headerHeight);
     const bodyWidth = Math.max(0, rect.width - this.#rowHeaderWidth);
 
-    configureCanvasForDpr(this.#headerCanvas, bodyWidth, headerHeight, dpr);
-    configureCanvasForDpr(this.#rowHeaderCanvas, this.#rowHeaderWidth, rect.height, dpr);
-    configureCanvasForDpr(this.#contentCanvas, bodyWidth, bodyHeight, dpr);
-    configureCanvasForDpr(this.#selectionCanvas, bodyWidth, bodyHeight, dpr);
-
-    this.#headerCanvas.getContext("2d")?.scale(dpr, dpr);
-    this.#rowHeaderCanvas.getContext("2d")?.scale(dpr, dpr);
-    this.#contentCanvas.getContext("2d")?.scale(dpr, dpr);
-    this.#selectionCanvas.getContext("2d")?.scale(dpr, dpr);
+    this.#headerCanvasSurface.resize(bodyWidth, headerHeight, dpr);
+    this.#rowHeaderCanvasSurface.resize(this.#rowHeaderWidth, rect.height, dpr);
+    this.#contentCanvasSurface.resize(bodyWidth, bodyHeight, dpr);
+    this.#selectionCanvasSurface.resize(bodyWidth, bodyHeight, dpr);
 
     this.#selectionRenderer.setSize(bodyWidth, bodyHeight);
     this.#updateSpacerSize();
+    this.#surfaceHost.refresh();
   }
 
   /**
@@ -945,25 +1931,113 @@ export class CyExcelCore {
     };
   }
 
+  #createSceneSnapshot(viewportState: ViewportState, layoutRoot: LayoutRoot = this.#layout.root): SceneSnapshot {
+    const generation = this.#sceneGeneration + 1;
+    if (!Number.isSafeInteger(generation)) {
+      throw new RangeError("Scene publication generation exhausted");
+    }
+    // Reserve before construction. If a later snapshot constructor rejects,
+    // the generation remains consumed rather than being reused for different
+    // geometry on a subsequent publication.
+    this.#sceneGeneration = generation;
+    return new SceneSnapshot({
+      version: generation,
+      skeleton: SkeletonSnapshot.fromRoot(layoutRoot, this.#store.version),
+      viewport: new ViewportSnapshot({
+        version: generation,
+        ...viewportState,
+        overscanRows: this.#overscanRows,
+        overscanColumns: this.#overscanColumns
+      }),
+      surfaceMetrics: {
+        columnHeaderHeight: this.#headerHeight(),
+        columnHeaderBands: [
+          ...Array.from({ length: this.#headerManager.groupDepth }, (_unused, index) => {
+            const level = this.#headerManager.groupDepth - 1 - index;
+            return {
+              role: "group" as const,
+              level,
+              y: index * this.#groupHeaderHeight,
+              height: this.#groupHeaderHeight
+            };
+          }),
+          {
+            role: "leaf" as const,
+            y: this.#groupHeaderHeight * this.#headerManager.groupDepth,
+            height: this.#columnHeaderHeight
+          }
+        ],
+        rowHeaderWidth: this.#rowHeaderWidth
+      }
+    });
+  }
+
+  #refreshScene(viewportState: ViewportState = this.#readViewport()): SceneSnapshot {
+    const scene = this.#createSceneSnapshot(viewportState);
+    this.#publishScene(scene);
+    return scene;
+  }
+
+  #publishScene(scene: SceneSnapshot): void {
+    if (scene.version <= this.#publishedSceneGeneration) {
+      throw new RangeError(
+        `Scene publication generation must increase: ${scene.version} <= ${this.#publishedSceneGeneration}`
+      );
+    }
+    this.#scene = scene;
+    this.#publishedSceneGeneration = scene.version;
+  }
+
+  #reprojectEditor(scene: SceneSnapshot): void {
+    this.#runFinalizer("editor-geometry", () => this.#editorManager?.updateGeometry(scene));
+  }
+
+  #restoreAuthoritativeScene(): void {
+    // Cancellation is itself a publication. Re-project the committed roots
+    // instead of switching back to an older Scene object and making the
+    // public generation go backwards after one or more gesture previews.
+    const scene = this.#createSceneSnapshot(this.#readViewport());
+    this.#publishScene(scene);
+    this.#reprojectEditor(scene);
+    this.#runFinalizer("spacer", () => this.#updateSpacerSize());
+    this.#runFinalizer("render-invalidation", () => this.#renderScheduler.invalidateAll());
+    this.#runFinalizer("selection-invalidation", () => this.#renderScheduler.invalidateSelection());
+    this.#runFinalizer("render-frame", () => this.#renderScheduler.flushNow());
+  }
+
   #syncViewport(): void {
     const viewport = this.#readViewport();
-    this.#contentRenderer.setViewport(viewport);
-    this.#selectionRenderer.setViewport(viewport);
-    this.#pointerController.setViewport(viewport);
-    this.#fillHandleController.setViewport(viewport);
-    this.#editorManager.setViewport(viewport);
-    this.#domCellManager.sync(viewport);
-    this.#headerCanvasRenderer.setViewport(viewport);
-    this.#headerCanvasRenderer.paint();
-    this.#rowHeaderCanvasRenderer.setViewport(viewport);
-    this.#rowHeaderCanvasRenderer.paint();
-    this.#domHeaderManager.sync(viewport);
-    // The selection box's on-screen position depends on scroll position
-    // just like content does — invalidateAll() (called by every caller of
-    // #syncViewport(): construction, resize(), scroll) only marks the
-    // content layer dirty, so without this the box would stay frozen at
-    // whatever screen position it was last painted at.
-    this.#renderScheduler.invalidateSelection();
+    // Runs before any painting below, not during it — growing a row here
+    // only ever changes state `LayoutEngine`/the spacer read fresh at paint
+    // time, never something already-painted content has to un-paint.
+    // Lazy — only rows about to actually be painted this pass (construction,
+    // scroll, resize all call #syncViewport()) ever get measured, matching
+    // the same "only touch what's visible" principle the rest of this
+    // codebase's virtual scrolling already follows; a 1,000,000-row table
+    // never pays for wrap measurement on rows nobody has scrolled to yet.
+    this.#withFinalization(() => {
+      let viewportScene: SceneSnapshot | undefined;
+      const sceneReady = this.#runFinalizer("scene", () => {
+        viewportScene = this.#refreshScene(viewport);
+      });
+      if (sceneReady && viewportScene) {
+        this.#reprojectEditor(viewportScene);
+        const rowResizeScheduled = this.#measureVisibleWrapRows(
+          viewportScene,
+          AUTO_HEIGHT_MAX_SYNC_PASSES - 1
+        );
+        this.#runFinalizer("render-invalidation", () => this.#renderScheduler.invalidateAll());
+        // The selection box's on-screen position depends on scroll position
+        // just like content does — invalidateAll() (called by every caller of
+        // #syncViewport(): construction, resize(), scroll) only marks the
+        // content layer dirty, so without this the box would stay frozen at
+        // whatever screen position it was last painted at.
+        this.#runFinalizer("selection-invalidation", () => this.#renderScheduler.invalidateSelection());
+        if (!rowResizeScheduled) {
+          this.#runFinalizer("render-frame", () => this.#renderScheduler.flushNow());
+        }
+      }
+    });
   }
 
   /**
@@ -979,103 +2053,305 @@ export class CyExcelCore {
    */
   #scrollActiveIntoView(): void {
     const { active } = this.#selectionModel.snapshot;
-    const rect = this.#layout.getCellRect(active.row, active.column);
-    const viewport = this.#readViewport();
-
-    if (active.row >= this.#layout.frozenRowCount) {
-      const frozenHeight = this.#layout.frozenRowCount * this.#layout.rowHeight;
-      const top = rect.y - viewport.scrollTop;
-      const bottom = top + rect.height;
-      if (top < frozenHeight) {
-        this.#scroller.scrollTop = Math.max(0, rect.y - frozenHeight);
-      } else if (bottom > viewport.height) {
-        this.#scroller.scrollTop = Math.max(0, rect.y + rect.height - viewport.height);
-      }
-    }
-
-    if (active.column >= this.#layout.frozenColumnCount) {
-      const frozenWidth = this.#frozenColumnWidth();
-      const left = rect.x - viewport.scrollLeft;
-      const right = left + rect.width;
-      if (left < frozenWidth) {
-        this.#scroller.scrollLeft = Math.max(0, rect.x - frozenWidth);
-      } else if (right > viewport.width) {
-        this.#scroller.scrollLeft = Math.max(0, rect.x + rect.width - viewport.width);
-      }
-    }
-  }
-
-  #frozenColumnWidth(): number {
-    const frozenColumnCount = this.#layout.frozenColumnCount;
-    if (frozenColumnCount === 0) {
-      return 0;
-    }
-    const lastFrozenColumn = frozenColumnCount - 1;
-    return this.#layout.getColumnLeft(lastFrozenColumn) + this.#layout.getColumnWidth(lastFrozenColumn);
-  }
-
-  /**
-   * Separate listener from PointerController's own pointerdown handling
-   * (registered after it, so selection updates first) — PointerController
-   * is pure geometry and shouldn't know about renderers/Commands. Only
-   * acts when the clicked cell's resolved column has a CanvasCellRenderer
-   * with hitTest(); a DOM-renderer cell's own mounted element receives the
-   * real click natively and never reaches this listener.
-   */
-  #handleCellHitTest = (event: PointerEvent): void => {
-    // Right-click (button 2) is handled by #handleContextMenu instead — a
-    // custom renderer's click action (e.g. "increment this counter") has
-    // no business firing just because the user opened the context menu.
-    if (event.button !== 0) {
+    const target = this.#scene.getScrollTargetForCell(active);
+    if (!target) {
       return;
     }
-    const canvasRect = this.#contentCanvas.getBoundingClientRect();
-    const point = { x: event.clientX - canvasRect.left, y: event.clientY - canvasRect.top };
-    const viewport = this.#readViewport();
-    const cell = this.#layout.getCellAtPoint(point, viewport);
-    if (!cell) {
-      return;
+    this.#scroller.scrollTop = target.scrollTop;
+    this.#scroller.scrollLeft = target.scrollLeft;
+  }
+
+  #routeBodyFill(context: CorePointerInputContext) {
+    const { event, frame } = context;
+    if (event.button !== 0 || !frame.selection || frame.structureVersion === undefined) {
+      return declineInput();
+    }
+    const point = context.point as SurfacePoint<"body">;
+    if (!this.#fillHandleController.handlePointerDown(
+      point,
+      frame.selection,
+      frame.scene,
+      frame.structureVersion
+    )) {
+      return declineInput();
     }
 
-    const column = this.#columnManager.getColumn(cell.column);
+    event.preventDefault();
+    this.#contentCanvas.focus();
+    this.#startBodyInteraction("fill", event, frame.structureVersion);
+    return handleInput(undefined);
+  }
+
+  /** A custom renderer only owns the input when its single hitTest call returns an action. */
+  #routeBodyCanvasAction(context: CorePointerInputContext) {
+    const { event, frame } = context;
+    if (event.button !== 0 || frame.structureVersion === undefined) {
+      return declineInput();
+    }
+    const hit = frame.scene.hitTestCellGeometry(context.point);
+    if (!hit) {
+      return declineInput();
+    }
+
+    const column = this.#columnManager.getColumn(hit.cell.column);
     const renderer = column.renderer;
     if (!renderer || renderer.kind !== "canvas" || !renderer.hitTest) {
-      return;
+      return declineInput();
     }
-
-    const rect = toViewportRect(this.#layout.getCellRect(cell.row, cell.column), viewport);
-    const action = renderer.hitTest({
-      ctx: this.#contentCanvas.getContext("2d") as Canvas2DLike,
-      rect,
-      row: cell.row,
-      column,
-      value: this.#store.getCell(cell.row, cell.column),
-      point: { x: point.x - rect.x, y: point.y - rect.y }
-    });
+    let action;
+    try {
+      action = renderer.hitTest({
+        ctx: this.#contentCanvas.getContext("2d") as Canvas2DLike,
+        rect: hit.rect,
+        row: hit.cell.row,
+        column,
+        value: this.#store.getCell(hit.cell.row, hit.cell.column),
+        point: hit.localPoint
+      });
+    } catch (error) {
+      this.#events.emit("error", {
+        error,
+        eventName: `interaction:canvas-cell-hit-test:${hit.cell.row}:${hit.cell.column}`
+      });
+      return declineInput();
+    }
     if (!action) {
-      return;
+      return declineInput();
     }
 
-    const dispatch = dispatchCellAction(action, this.#store, cell.row, cell.column);
-    if (dispatch.kind === "command") {
-      this.#applyCommand(dispatch.command);
+    const cell = hit.cell;
+    const structureVersion = frame.structureVersion;
+    this.#interactionFrames.enqueueIntent(() => {
+      if (structureVersion !== this.#structureGeneration) {
+        return;
+      }
+      const dispatch = dispatchCellAction(action, cell.row, cell.column);
+      if (dispatch.kind === "command") {
+        this.#applyCommandNow(dispatch.command);
+      } else {
+        this.#editorManager.startEdit(cell.row, cell.column);
+      }
+    });
+    return handleInput(undefined);
+  }
+
+  #startBodySelection(context: CorePointerInputContext): void {
+    const structureVersion = context.frame.structureVersion;
+    if (structureVersion === undefined) {
+      throw new Error("Body selection requires a structure version");
+    }
+    this.#pointerController.down(
+      context.point,
+      context.frame.scene,
+      structureVersion,
+      {
+        shift: context.event.shiftKey,
+        button: context.event.button,
+        ctrlOrMeta: context.event.ctrlKey || context.event.metaKey
+      }
+    );
+    this.#contentCanvas.focus();
+
+    if (context.event.button === 0) {
+      this.#startBodyInteraction("selection", context.event, structureVersion);
     } else {
-      this.#editorManager.startEdit(cell.row, cell.column);
+      // A secondary click may update the selection, but it never owns a drag.
+      this.#pointerController.cancel();
+    }
+  }
+
+  #handleDelegatedPointerDown = (event: PointerEvent): void => {
+    if (!event.isPrimary || (event.button !== 0 && event.button !== 2)) {
+      return;
+    }
+    if (this.#bodyInteractionSession) {
+      if (!this.#bodyInteractionSession.matches(event.pointerId)) {
+        return;
+      }
+      this.#cancelBodyGesture();
+    }
+    if (this.#headerInteractionSession) {
+      if (!this.#headerInteractionSession.matches(event.pointerId)) {
+        return;
+      }
+      this.#cancelHeaderGesture(true);
+    }
+    const handled = this.#dispatchInteraction("pointer-down", (frame) =>
+      this.#inputRouter.dispatch(frame, {
+        event,
+        clientPoint: clientPoint(event.clientX, event.clientY),
+        path: event.composedPath()
+      }).handled
+    );
+    if (handled === undefined) {
+      this.#cancelBodyGesture();
+      this.#cancelHeaderGesture(true);
     }
   };
+
+  #resolvePointerInputTarget(
+    context: InputSurfacePolicyContext<CoreInteractionFrame, PointerEvent, EventTarget>
+  ): InputTargetResolution {
+    for (const entry of context.path) {
+      const declaredTarget = getDeclaredDomPointerInputTarget(entry);
+      if (declaredTarget) {
+        return declaredTarget;
+      }
+      if (isNativePointerPathEntry(entry)) {
+        return nativeInputTarget();
+      }
+      if (entry === this.#rowHeaderCanvas) {
+        const corner = context.frame.surfaces.get("corner");
+        const point = context.frame.surfaces.clientToSurface(context.clientPoint, "corner");
+        return surfaceInputTarget(
+          corner && point &&
+            point.x >= 0 &&
+            point.y >= 0 &&
+            point.x < corner.cssSize.width &&
+            point.y < corner.cssSize.height
+            ? "corner"
+            : "row-header"
+        );
+      }
+      const surface = this.#inputSurfaceOwners.get(entry);
+      if (surface) {
+        return surfaceInputTarget(surface);
+      }
+    }
+    return noInputTarget();
+  }
+
+  #startBodyInteraction(
+    kind: "fill" | "selection",
+    event: PointerEvent,
+    structureVersion: number
+  ): void {
+    const session = new PointerInteractionSession({
+      pointerId: event.pointerId,
+      captureTarget: this.#contentCanvas,
+      onMove: this.#handleBodyPointerMove,
+      onComplete: this.#completeBodyGesture,
+      onCancel: () => {
+        if (this.#bodyInteractionSession === session) {
+          this.#cancelBodyGesture();
+        }
+      },
+      onCaptureError: (error, phase) => {
+        this.#events.emit("error", {
+          error,
+          eventName: `interaction:body-pointer-${phase}`
+        });
+      }
+    });
+    this.#bodyGesture = { kind, structureVersion };
+    this.#bodyInteractionSession = session;
+  }
+
+  #handleBodyPointerMove = (event: PointerEvent): void => {
+    const gesture = this.#bodyGesture;
+    if (!gesture) {
+      return;
+    }
+    const handled = this.#dispatchInteraction("body-pointer-move", (frame) => {
+      if (
+        frame.structureVersion === undefined ||
+        frame.structureVersion !== gesture.structureVersion
+      ) {
+        this.#cancelBodyGesture();
+        return;
+      }
+      const point = frame.surfaces.clientToSurface(
+        clientPoint(event.clientX, event.clientY),
+        "body"
+      );
+      if (!point) {
+        this.#cancelBodyGesture();
+        return;
+      }
+      if (gesture.kind === "fill") {
+        this.#fillHandleController.handlePointerMove(
+          point,
+          frame.scene,
+          frame.structureVersion
+        );
+      } else {
+        this.#pointerController.move(point, frame.scene, frame.structureVersion);
+      }
+      return true;
+    });
+    if (handled !== true) {
+      this.#cancelBodyGesture();
+    }
+  };
+
+  #completeBodyGesture = (_event: PointerEvent): void => {
+    const gesture = this.#bodyGesture;
+    this.#bodyInteractionSession = null;
+    this.#bodyGesture = null;
+    if (!gesture) {
+      return;
+    }
+    this.#dispatchInteraction("body-pointer-up", (frame) => {
+      if (frame.structureVersion !== gesture.structureVersion) {
+        return;
+      }
+      if (gesture.kind === "fill") {
+        const intent = this.#fillHandleController.handlePointerUp(gesture.structureVersion);
+        if (intent) {
+          this.#interactionFrames.enqueueIntent(() => {
+            if (intent.structureVersion === this.#structureGeneration) {
+              this.#commitFillNow(intent.sourceRange, intent.targetRange);
+            }
+          });
+        }
+      } else {
+        this.#pointerController.up(gesture.structureVersion);
+      }
+    });
+    // Also covers frame acquisition failures and structure mismatches.
+    this.#fillHandleController.cancel();
+    this.#pointerController.cancel();
+  };
+
+  #cancelBodyGesture(): void {
+    const session = this.#bodyInteractionSession;
+    this.#bodyInteractionSession = null;
+    this.#bodyGesture = null;
+    session?.dispose();
+    this.#fillHandleController.cancel();
+    this.#pointerController.cancel();
+  }
 
   #handleDblClick = (event: MouseEvent): void => {
     if (this.#editorManager.isEditing()) {
       return;
     }
-    const canvasRect = this.#contentCanvas.getBoundingClientRect();
-    const point = { x: event.clientX - canvasRect.left, y: event.clientY - canvasRect.top };
-    if (isPointOnFillHandle(point, this.#selectionModel.snapshot.range, this.#layout, this.#readViewport())) {
-      this.#autoFillDown();
-      return;
-    }
-    const { active } = this.#selectionModel.snapshot;
-    this.#editorManager.startEdit(active.row, active.column);
+    this.#dispatchInteraction("double-click", (frame) => {
+      const point = frame.surfaces.clientToSurface(
+        clientPoint(event.clientX, event.clientY),
+        "body"
+      );
+      const selection = frame.selection;
+      if (!point || !selection) {
+        return;
+      }
+      const structureVersion = frame.structureVersion;
+      if (isPointOnFillHandle(point, selection.range, frame.scene)) {
+        const range = selection.range;
+        this.#interactionFrames.enqueueIntent(() => {
+          if (structureVersion === this.#structureGeneration) {
+            this.#autoFillDownNow(range);
+          }
+        });
+        return;
+      }
+      const active = selection.active;
+      this.#interactionFrames.enqueueIntent(() => {
+        if (structureVersion === this.#structureGeneration) {
+          this.#editorManager.startEdit(active.row, active.column);
+        }
+      });
+    });
   };
 
   /**
@@ -1085,8 +2361,7 @@ export class CyExcelCore {
    * double-click-fill-handle behavior. Scans down from the selection's own
    * first row until an empty cell ends the neighbor's run.
    */
-  #autoFillDown(): void {
-    const { range } = this.#selectionModel.snapshot;
+  #autoFillDownNow(range: CellRange): void {
     const neighborColumn = range.startColumn > 0 ? range.startColumn - 1 : range.startColumn + 1;
     if (neighborColumn < 0 || neighborColumn >= this.#columns.length) {
       return;
@@ -1104,7 +2379,7 @@ export class CyExcelCore {
       return;
     }
 
-    this.#commitFill(range, { ...range, endRow: targetRow });
+    this.#commitFillNow(range, { ...range, endRow: targetRow });
   }
 
   /**
@@ -1116,7 +2391,7 @@ export class CyExcelCore {
    * their existing values in the extended region, the same semantic
    * ClipboardService.paste() uses for read-only columns.
    */
-  #commitFill(sourceRange: CellRange, targetRange: CellRange): void {
+  #commitFillNow(sourceRange: CellRange, targetRange: CellRange): void {
     const rows = targetRange.endRow - targetRange.startRow + 1;
     const columns = targetRange.endColumn - targetRange.startColumn + 1;
     const values: unknown[][] = Array.from({ length: rows }, () => new Array<unknown>(columns).fill(undefined));
@@ -1162,7 +2437,7 @@ export class CyExcelCore {
       }
     }
 
-    this.#applyCommand(new SetRangeCommand(this.#store, targetRange, values));
+    this.#applyCommandNow(new SetRangeCommand(targetRange, values));
     this.#selectionModel.selectCell(targetRange.startRow, targetRange.startColumn);
     this.#selectionModel.extendTo(targetRange.endRow, targetRange.endColumn);
     this.#renderScheduler.invalidateSelection();
@@ -1179,16 +2454,21 @@ export class CyExcelCore {
    */
   #handleContextMenu = (event: MouseEvent): void => {
     event.preventDefault();
-    const scrollerRect = this.#scroller.getBoundingClientRect();
-    const point = { x: event.clientX - scrollerRect.left, y: event.clientY - scrollerRect.top };
-    const context = classifyContextMenuTarget(
-      point,
-      this.#readViewport(),
-      { rowHeaderWidth: this.#rowHeaderWidth, columnHeaderHeight: this.#headerHeight() },
-      this.#layout,
-      this.#selectionModel.snapshot
-    );
-    this.#contextMenuService.open(context);
+    this.#dispatchInteraction("context-menu", (frame) => {
+      const point = frame.surfaces.clientToSurface(
+        clientPoint(event.clientX, event.clientY),
+        "menu-overlay"
+      );
+      if (!point || !frame.selection) {
+        return;
+      }
+      const context = classifyContextMenuTarget(
+        { x: point.x, y: point.y },
+        frame.scene,
+        frame.selection
+      );
+      this.#contextMenuService.open(context);
+    });
   };
 
   /**
@@ -1235,32 +2515,18 @@ export class CyExcelCore {
       return;
     }
 
-    const { active } = this.#selectionModel.snapshot;
-
-    if (event.key === "Enter") {
+    // Built-in Mod+Z/Mod+Shift+Z/Mod+Y/Enter are themselves registered
+    // through #shortcuts (see the constructor) — a KeyboardEvent already has
+    // the exact shape ShortcutRegistry.dispatch() expects, so it's passed
+    // straight through, no wrapping needed.
+    if (this.#shortcuts.dispatch(event)) {
       event.preventDefault();
-      this.#editorManager.startEdit(active.row, active.column);
       return;
-    }
-
-    // Ctrl+Z / Cmd+Z undoes; Ctrl+Shift+Z, Cmd+Shift+Z, and Ctrl+Y all redo
-    // (the same three shortcuts Excel/Sheets/most editors accept).
-    if ((event.ctrlKey || event.metaKey) && !event.altKey) {
-      const key = event.key.toLowerCase();
-      if (key === "z" && !event.shiftKey) {
-        event.preventDefault();
-        this.undo();
-        return;
-      }
-      if ((key === "z" && event.shiftKey) || key === "y") {
-        event.preventDefault();
-        this.redo();
-        return;
-      }
     }
 
     if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
+      const { active } = this.#selectionModel.snapshot;
       this.#editorManager.startEdit(active.row, active.column, event.key);
       return;
     }
@@ -1272,6 +2538,7 @@ export class CyExcelCore {
   };
 
   #handleScroll = (): void => {
+    this.#cancelResizeGesture(true);
     if (this.#editorManager.isEditing()) {
       if (this.#scrollCommitPolicy === "commit") {
         void this.#editorManager.commitEdit();
@@ -1283,126 +2550,539 @@ export class CyExcelCore {
     this.#renderScheduler.invalidateAll();
   };
 
-  /**
-   * Column width is clamped to [minWidth ?? DEFAULT_MIN_COLUMN_WIDTH,
-   * maxWidth ?? Infinity] from that column's own ColumnDefinition. A click
-   * that doesn't land on a resize handle selects the whole column instead
-   * — reuses SelectionModel.selectColumn(), written in Step 6 but never
-   * wired to a real listener until this row-header patch (see
-   * doc/progress.md — leaving column headers non-clickable while row
-   * headers select rows would be a new, confusing inconsistency).
-   */
-  #handleHeaderPointerDown = (event: PointerEvent): void => {
-    const rect = this.#headerCanvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const viewport = this.#readViewport();
-    const column = this.#columnAtResizeHandle(x, viewport);
-    if (column !== null) {
-      this.#resizeDrag = { column, startX: event.clientX, startWidth: this.#layout.getColumnWidth(column) };
+  #routeHeaderResize(
+    context: CorePointerInputContext,
+    kind: "column-resize" | "row-resize"
+  ) {
+    const { event, frame } = context;
+    if (
+      event.button !== 0 ||
+      !event.isPrimary ||
+      frame.structureVersion === undefined ||
+      context.surface !== (kind === "column-resize" ? "column-header" : "row-header")
+    ) {
+      return declineInput();
+    }
+    const point = context.point as
+      | SurfacePoint<"column-header">
+      | SurfacePoint<"row-header">;
+    if (!this.#headerResizeController.handlePointerDown(
+      point,
+      frame.scene,
+      frame.structureVersion
+    )) {
+      return declineInput();
+    }
+
+    event.preventDefault();
+    this.#contentCanvas.focus();
+    this.#startHeaderInteraction(kind, event, frame.structureVersion);
+    if (kind === "column-resize") {
       this.#headerCanvas.style.cursor = "col-resize";
-      return;
+    } else {
+      this.#rowHeaderCanvas.style.cursor = "row-resize";
     }
-
-    const hit = this.#layout.getCellAtPoint({ x, y: 0 }, viewport);
-    if (hit) {
-      this.#selectionModel.selectColumn(hit.column);
-      this.#renderScheduler.invalidateSelection();
-      this.#contentCanvas.focus();
-    }
-  };
-
-  #handleHeaderPointerMove = (event: PointerEvent): void => {
-    if (!this.#resizeDrag) {
-      this.#updateHeaderResizeCursor(event);
-      return;
-    }
-    const { column, startX, startWidth } = this.#resizeDrag;
-    const columnConfig = this.#columns[column];
-    const minWidth = columnConfig?.minWidth ?? DEFAULT_MIN_COLUMN_WIDTH;
-    const maxWidth = columnConfig?.maxWidth ?? Number.POSITIVE_INFINITY;
-    const nextWidth = Math.min(maxWidth, Math.max(minWidth, startWidth + (event.clientX - startX)));
-
-    this.#layout.setColumnWidth(column, nextWidth);
-    this.#updateSpacerSize();
-    // Every layer whose positions depend on column offsets needs to catch
-    // up — content/selection via the scheduler, the header canvas
-    // directly (it isn't scheduler-driven), and both DOM overlays (a
-    // DOM-rendered body or header cell in a later column just moved).
-    const viewport = this.#readViewport();
-    this.#renderScheduler.invalidateAll();
-    this.#renderScheduler.invalidateSelection();
-    this.#headerCanvasRenderer.paint();
-    this.#domCellManager.sync(viewport);
-    this.#domHeaderManager.sync(viewport);
-  };
-
-  #handleHeaderPointerUp = (event: PointerEvent): void => {
-    this.#resizeDrag = null;
-    this.#updateHeaderResizeCursor(event);
-  };
-
-  /** Shows a col-resize cursor while hovering a resize handle, clears it otherwise — the 4px handle zone (RESIZE_HANDLE_TOLERANCE) has no other visual affordance. */
-  #updateHeaderResizeCursor(event: PointerEvent): void {
-    const rect = this.#headerCanvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    if (x < 0 || x > rect.width || y < 0 || y > rect.height) {
-      this.#headerCanvas.style.cursor = "";
-      return;
-    }
-    const viewport = this.#readViewport();
-    const overHandle = this.#columnAtResizeHandle(x, viewport) !== null;
-    this.#headerCanvas.style.cursor = overHandle ? "col-resize" : "";
+    return handleInput(undefined);
   }
 
-  /**
-   * A click in the corner band (y < headerHeight) selects everything;
-   * otherwise selects the clicked row. `x` is forced to 0 in the
-   * getCellAtPoint() call — same trick classifyContextMenuTarget() uses —
-   * since only the resolved row matters here, and column 0 is always a
-   * valid x for that lookup regardless of how wide the row header is.
-   */
-  #handleRowHeaderPointerDown = (event: PointerEvent): void => {
-    const rect = this.#rowHeaderCanvas.getBoundingClientRect();
-    const y = event.clientY - rect.top;
-    const headerHeight = this.#headerHeight();
+  #routeHeaderCanvasAction(context: CorePointerInputContext) {
+    const { event, frame } = context;
+    if (
+      event.button !== 0 ||
+      !event.isPrimary ||
+      frame.structureVersion === undefined ||
+      context.surface !== "column-header"
+    ) {
+      return declineInput();
+    }
+    const hit = frame.scene.hitTestColumnHeader(
+      context.point as SurfacePoint<"column-header">
+    );
+    if (!hit || hit.band.role !== "leaf") {
+      return declineInput();
+    }
+    const header = this.#headerManager.getHeader(hit.column);
+    const renderer = header.renderer;
+    if (!renderer || renderer.kind !== "canvas" || !renderer.hitTest) {
+      return declineInput();
+    }
 
-    if (headerHeight > 0 && y < headerHeight) {
-      this.#selectionModel.selectAll();
-    } else {
-      const viewport = this.#readViewport();
-      const hit = this.#layout.getCellAtPoint({ x: 0, y: y - headerHeight }, viewport);
-      if (!hit) {
-        return;
+    let action: HeaderAction | void;
+    try {
+      action = renderer.hitTest({
+        ctx: this.#headerCanvas.getContext("2d") as Canvas2DLike,
+        rect: hit.rect,
+        column: hit.column,
+        title: header.title,
+        state: {},
+        point: hit.localPoint
+      });
+    } catch (error) {
+      this.#events.emit("error", {
+        error,
+        eventName: `interaction:canvas-header-hit-test:${hit.column}`
+      });
+      return declineInput();
+    }
+    if (!action) {
+      return declineInput();
+    }
+
+    const payload: CyExcelHeaderActionEvent = Object.freeze({
+      action: Object.freeze({ ...action }),
+      column: hit.column,
+      header,
+      structureVersion: frame.structureVersion
+    });
+    this.#interactionFrames.enqueueIntent(() => {
+      if (payload.structureVersion === this.#structureGeneration) {
+        this.#events.emit("header-action", payload);
       }
-      this.#selectionModel.selectRow(hit.row);
+    });
+    event.preventDefault();
+    this.#contentCanvas.focus();
+    return handleInput(undefined);
+  }
+
+  #routeHeaderSelection(
+    context: CorePointerInputContext,
+    gestureKind: "column-selection" | "row-selection" | null
+  ) {
+    const { event, frame } = context;
+    if (frame.structureVersion === undefined) {
+      return declineInput();
+    }
+    const result = this.#headerSelectionController.down(
+      context.point as
+        | SurfacePoint<"column-header">
+        | SurfacePoint<"row-header">
+        | SurfacePoint<"corner">,
+      frame.scene,
+      this.#selectionModel,
+      frame.structureVersion,
+      { shift: event.shiftKey, button: event.button, isPrimary: event.isPrimary }
+    );
+    if (!result) {
+      return declineInput();
     }
     this.#renderScheduler.invalidateSelection();
     this.#contentCanvas.focus();
+    if (gestureKind && event.button === 0 && this.#headerSelectionController.dragging) {
+      event.preventDefault();
+      this.#startHeaderInteraction(gestureKind, event, frame.structureVersion);
+    }
+    return handleInput(undefined);
+  }
+
+  #routeRowReorder(context: CorePointerInputContext) {
+    const { event, frame } = context;
+    if (
+      !this.#rowReorderController ||
+      event.button !== 0 ||
+      !event.isPrimary ||
+      !frame.selection ||
+      frame.structureVersion === undefined ||
+      context.surface !== "row-header"
+    ) {
+      return declineInput();
+    }
+    const point = context.point as SurfacePoint<"row-header">;
+    if (!this.#rowReorderController.handlePointerDown(
+      point.y,
+      frame.selection,
+      frame.scene,
+      frame.structureVersion
+    )) {
+      return declineInput();
+    }
+
+    event.preventDefault();
+    this.#contentCanvas.focus();
+    document.body.style.cursor = "grabbing";
+    this.#startHeaderInteraction("row-reorder", event, frame.structureVersion);
+    return handleInput(undefined);
+  }
+
+  #startHeaderInteraction(
+    kind: HeaderGestureKind,
+    event: PointerEvent,
+    structureVersion: number
+  ): void {
+    const captureTarget = kind.startsWith("column-")
+      ? this.#headerCanvas
+      : this.#rowHeaderCanvas;
+    const session = new PointerInteractionSession({
+      pointerId: event.pointerId,
+      captureTarget,
+      onMove: this.#handleHeaderPointerMove,
+      onComplete: this.#completeHeaderGesture,
+      onCancel: () => {
+        if (this.#headerInteractionSession === session) {
+          this.#cancelHeaderGesture(true);
+        }
+      },
+      onCaptureError: (error, phase) => {
+        this.#events.emit("error", {
+          error,
+          eventName: `interaction:header-pointer-${phase}`
+        });
+      }
+    });
+    this.#headerGesture = { kind, structureVersion };
+    this.#headerInteractionSession = session;
+  }
+
+  /** Cancels only resize gestures; ordinary scroll must not kill row auto-scroll/reorder. */
+  #cancelResizeGesture(publish: boolean): void {
+    if (
+      this.#headerGesture?.kind === "column-resize" ||
+      this.#headerGesture?.kind === "row-resize"
+    ) {
+      this.#cancelHeaderGesture(publish);
+    }
+  }
+
+  #cancelHeaderGesture(publishResizePreview: boolean): void {
+    const hadResizePreview = this.#headerResizeController.previewPublished;
+    const session = this.#headerInteractionSession;
+    this.#headerInteractionSession = null;
+    this.#headerGesture = null;
+    session?.dispose();
+    this.#headerResizeController.cancel();
+    this.#headerSelectionController.cancel();
+    this.#rowReorderController?.cancel();
+    this.#stopRowReorderAutoScroll();
+    this.#headerCanvas.style.cursor = "";
+    this.#rowHeaderCanvas.style.cursor = "";
+    document.body.style.cursor = "";
+    if (publishResizePreview && hadResizePreview) {
+      this.#withFinalization(() => this.#restoreAuthoritativeScene());
+    }
+  }
+
+  #handleHeaderPointerMove = (event: PointerEvent): void => {
+    const gesture = this.#headerGesture;
+    if (!gesture) {
+      return;
+    }
+
+    const handled = this.#dispatchInteraction("header-pointer-move", (frame) => {
+      if (frame.structureVersion !== gesture.structureVersion) {
+        this.#cancelHeaderGesture(true);
+        return false;
+      }
+      const surface = gesture.kind.startsWith("column-")
+        ? "column-header"
+        : "row-header";
+      const point = frame.surfaces.clientToSurface(
+        clientPoint(event.clientX, event.clientY),
+        surface
+      );
+      if (!point) {
+        return false;
+      }
+
+      if (gesture.kind === "column-resize" || gesture.kind === "row-resize") {
+        const preview = this.#headerResizeController.handlePointerMove(
+          point,
+          frame.scene,
+          gesture.structureVersion
+        );
+        if (preview) {
+          const root = preview.axis === "column"
+            ? this.#layout.prepareSetColumnWidth(preview.column, preview.width)
+            : this.#layout.prepareSetRowHeight(preview.row, preview.height);
+          this.#publishResizePreview(root);
+        }
+        return true;
+      }
+
+      if (gesture.kind === "column-selection" || gesture.kind === "row-selection") {
+        const action = this.#headerSelectionController.move(
+          point,
+          frame.scene,
+          this.#selectionModel,
+          gesture.structureVersion
+        );
+        if (action) {
+          this.#renderScheduler.invalidateSelection();
+        }
+        return true;
+      }
+
+      this.#rowReorderLastClientY = event.clientY;
+      this.#applyRowReorderPointerMove(frame);
+      this.#startRowReorderAutoScroll();
+      return true;
+    });
+    if (handled !== true) {
+      this.#cancelHeaderGesture(true);
+    }
   };
 
-  /** Finds the column whose right edge (translated for its own frozen status) is within RESIZE_HANDLE_TOLERANCE of `x`. Only considers frozen + currently-visible columns, same set the header actually renders. */
-  #columnAtResizeHandle(x: number, viewport: ViewportState): number | null {
-    const frozenColumnCount = this.#layout.frozenColumnCount;
-    const visible = this.#layout.getVisibleColumnRange(viewport);
-
-    const candidates = new Set<number>();
-    for (let column = 0; column < frozenColumnCount; column += 1) {
-      candidates.add(column);
+  #completeHeaderGesture = (event: PointerEvent): void => {
+    const gesture = this.#headerGesture;
+    const hadResizePreview = this.#headerResizeController.previewPublished;
+    this.#headerInteractionSession = null;
+    this.#headerGesture = null;
+    if (!gesture) {
+      return;
     }
-    for (let i = 0; i < visible.count; i += 1) {
-      candidates.add(visible.start + i);
+    if (gesture.kind === "row-reorder") {
+      this.#stopRowReorderAutoScroll();
+      document.body.style.cursor = "";
     }
 
-    for (const column of candidates) {
-      const frozen = column < frozenColumnCount;
-      const left = this.#layout.getColumnLeft(column) - (frozen ? 0 : viewport.scrollLeft);
-      const right = left + this.#layout.getColumnWidth(column);
-      if (Math.abs(x - right) <= RESIZE_HANDLE_TOLERANCE) {
-        return column;
+    let completed = false;
+    this.#dispatchInteraction("header-pointer-up", (frame) => {
+      if (frame.structureVersion !== gesture.structureVersion) {
+        return;
+      }
+      completed = true;
+      if (gesture.kind === "column-resize" || gesture.kind === "row-resize") {
+        const intent = this.#headerResizeController.handlePointerUp(
+          gesture.structureVersion
+        );
+        if (intent) {
+          this.#interactionFrames.enqueueIntent(() => this.#commitHeaderResize(intent));
+        } else if (hadResizePreview) {
+          this.#interactionFrames.enqueueIntent(() => {
+            this.#withFinalization(() => this.#restoreAuthoritativeScene());
+          });
+        }
+      } else if (
+        gesture.kind === "column-selection" ||
+        gesture.kind === "row-selection"
+      ) {
+        this.#headerSelectionController.up(gesture.structureVersion);
+      } else {
+        const intent = this.#rowReorderController?.handlePointerUp(
+          gesture.structureVersion
+        );
+        if (intent) {
+          this.#interactionFrames.enqueueIntent(() => {
+            if (intent.structureVersion === this.#structureGeneration) {
+              this.#commitRowReorder(intent.start, intent.count, intent.target);
+            }
+          });
+        }
+      }
+    });
+
+    if (!completed) {
+      this.#headerResizeController.cancel();
+      this.#headerSelectionController.cancel();
+      this.#rowReorderController?.cancel();
+      if (hadResizePreview) {
+        this.#withFinalization(() => this.#restoreAuthoritativeScene());
       }
     }
-    return null;
+    this.#renderScheduler.invalidatePresentation({ rowHeader: true });
+    this.#updateHeaderHover(
+      event,
+      gesture.kind.startsWith("column-") ? "column-header" : "row-header"
+    );
+  };
+
+  #commitHeaderResize(intent: HeaderResizeIntent): void {
+    if (intent.structureVersion !== this.#structureGeneration) {
+      this.#withFinalization(() => this.#restoreAuthoritativeScene());
+      return;
+    }
+    try {
+      this.#cancelActiveEdit();
+      if (intent.axis === "column") {
+        this.#applyCommandNow(
+          new ResizeColumnCommand(intent.column, intent.width)
+        );
+      } else {
+        this.#applyCommandNow(new ResizeRowCommand(intent.row, intent.height));
+      }
+    } catch (error) {
+      this.#withFinalization(() => this.#restoreAuthoritativeScene());
+      this.#events.emit("error", {
+        error,
+        eventName: `interaction:${intent.axis}-resize`
+      });
+    }
+  }
+
+  #commitRowReorder(start: number, count: number, target: number): void {
+    try {
+      validateAxisChange(
+        { axis: "row", operation: "move", start, count, target },
+        this.#dataSource.getRowCount()
+      );
+      this.#cancelActiveEdit();
+      this.#applyCommandNow(new MoveRowsCommand(start, count, target));
+    } catch (error) {
+      this.#events.emit("error", { error, eventName: "interaction:row-reorder" });
+    }
+  }
+
+  #handleHeaderPointerHover = (event: PointerEvent): void => {
+    if (!this.#headerInteractionSession) {
+      this.#updateHeaderHover(event, "column-header");
+    }
+  };
+
+  #handleRowHeaderPointerHover = (event: PointerEvent): void => {
+    if (!this.#headerInteractionSession) {
+      this.#updateHeaderHover(event, "row-header");
+    }
+  };
+
+  #updateHeaderHover(
+    event: PointerEvent,
+    explicitSurface?: "column-header" | "row-header"
+  ): void {
+    const surface = explicitSurface ?? (
+      event.currentTarget === this.#headerCanvas ? "column-header" : "row-header"
+    );
+    this.#dispatchInteraction(`${surface}-pointer-hover`, (frame) => {
+      const snapshot = frame.surfaces.get(surface);
+      const point = frame.surfaces.clientToSurface(
+        clientPoint(event.clientX, event.clientY),
+        surface
+      );
+      if (
+        !snapshot ||
+        !point ||
+        point.x < 0 ||
+        point.y < 0 ||
+        point.x >= snapshot.cssSize.width ||
+        point.y >= snapshot.cssSize.height
+      ) {
+        if (surface === "column-header") {
+          this.#headerCanvas.style.cursor = "";
+        } else {
+          this.#rowHeaderCanvas.style.cursor = "";
+        }
+        return;
+      }
+      const resize = this.#headerResizeController.hitTest(point, frame.scene);
+      if (surface === "column-header") {
+        this.#headerCanvas.style.cursor = resize ? "col-resize" : "";
+        return;
+      }
+      if (resize) {
+        this.#rowHeaderCanvas.style.cursor = "row-resize";
+        return;
+      }
+      const reorder = frame.selection
+        ? this.#rowReorderController?.isPointOnHandle(
+            point.y,
+            frame.selection,
+            frame.scene
+          ) ?? false
+        : false;
+      this.#rowHeaderCanvas.style.cursor = reorder ? "grab" : "";
+    });
+  }
+
+  #applyRowReorderPointerMove(frame: CoreInteractionFrame): void {
+    const gesture = this.#headerGesture;
+    if (
+      gesture?.kind !== "row-reorder" ||
+      frame.structureVersion !== gesture.structureVersion ||
+      this.#rowReorderLastClientY === null
+    ) {
+      return;
+    }
+    const rowHeader = frame.surfaces.get("row-header");
+    if (!rowHeader) {
+      return;
+    }
+    const point = frame.surfaces.clientToSurface(
+      clientPoint(rowHeader.clientOrigin.x, this.#rowReorderLastClientY),
+      "row-header"
+    );
+    if (!point) {
+      return;
+    }
+    this.#rowReorderController?.handlePointerMove(
+      point.y,
+      frame.scene,
+      gesture.structureVersion
+    );
+    this.#renderScheduler.invalidatePresentation({ rowHeader: true });
+  }
+
+  #startRowReorderAutoScroll(): void {
+    if (this.#rowReorderAutoScrollFrame !== null) {
+      return;
+    }
+    const tick = (): void => {
+      const gesture = this.#headerGesture;
+      if (gesture?.kind !== "row-reorder" || this.#rowReorderLastClientY === null) {
+        this.#rowReorderAutoScrollFrame = null;
+        return;
+      }
+
+      const delta = this.#dispatchInteraction("row-reorder-auto-scroll", (frame) => {
+        if (frame.structureVersion !== gesture.structureVersion) {
+          return null;
+        }
+        const rowHeader = frame.surfaces.get("row-header");
+        if (!rowHeader || this.#rowReorderLastClientY === null) {
+          return null;
+        }
+        const bodyTop = rowHeader.clientOrigin.y;
+        const bodyBottom = bodyTop + rowHeader.cssSize.height;
+        const y = this.#rowReorderLastClientY;
+        if (y < bodyTop + ROW_REORDER_AUTO_SCROLL_EDGE_PX) {
+          const depth = Math.min(
+            ROW_REORDER_AUTO_SCROLL_EDGE_PX,
+            Math.max(0, bodyTop + ROW_REORDER_AUTO_SCROLL_EDGE_PX - y)
+          );
+          return -ROW_REORDER_AUTO_SCROLL_MAX_SPEED *
+            (depth / ROW_REORDER_AUTO_SCROLL_EDGE_PX);
+        }
+        if (y > bodyBottom - ROW_REORDER_AUTO_SCROLL_EDGE_PX) {
+          const depth = Math.min(
+            ROW_REORDER_AUTO_SCROLL_EDGE_PX,
+            Math.max(0, y - (bodyBottom - ROW_REORDER_AUTO_SCROLL_EDGE_PX))
+          );
+          return ROW_REORDER_AUTO_SCROLL_MAX_SPEED *
+            (depth / ROW_REORDER_AUTO_SCROLL_EDGE_PX);
+        }
+        return 0;
+      });
+
+      if (delta === undefined || delta === null) {
+        this.#cancelHeaderGesture(true);
+        return;
+      }
+      if (delta !== 0) {
+        this.#scroller.scrollTop += delta;
+        this.#syncViewport();
+        this.#renderScheduler.invalidateAll();
+        const moved = this.#dispatchInteraction("row-reorder-auto-scroll-move", (frame) => {
+          if (frame.structureVersion !== gesture.structureVersion) {
+            return false;
+          }
+          this.#applyRowReorderPointerMove(frame);
+          return true;
+        });
+        if (moved !== true) {
+          this.#cancelHeaderGesture(true);
+          return;
+        }
+      }
+
+      if (this.#headerGesture?.kind === "row-reorder") {
+        this.#rowReorderAutoScrollFrame = requestAnimationFrame(tick);
+      }
+    };
+    this.#rowReorderAutoScrollFrame = requestAnimationFrame(tick);
+  }
+
+  #stopRowReorderAutoScroll(): void {
+    if (this.#rowReorderAutoScrollFrame !== null) {
+      cancelAnimationFrame(this.#rowReorderAutoScrollFrame);
+      this.#rowReorderAutoScrollFrame = null;
+    }
+    this.#rowReorderLastClientY = null;
   }
 }
 

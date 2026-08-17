@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel context-menu-bounds fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      /* Narrow on purpose — DefaultMenuRenderer's minWidth (160px) doesn't
+         fit between a right-click near the right edge and the container's
+         own right edge, reliably reproducing the real clipping report. */
+      #app {
+        width: 250px;
+        height: 200px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore, createBasicContextMenuPlugin } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+      const columns = Array.from({ length: 4 }, (_unused, index) => ({
+        id: `c${index}`,
+        field: `c${index}`,
+        width: 80,
+        header: `C${index}`
+      }));
+      const data = Array.from({ length: 10 }, (_unused, row) =>
+        Object.fromEntries(columns.map((column, index) => [column.field, `${row}-${index}`]))
+      );
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        data,
+        rowHeight: 24,
+        headerHeight: 24,
+        plugins: [createBasicContextMenuPlugin()]
+      });
+
+      window.__sheet = sheet;
+      window.__cyexcelContextMenuBoundsReady = true;
+    </script>
+  </body>
+</html>

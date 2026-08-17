@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel finalizer isolation fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+      }
+      #app {
+        width: 420px;
+        height: 220px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      let failure = null;
+      let reenterFromCell = false;
+      let reentered = false;
+      let mutateFromCanvasPaint = false;
+      let canvasPaintMutated = false;
+      let recordFormatSceneVersions = false;
+      let failEditorGeometry = false;
+      const formatSceneVersions = [];
+      let sheet;
+
+      const positionEditor = (element, rect) => {
+        element.style.position = "absolute";
+        element.style.left = `${rect.x}px`;
+        element.style.top = `${rect.y}px`;
+        element.style.width = `${rect.width}px`;
+        element.style.height = `${rect.height}px`;
+      };
+
+      const editorFactory = () => {
+        let input;
+        return {
+          mount(container, context) {
+            input = document.createElement("input");
+            input.className = "throwing-editor";
+            input.value = String(context.initialValue ?? "");
+            positionEditor(input, context.rect);
+            container.append(input);
+          },
+          updateGeometry(rect) {
+            if (failEditorGeometry) throw new Error("editor geometry failed");
+            positionEditor(input, rect);
+          },
+          getValue() {
+            return input.value;
+          },
+          focus() {
+            input.focus();
+          },
+          destroy() {
+            input.remove();
+          }
+        };
+      };
+
+      const canvasIntentRenderer = {
+        kind: "canvas",
+        paint() {
+          if (mutateFromCanvasPaint && !canvasPaintMutated) {
+            canvasPaintMutated = true;
+            sheet.setCell(0, 1, "async-renderer-intent");
+          }
+        }
+      };
+
+      const cellFactory = {
+        kind: "dom",
+        pointerOwnership: "surface",
+        create() {
+          let element;
+          return {
+            mount(host, context) {
+              element = document.createElement("span");
+              element.className = "dom-cell";
+              element.textContent = String(context.value ?? "");
+              host.append(element);
+            },
+            update(context) {
+              if (failure === "cells") throw new Error("cell update failed");
+              element.textContent = String(context.value ?? "");
+              if (reenterFromCell && !reentered) {
+                reentered = true;
+                sheet.setCell(0, 1, "inner");
+              }
+            },
+            destroy() {
+              element.remove();
+            }
+          };
+        }
+      };
+
+      const headerFactory = {
+        kind: "dom",
+        pointerOwnership: "surface",
+        create() {
+          let element;
+          return {
+            mount(host, context) {
+              element = document.createElement("span");
+              element.className = "dom-header";
+              element.textContent = context.title;
+              host.append(element);
+            },
+            update(context) {
+              if (failure === "headers") throw new Error("header update failed");
+              element.textContent = context.title;
+              element.dataset.column = String(context.column);
+            },
+            destroy() {
+              element.remove();
+            }
+          };
+        }
+      };
+
+      let throwFormat = false;
+      sheet = new CyExcelCore(document.getElementById("app"), {
+        columns: [
+          { id: "dom", width: 90, renderer: cellFactory, header: { title: "DOM", renderer: headerFactory } },
+          {
+            id: "wrapped",
+            width: 80,
+            wrap: true,
+            header: "Wrapped",
+            type: "throwing"
+          },
+          { id: "canvas-intent", width: 80, renderer: canvasIntentRenderer }
+        ],
+        columnTypes: {
+          throwing: {
+            format(value) {
+              if (throwFormat) throw new Error("format failed");
+              if (recordFormatSceneVersions && sheet) {
+                formatSceneVersions.push(sheet.scene.modelVersion);
+              }
+              return String(value ?? "");
+            }
+          }
+        },
+        data: [{ dom: "outer", wrapped: "short", "canvas-intent": "paint" }],
+        rowHeight: 24,
+        headerHeight: 24,
+        rowHeaderWidth: 36,
+        editorFactory
+      });
+
+      const timeline = [];
+      sheet.events.on("error", ({ error, eventName }) => {
+        timeline.push({ kind: "error", eventName, message: String(error?.message ?? error) });
+      });
+      sheet.events.on("change", ({ patches, changeSet }) => {
+        timeline.push({
+          kind: "change",
+          modelVersion: changeSet.modelVersion,
+          patchTypes: patches.map((patch) => patch.type),
+          changeTypes: changeSet.changes.map((change) => change.type)
+        });
+      });
+      sheet.events.on("layout-change", ({ layoutVersion, patches }) => {
+        timeline.push({
+          kind: "layout-change",
+          layoutVersion,
+          patchTypes: patches.map((patch) => patch.type)
+        });
+      });
+
+      window.__sheet = sheet;
+      window.__timeline = timeline;
+      window.__armFailure = (kind) => { failure = kind; };
+      window.__throwFormat = () => { throwFormat = true; };
+      window.__recordFormatSceneVersions = () => {
+        formatSceneVersions.length = 0;
+        recordFormatSceneVersions = true;
+      };
+      window.__formatSceneVersions = formatSceneVersions;
+      window.__armEditorGeometryFailure = () => { failEditorGeometry = true; };
+      window.__reenterFromCell = () => { reenterFromCell = true; };
+      window.__mutateFromCanvasPaint = () => { mutateFromCanvasPaint = true; };
+      window.__cyexcelFinalizerIsolationReady = true;
+    </script>
+  </body>
+</html>

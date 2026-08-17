@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel auto-height preflight fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+      }
+
+      #app {
+        width: 360px;
+        height: 115px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      const scenario = new URLSearchParams(location.search).get("scenario");
+      const wrapColumn = { id: "wrapped", field: "wrapped", width: 70, wrap: true };
+      const keeperColumn = { id: "keeper", field: "keeper", width: 80 };
+      let columns;
+      let data;
+
+      if (scenario === "delete-wrap-column") {
+        columns = [{ ...wrapColumn, width: 52 }, keeperColumn];
+        data = [
+          {
+            wrapped: "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu",
+            keeper: "keep-0"
+          },
+          { wrapped: "short", keeper: "keep-1" },
+          { wrapped: "short", keeper: "keep-2" },
+          { wrapped: "short", keeper: "keep-3" },
+          { wrapped: "short", keeper: "keep-4" }
+        ];
+      } else if (scenario === "delete-top-row") {
+        columns = [wrapColumn, keeperColumn];
+        data = Array.from({ length: 8 }, (_unused, row) => ({
+          wrapped:
+            row === 4
+              ? "newly visible row must be measured before its final scene is published"
+              : `row-${row}`,
+          keeper: `keep-${row}`
+        }));
+      } else if (scenario === "widen-column") {
+        columns = [{ ...wrapColumn, width: 48 }, keeperColumn];
+        data = Array.from({ length: 8 }, (_unused, row) => ({
+          wrapped:
+            row === 0
+              ? "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu"
+              : row === 1
+                ? "second row remains long enough to wrap after widening the column twice over"
+                : `row-${row}`,
+          keeper: `keep-${row}`
+        }));
+      } else {
+        throw new Error(`Unknown auto-height preflight scenario: ${scenario}`);
+      }
+
+      const sheet = new CyExcelCore(document.getElementById("app"), {
+        columns,
+        data,
+        rowHeight: 24,
+        headerHeight: 20,
+        rowHeaderWidth: 36,
+        overscanRows: 0
+      });
+      const rowLayoutRows = [];
+      const errors = [];
+      sheet.events.on("change", ({ patches }) => {
+        for (const patch of patches) {
+          if (patch.type === "row-layout") rowLayoutRows.push(...patch.rows);
+        }
+      });
+      sheet.events.on("error", ({ error, eventName }) => {
+        errors.push({ eventName, message: String(error?.message ?? error) });
+      });
+
+      window.__autoHeightPreflight = { sheet, rowLayoutRows, errors };
+      window.__cyexcelAutoHeightPreflightReady = true;
+    </script>
+  </body>
+</html>

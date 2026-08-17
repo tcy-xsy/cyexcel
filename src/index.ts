@@ -1,7 +1,8 @@
 export {
   CyExcelCore,
   createCyExcelCore,
-  type CyExcelCoreOptions
+  type CyExcelCoreOptions,
+  type CyExcelHeaderActionEvent
 } from "./core";
 export {
   DEFAULT_CYEXCEL_TAG_NAME,

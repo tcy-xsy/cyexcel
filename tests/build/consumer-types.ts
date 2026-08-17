@@ -11,13 +11,29 @@
  */
 import { CyExcelCore, DEFAULT_CYEXCEL_TAG_NAME } from "cyexcel";
 import type { CyExcelCoreOptions } from "cyexcel";
-import { CyExcelCore as CoreCyExcelCore } from "cyexcel/core";
+import * as CoreApi from "cyexcel/core";
 import { defineCyExcel } from "cyexcel/register";
 
 // --- "cyexcel" re-exports the same CyExcelCore as "cyexcel/core" --------
 
-const sameClass: typeof CyExcelCore = CoreCyExcelCore;
+const sameClass: typeof CyExcelCore = CoreApi.CyExcelCore;
 void sameClass;
+
+type IsCoreExported<Name extends PropertyKey> = Name extends keyof typeof CoreApi ? true : false;
+const internalRuntimeIsNotShipped: [
+  IsCoreExported<"TableStore">,
+  IsCoreExported<"MutationCoordinator">,
+  IsCoreExported<"LayoutEngine">,
+  IsCoreExported<"GridStructureOwner">,
+  IsCoreExported<"createGridCommandManager">,
+  IsCoreExported<"CommandManager">,
+  IsCoreExported<"SelectionModel">,
+  IsCoreExported<"SurfaceHost">,
+  IsCoreExported<"RenderScheduler">,
+  IsCoreExported<"CyExcelOptions">,
+  IsCoreExported<"assertValidCyExcelOptions">
+] = [false, false, false, false, false, false, false, false, false, false, false];
+void internalRuntimeIsNotShipped;
 
 // --- CyExcelCoreOptions: fixed shape, columns/data optional --------------
 

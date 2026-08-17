@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel variable-row-height fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 420px;
+        height: 260px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      const columns = [
+        { id: "name", field: "name", width: 96, header: "Name", wrap: true },
+        { id: "other", field: "other", width: 100, header: "Other" }
+      ];
+      const data = Array.from({ length: 80 }, (_unused, row) => ({
+        name:
+          row === 0
+            ? "冻结行里的长中文内容也必须在第一次绘制前自动增高"
+            : row === 11
+              ? "只在初始可视区外一行的超扫描长文本也必须通过 Scene pane 遍历预先测量"
+            : row === 50
+              ? "只有滚动到附近才应测量的长中文内容用于验证可见区懒加载"
+            : row === 70
+              ? "第二个离屏长文本用于验证自动行高不会写入历史也不会清空已有重做项"
+              : `row-${row}`,
+        other: `other-${row}`
+      }));
+
+      const sheet = new CyExcelCore(document.getElementById("app"), {
+        columns,
+        data,
+        rowHeight: 24,
+        headerHeight: 20,
+        rowHeaderWidth: 40,
+        freeze: { rows: 1 },
+        overscanRows: 1,
+        overscanColumns: 2
+      });
+
+      window.__sheet = sheet;
+      window.__rowLayoutRows = [];
+      const recordRowLayouts = ({ patches }) => {
+        for (const patch of patches) {
+          if (patch.type === "row-layout") window.__rowLayoutRows.push(...patch.rows);
+        }
+      };
+      sheet.events.on("change", recordRowLayouts);
+      sheet.events.on("layout-change", recordRowLayouts);
+      window.__cyexcelVariableRowHeightReady = true;
+    </script>
+  </body>
+</html>

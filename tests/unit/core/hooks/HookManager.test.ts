@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { CyExcelError, HookManager, createCancellableContext } from "../../../../src/core";
-import type { HookRegistry } from "../../../../src/core";
+import { CyExcelError } from "../../../../src/core/errors";
+import { HookManager, createCancellableContext } from "../../../../src/core/hooks";
+import type { HookRegistry } from "../../../../src/core/hooks";
 
 function managerWith(registry: HookRegistry): HookManager {
   return new HookManager({ registry });

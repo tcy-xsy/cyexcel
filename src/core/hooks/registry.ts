@@ -14,6 +14,7 @@ export const BEFORE_DESTROY_HOOK: HookDefinition = { mode: "series", async: fals
 export const BEFORE_COMMAND_HOOK: HookDefinition = { mode: "bail", async: false, isolate: false };
 export const BEFORE_TRANSACTION_COMMIT_HOOK: HookDefinition = { mode: "bail", async: false, isolate: false };
 export const BEFORE_ROWS_CHANGE_HOOK: HookDefinition = { mode: "bail", async: false, isolate: false };
+export const BEFORE_COLUMNS_CHANGE_HOOK: HookDefinition = { mode: "bail", async: false, isolate: false };
 export const RESOLVE_COLUMN_HOOK: HookDefinition = { mode: "waterfall", async: false, isolate: true };
 export const BEFORE_CONTEXT_MENU_OPEN_HOOK: HookDefinition = { mode: "bail", async: false, isolate: false };
 export const EXTEND_CONTEXT_MENU_HOOK: HookDefinition = { mode: "waterfall", async: false, isolate: true };
@@ -26,6 +27,7 @@ export const PRODUCTION_HOOK_REGISTRY: HookRegistry = {
   beforeCommand: BEFORE_COMMAND_HOOK,
   beforeTransactionCommit: BEFORE_TRANSACTION_COMMIT_HOOK,
   beforeRowsChange: BEFORE_ROWS_CHANGE_HOOK,
+  beforeColumnsChange: BEFORE_COLUMNS_CHANGE_HOOK,
   resolveColumn: RESOLVE_COLUMN_HOOK,
   beforeContextMenuOpen: BEFORE_CONTEXT_MENU_OPEN_HOOK,
   extendContextMenu: EXTEND_CONTEXT_MENU_HOOK,

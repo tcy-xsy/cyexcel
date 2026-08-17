@@ -1,162 +1,130 @@
+/**
+ * Product API for the headless-without-registration core entry point.
+ *
+ * Mutable runtime owners and integration factories deliberately stay behind
+ * CyExcelCore. Public consumers receive immutable snapshots and narrow
+ * extension contracts instead of alternate mutation paths.
+ */
 export {
   CyExcelCore,
   createCyExcelCore,
-  type CyExcelCoreOptions
+  type CyExcelColumnConfig,
+  type CyExcelCoreOptions,
+  type CyExcelHeaderActionEvent
 } from "./CyExcelCore";
-export {
-  type CellRange,
-  type RowData,
-  type DataSource,
-  type CommandContext,
-  type Command,
-  type Patch,
-  type Disposer,
-  type HookHandler,
-  type EventListener,
-  type CyExcelOptions
-} from "./types";
+
 export { CyExcelError, CyExcelErrorCode } from "./errors";
-export {
-  HookManager,
-  type HookManagerOptions,
-  createCancellableContext,
-  type CancellableContext,
-  type HookMode,
-  type HookDefinition,
-  type HookRegistry,
-  type HookHandlerMeta,
-  PRODUCTION_HOOK_REGISTRY,
-  BEFORE_INIT_HOOK,
-  BEFORE_DESTROY_HOOK,
-  BEFORE_COMMAND_HOOK,
-  BEFORE_TRANSACTION_COMMIT_HOOK,
-  BEFORE_ROWS_CHANGE_HOOK,
-  RESOLVE_COLUMN_HOOK,
-  BEFORE_CONTEXT_MENU_OPEN_HOOK,
-  EXTEND_CONTEXT_MENU_HOOK,
-  ON_HOOK_ERROR_HOOK
-} from "./hooks";
-export { EventBus } from "./events";
-export {
-  classifyContextMenuTarget,
-  type HeaderLayoutLike,
-  type ContextMenuTarget,
-  type ContextMenuContext,
-  type ContextMenuItem,
-  type ContextMenuProvider,
-  type ContextMenuProviderMeta,
-  type ContextMenuRenderContext,
-  type ContextMenuRenderer,
-  type ContextMenuRendererFactory,
-  ContextMenuService,
-  type ContextMenuServiceOptions,
-  DefaultMenuRenderer,
-  createBasicContextMenuPlugin
-} from "./menu";
-export { PluginManager, type PluginManagerOptions, type CyExcelPlugin, type PluginContext } from "./plugins";
-export {
-  assertValidCoordinate,
-  assertValidRange,
-  assertValidCyExcelOptions
-} from "./validation";
+
+export type {
+  CellRange,
+  RowData,
+  DataSource,
+  DataMutation,
+  PreparedDataSourceMutation,
+  DataSourceTransaction,
+  CellDescriptorSnapshot,
+  ColumnFieldMapping,
+  Command,
+  Patch,
+  Disposer
+} from "./types";
+
 export {
   ArrayDataSource,
   type ArrayDataSourceColumn,
-  type ArrayDataSourceOptions,
-  TableStore,
-  type TableStoreCommitResult,
-  mergePatches
+  type ArrayDataSourceOptions
 } from "./data";
+export type {
+  ChangeSet,
+  SemanticChange
+} from "./data";
+export type { ModelRevision } from "./model";
+export type { TransactionReadView } from "./mutations";
+
+// Frozen command intents are observable from command hooks. Planning,
+// mutation creation, execution and history remain owned by CyExcelCore.
 export {
   SetCellCommand,
+  type SetCellCommandParams,
   SetRangeCommand,
+  type SetRangeCommandParams,
   ClearRangeCommand,
+  type ClearRangeCommandParams,
   InsertRowsCommand,
+  type InsertRowsCommandParams,
   DeleteRowsCommand,
+  type DeleteRowsCommandParams,
   MoveRowsCommand,
-  type BeforeRowsChangeContext,
-  CommandManager,
-  type CommandManagerOptions,
+  type MoveRowsCommandParams,
+  InsertColumnsCommand,
+  type InsertColumnsCommandParams,
+  DeleteColumnsCommand,
+  type DeleteColumnsCommandParams,
+  MoveColumnsCommand,
+  type MoveColumnsCommandParams,
+  HideColumnCommand,
+  type HideColumnCommandParams,
+  ShowColumnCommand,
+  type ShowColumnCommandParams,
+  ResizeRowCommand,
+  type ResizeRowCommandParams,
+  SetRowHeightsCommand,
+  type SetRowHeightsCommandParams,
+  type SetRowHeightUpdate,
+  type RowHeightCommandProvenance,
+  ResizeColumnCommand,
+  type ResizeColumnCommandParams,
   type BeforeCommandContext,
-  type BeforeTransactionCommitContext
+  type BeforeTransactionCommitContext,
+  type BeforeRowsChangeContext,
+  type BeforeColumnsChangeContext
 } from "./commands";
+
+// Immutable geometry and selection published by CyExcelCore.
 export {
-  HistoryManager,
-  type HistoryEntry,
-  type HistoryManagerOptions
-} from "./history";
-export {
-  LayoutEngine,
-  type LayoutOptions,
-  type ViewportState,
-  type IndexRange,
-  type CellRect,
-  toPhysicalPixelSize,
-  toViewportRect,
-  splitByFrozenBoundary,
-  type AxisSplit,
-  remapRowIndex,
-  type RowStructureChange,
-  getSelectionBottomRightRect
+  SceneSnapshot,
+  type SceneSurfaceMetrics,
+  type SceneColumnHeaderBandSpec,
+  type SceneColumnHeaderBandDescriptor,
+  type SceneColumnHeaderLeafBandDescriptor,
+  type SceneColumnHeaderGroupBandDescriptor,
+  type SceneCellFragment,
+  type SceneColumnHeaderFragment,
+  type SceneRowHeaderFragment,
+  type SceneSelectionHandleFragment,
+  type SceneCellAddress,
+  type SceneScrollTarget,
+  type SceneLocalPoint,
+  type SceneCellHit,
+  type SceneColumnHeaderHit,
+  type SceneRowHeaderHit,
+  type SceneRootDescriptor,
+  type SceneSurfaceDescriptor,
+  type SceneLayerDescriptor,
+  type ScenePaneDescriptor,
+  type SceneNodeDescriptor,
+  type SceneSurfaceId,
+  type SceneLayerId,
+  type SceneBodyPaneId,
+  type ScenePaneId,
+  type SceneAxisBehavior,
+  type SceneTranslation
+} from "./scene";
+export type {
+  CellRect,
+  IndexRange,
+  ViewportState
 } from "./layout";
-export {
-  type Canvas2DLike,
-  RenderScheduler,
-  type FrameScheduler,
-  type DirtyState,
-  type RenderTarget,
-  type RenderSchedulerOptions,
-  ContentLayerRenderer,
-  type CellPaintContext,
-  type CellPainter,
-  type ContentLayerRendererOptions,
-  SelectionLayerRenderer,
-  type SelectionLayerRendererOptions,
-  configureCanvasForDpr,
-  type ResizableCanvas
-} from "./render";
-export {
-  SelectionModel,
-  type SelectionKind,
-  type CellPosition,
-  type SelectionBounds,
-  type SelectionSnapshot,
-  PointerController,
-  type HeaderLayout,
-  type PointerControllerOptions,
-  KeyboardController,
-  type KeyboardControllerOptions,
-  FillHandleController,
-  isPointOnFillHandle,
-  type FillHandleControllerOptions,
-  computeFillValues
+export type {
+  SelectionKind,
+  CellPosition,
+  SelectionBounds,
+  SelectionSnapshot
 } from "./interaction";
+
+// User-facing column, cell, header and editor extension contracts.
+export type { Canvas2DLike } from "./render";
 export {
-  type CellEditor,
-  type CellEditorContext,
-  type CellEditorFactory,
-  type ValidationResult,
-  createTextCellEditor,
-  createBooleanCellEditor,
-  createDateCellEditor,
-  createSelectCellEditor,
-  type SelectCellEditorOption,
-  createTextAreaCellEditor,
-  type TextAreaCellEditorOptions,
-  EditorManager,
-  type EditorManagerOptions
-} from "./editors";
-export {
-  CellTypeRegistry,
-  registerBuiltinCellTypes,
-  ColumnManager,
-  type ColumnManagerOptions,
-  type ResolveColumnContext,
-  createColumnAwarePainter,
-  dispatchCellAction,
-  type CellActionDispatch,
-  DOMCellManager,
-  type DOMCellManagerOptions,
   type CellType,
   type CellTypeDefinition,
   type CellFormatContext,
@@ -181,40 +149,51 @@ export {
   type HeaderDefinition,
   type ColumnClipboardPolicy
 } from "./cells";
-export {
-  HeaderManager,
-  type HeaderManagerOptions,
-  HeaderCanvasRenderer,
-  type HeaderCanvasRendererOptions,
-  RowHeaderCanvasRenderer,
-  type RowHeaderCanvasRendererOptions,
-  DomHeaderManager,
-  type DomHeaderManagerOptions,
-  type HeaderGroupDefinition,
-  type RuntimeHeader,
-  type RuntimeHeaderGroup,
-  type HeaderGroupFragment
+export type {
+  HeaderGroupDefinition,
+  RuntimeHeader
 } from "./headers";
 export {
-  escapeTsvCell,
-  encodeTsv,
-  decodeTsv,
-  CopyPlanner,
-  type CopyPlannerOptions,
-  buildCellGrid,
-  type SerializeContext,
-  ClipboardWorkerClient,
-  type ClipboardWorkerClientOptions,
-  type SerializeWorkerLike,
-  type SerializeTaskOptions,
-  ClipboardService,
-  type ClipboardServiceOptions,
-  type ClipboardIO,
-  type CopyMode,
-  type CopyPlan,
-  type ClipboardOptions,
-  type ClipboardCopyStatus,
-  type ClipboardCopyResult,
-  type ClipboardCopyOptions,
-  type ClipboardPasteOptions
+  createTextCellEditor,
+  createBooleanCellEditor,
+  createDateCellEditor,
+  createSelectCellEditor,
+  createTextAreaCellEditor,
+  type CellEditor,
+  type CellEditorContext,
+  type CellEditorFactory,
+  type ValidationResult,
+  type SelectCellEditorOption,
+  type TextAreaCellEditorOptions
+} from "./editors";
+
+export type {
+  CopyMode,
+  CopyPlan,
+  ClipboardOptions,
+  ClipboardCopyStatus,
+  ClipboardCopyResult,
+  ClipboardCopyOptions,
+  ClipboardPasteOptions
 } from "./clipboard";
+
+// Extension services are exposed by CyExcelCore getters. Their classes are
+// type-only here so the public barrel does not advertise standalone mutable
+// runtimes with a second lifecycle.
+export type {
+  HookManager,
+  CancellableContext,
+  HookHandlerMeta
+} from "./hooks";
+export type { EventBus } from "./events";
+export {
+  createBasicContextMenuPlugin,
+  type ContextMenuService,
+  type ContextMenuTarget,
+  type ContextMenuContext,
+  type ContextMenuItem,
+  type ContextMenuProvider,
+  type ContextMenuProviderMeta
+} from "./menu";
+export type { ShortcutHandler } from "./shortcuts";
+export type { CyExcelPlugin, PluginContext } from "./plugins";

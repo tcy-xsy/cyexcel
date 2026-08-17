@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel scroll-extent fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 300px;
+        height: 200px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+      const columns = Array.from({ length: 4 }, (_unused, index) => ({
+        id: `c${index}`,
+        field: `c${index}`,
+        width: 100,
+        header: `C${index}`
+      }));
+      const data = Array.from({ length: 20 }, (_unused, row) =>
+        Object.fromEntries(columns.map((column, index) => [column.field, `${row}-${index}`]))
+      );
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        data,
+        rowHeight: 20,
+        headerHeight: 24,
+        rowHeaderWidth: 32
+      });
+
+      window.__sheet = sheet;
+      window.__cyexcelScrollExtentReady = true;
+    </script>
+  </body>
+</html>

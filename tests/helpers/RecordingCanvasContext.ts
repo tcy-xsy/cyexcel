@@ -1,4 +1,4 @@
-import type { Canvas2DLike } from "../../src/core";
+import type { Canvas2DLike } from "../../src/core/render";
 
 export interface RecordedCall {
   readonly method: string;
@@ -19,6 +19,7 @@ export class RecordingCanvasContext implements Canvas2DLike {
   #textBaseline = "";
   #textAlign = "";
   #lineWidth = 1;
+  #globalAlpha = 1;
 
   fillRect(x: number, y: number, width: number, height: number): void {
     this.calls.push({ method: "fillRect", args: [x, y, width, height] });
@@ -34,6 +35,18 @@ export class RecordingCanvasContext implements Canvas2DLike {
 
   fillText(text: string, x: number, y: number): void {
     this.calls.push({ method: "fillText", args: [text, x, y] });
+  }
+
+  /**
+   * Not real font metrics — a deterministic per-character width (no
+   * font/DOM available in Node) so wrap-line-count assertions are stable
+   * and reproducible. Real pixel-accurate wrapping is a browser-test
+   * concern (see tests/browser/variable-row-height.spec.ts), not this
+   * recorder's job.
+   */
+  measureText(text: string): { readonly width: number } {
+    this.calls.push({ method: "measureText", args: [text] });
+    return { width: text.length * 7 };
   }
 
   save(): void {
@@ -58,6 +71,10 @@ export class RecordingCanvasContext implements Canvas2DLike {
 
   scale(x: number, y: number): void {
     this.calls.push({ method: "scale", args: [x, y] });
+  }
+
+  setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void {
+    this.calls.push({ method: "setTransform", args: [a, b, c, d, e, f] });
   }
 
   setLineDash(segments: readonly number[]): void {
@@ -116,5 +133,14 @@ export class RecordingCanvasContext implements Canvas2DLike {
   set lineWidth(value: number) {
     this.#lineWidth = value;
     this.calls.push({ method: "set:lineWidth", args: [value] });
+  }
+
+  get globalAlpha(): number {
+    return this.#globalAlpha;
+  }
+
+  set globalAlpha(value: number) {
+    this.#globalAlpha = value;
+    this.calls.push({ method: "set:globalAlpha", args: [value] });
   }
 }

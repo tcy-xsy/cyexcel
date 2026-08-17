@@ -5,9 +5,12 @@ interface FixtureWindow {
   __cyexcelFullLoopReady?: boolean;
   __sheet?: {
     getCell(row: number, column: number): unknown;
+    setCell(row: number, column: number, value: unknown): void;
     undo(): void;
     redo(): void;
+    registerShortcut(combo: string, handler: () => void | false): () => void;
   };
+  __originalData?: Array<Record<string, unknown>>;
 }
 
 async function gotoFixture(page: Page): Promise<void> {
@@ -126,6 +129,26 @@ test("typing a new value and pressing Enter commits one undoable/redoable change
 
   await redo(page);
   expect(await getCell(page, 0, 0)).toBe("Changed");
+});
+
+test("setCell() through the `data` option mutates the caller's original row object, matching ArrayDataSource's own contract", async ({
+  page
+}) => {
+  await gotoFixture(page);
+
+  await page.evaluate(() => (window as unknown as FixtureWindow).__sheet?.setCell(0, 1, 999));
+
+  // Not a deep-cloned copy: `buildDataSource()` only shallow-copies the
+  // *array* (to protect the caller's array from insertRows()/deleteRows()/
+  // moveRows() splicing it in place) — individual row objects are the same
+  // references the caller passed in, exactly like constructing
+  // ArrayDataSource directly (tests/unit/core/data/ArrayDataSource.test.ts's
+  // "reads and writes by numeric index" case asserts the same thing at the
+  // ArrayDataSource level).
+  const originalPrice = await page.evaluate(
+    () => (window as unknown as FixtureWindow).__originalData?.[0]?.price
+  );
+  expect(originalPrice).toBe(999);
 });
 
 test("Ctrl+Z/Ctrl+Y undo and redo from the keyboard, not just the programmatic API", async ({ page }) => {
@@ -444,6 +467,74 @@ test("keyboard focus returns to the content canvas after canceling an edit", asy
     () => document.activeElement?.tagName === "CANVAS"
   );
   expect(activeIsCanvas).toBe(true);
+});
+
+test("registerShortcut() registers a custom combo that fires on a real keypress", async ({ page }) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+  await page.mouse.click(box.x + 10, box.y + 10);
+
+  await page.evaluate(() => {
+    (window as unknown as { __calls: string[] }).__calls = [];
+    (window as unknown as FixtureWindow).__sheet?.registerShortcut("Mod+K", () => {
+      (window as unknown as { __calls: string[] }).__calls.push("fired");
+    });
+  });
+
+  await page.keyboard.press("Control+k");
+
+  const calls = await page.evaluate(() => (window as unknown as { __calls: string[] }).__calls);
+  expect(calls).toEqual(["fired"]);
+});
+
+test("the disposer returned by registerShortcut() unregisters it, without affecting other keys", async ({
+  page
+}) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+  await page.mouse.click(box.x + 10, box.y + 10);
+
+  await page.evaluate(() => {
+    (window as unknown as { __calls: string[] }).__calls = [];
+    const dispose = (window as unknown as FixtureWindow).__sheet?.registerShortcut("Mod+K", () => {
+      (window as unknown as { __calls: string[] }).__calls.push("fired");
+    });
+    (window as unknown as { __dispose: (() => void) | undefined }).__dispose = dispose;
+  });
+  await page.evaluate(() => (window as unknown as { __dispose?: () => void }).__dispose?.());
+
+  await page.keyboard.press("Control+k");
+  expect(await page.evaluate(() => (window as unknown as { __calls: string[] }).__calls)).toEqual([]);
+
+  // Enter (a different, unrelated built-in shortcut) still works after unregistering Mod+K.
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#app input")).toBeVisible();
+});
+
+test("a shortcut registered for an already-built-in combo overrides it by default", async ({ page }) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  await page.mouse.click(box.x + 10, box.y + 10);
+  await page.keyboard.type("Changed");
+  await page.keyboard.press("Enter");
+  expect(await getCell(page, 0, 0)).toBe("Changed");
+
+  await page.evaluate(() => {
+    (window as unknown as { __calls: string[] }).__calls = [];
+    (window as unknown as FixtureWindow).__sheet?.registerShortcut("Mod+Z", () => {
+      (window as unknown as { __calls: string[] }).__calls.push("intercepted");
+    });
+  });
+
+  await page.mouse.click(box.x + 10, box.y + 10);
+  await page.keyboard.press("Control+z");
+
+  expect(await page.evaluate(() => (window as unknown as { __calls: string[] }).__calls)).toEqual([
+    "intercepted"
+  ]);
+  // Built-in undo() never ran — the value is unchanged.
+  expect(await getCell(page, 0, 0)).toBe("Changed");
 });
 
 test("repeated edit cycles leave no editor DOM behind", async ({ page }) => {

@@ -1,13 +1,17 @@
-import type {
-  CellRange,
-  Command,
-  CommandContext,
-  CyExcelOptions,
-  DataSource,
-  Patch
+import type * as CoreApi from "../../src/core";
+import {
+  SetCellCommand,
+  type CellRange,
+  type Command,
+  type CyExcelCoreOptions,
+  type CyExcelPlugin,
+  type DataSource,
+  type Patch,
+  type SceneSnapshot,
+  type SelectionSnapshot
 } from "../../src/core";
 
-// --- CellRange: fixed shape and readonly fields -------------------------
+// --- Stable public value contracts ---------------------------------------
 
 const range: CellRange = {
   startRow: 0,
@@ -16,10 +20,8 @@ const range: CellRange = {
   endColumn: 5
 };
 
-// @ts-expect-error readonly fields cannot be reassigned
+// @ts-expect-error public ranges are immutable values
 range.startRow = 1;
-
-// --- DataSource: fixed shape, setCell must stay synchronous -------------
 
 const dataSource: DataSource = {
   getRowCount: () => 0,
@@ -35,28 +37,8 @@ const dataSource: DataSource = {
 const setCellReturnsVoid: void = dataSource.setCell(0, 0, 1);
 void setCellReturnsVoid;
 
-// --- Command: fixed shape, execute/undo must stay synchronous -----------
-
-const patch: Patch = { type: "cell-value", row: 0, column: 0 };
-
-const command: Command = {
-  type: "noop",
-  execute: (context: CommandContext) => {
-    void context;
-    return patch;
-  },
-  undo: (context: CommandContext) => {
-    void context;
-    return patch;
-  }
-};
-
-const executeReturnsPatch: Patch | Patch[] = command.execute({
-  transactionId: "t-1"
-});
-void executeReturnsPatch;
-
-// --- Patch: discriminated union stays exhaustive -------------------------
+const command: Command = new SetCellCommand(0, 1, "value");
+void command;
 
 function describePatch(value: Patch): string {
   switch (value.type) {
@@ -67,27 +49,112 @@ function describePatch(value: Patch): string {
       return `range-value:${value.range.startRow}`;
     case "row-structure":
       return `row-structure:${value.operation}:${value.start}:${value.count}`;
+    case "column-structure":
+      return `column-structure:${value.operation}:${value.start}:${value.count}`;
     case "column-layout":
       return `column-layout:${value.column}`;
+    case "row-layout":
+      return `row-layout:${value.rows.join(",")}`;
     case "full-reset":
       return "full-reset";
   }
 }
 void describePatch;
 
-// --- CyExcelOptions: fixed shape and readonly fields ---------------------
+const rowLayoutPatch: Patch = { type: "row-layout", rows: [2, 4], range };
+// @ts-expect-error a row-layout fact always identifies at least one changed row
+const emptyRowLayoutPatch: Patch = { type: "row-layout", rows: [], range };
+if (rowLayoutPatch.type === "row-layout") {
+  // @ts-expect-error row-layout rows are immutable
+  rowLayoutPatch.rows.push(6);
+}
+void emptyRowLayoutPatch;
 
-const options: CyExcelOptions = {
+const options: CyExcelCoreOptions = {
+  columns: [{ id: "name", field: "name", width: 120 }],
+  data: [{ name: "Ada" }],
   rowHeight: 32,
+  rowHeights: new Map([[2, 48]]),
   headerHeight: 40,
-  readonly: false,
   overscanRows: 5,
   overscanColumns: 2,
   freeze: { rows: 1, columns: 1 }
 };
 
-// @ts-expect-error readonly fields cannot be reassigned
+// @ts-expect-error public options are immutable
 options.rowHeight = 40;
 
-// @ts-expect-error readonly fields cannot be reassigned
+// @ts-expect-error nested public options are immutable
 options.freeze = { rows: 2 };
+
+const plugin: CyExcelPlugin = {
+  name: "type-contract",
+  setup(context) {
+    const dispose = context.events.on("change", () => {});
+    return dispose;
+  }
+};
+void plugin;
+
+declare const scene: SceneSnapshot;
+const selection: SelectionSnapshot = {
+  kind: "cell",
+  active: { row: 0, column: 0 },
+  anchor: { row: 0, column: 0 },
+  range: { startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 },
+  ranges: [{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 }]
+};
+const sceneVersion: number = scene.version;
+void sceneVersion;
+void selection;
+
+// --- The product barrel has no alternate mutable runtime -----------------
+
+type IsPublic<Name extends PropertyKey> = Name extends keyof typeof CoreApi ? true : false;
+
+const retainedSurface: [
+  IsPublic<"CyExcelCore">,
+  IsPublic<"ArrayDataSource">,
+  IsPublic<"SceneSnapshot">,
+  IsPublic<"SetCellCommand">,
+  IsPublic<"createBasicContextMenuPlugin">
+] = [true, true, true, true, true];
+
+const internalSurface: [
+  IsPublic<"TableStore">,
+  IsPublic<"MutationCoordinator">,
+  IsPublic<"LayoutEngine">,
+  IsPublic<"GridStructureOwner">,
+  IsPublic<"createGridCommandManager">,
+  IsPublic<"createTableCommandManager">,
+  IsPublic<"CommandManager">,
+  IsPublic<"SelectionModel">,
+  IsPublic<"SurfaceHost">,
+  IsPublic<"RenderScheduler">,
+  IsPublic<"ColumnManager">,
+  IsPublic<"HeaderManager">,
+  IsPublic<"PluginManager">,
+  IsPublic<"HistoryManager">,
+  IsPublic<"CyExcelOptions">,
+  IsPublic<"assertValidCyExcelOptions">
+] = [
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false,
+  false
+];
+
+void retainedSurface;
+void internalSurface;

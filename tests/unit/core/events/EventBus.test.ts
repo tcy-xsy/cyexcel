@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { EventBus } from "../../../../src/core";
+import { EventBus } from "../../../../src/core/events";
 
 describe("EventBus — on/emit", () => {
   it("calls listeners in registration order with the emitted payload", () => {
