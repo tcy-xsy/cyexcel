@@ -44,6 +44,7 @@ import {
   TableStore,
   compileDirtySet,
   createChangeSet,
+  type SemanticChange,
   summarizeStructuralChanges,
   type ArrayDataSourceColumn
 } from "./data";
@@ -1708,10 +1709,10 @@ export class CyExcelCore {
           this.#scheduleAutoHeightContinuation();
         }
       }
-      this.#events.emit("change", {
-        patches: Object.freeze([...patches]),
-        changeSet
-      });
+      // `changeSet` alone: it is already the frozen, model-versioned form of
+      // the same facts, so emitting a second `patches` array only gave
+      // consumers two names for one thing and two chances to disagree.
+      this.#events.emit("change", { changeSet });
     });
   }
 
@@ -1776,15 +1777,15 @@ export class CyExcelCore {
 
       this.#measurement.markMeasured(frozenUpdates.map(({ row }) => row));
       this.#invalidatePatches(patches, remainingFollowUpPasses);
-      const rowLayoutPatches = Object.freeze(
-        patches.filter((patch): patch is Extract<Patch, { type: "row-layout" }> =>
+      const rowLayoutChanges = Object.freeze(
+        patches.filter((patch): patch is Extract<SemanticChange, { type: "row-layout" }> =>
           patch.type === "row-layout"
         )
       );
-      if (rowLayoutPatches.length > 0) {
+      if (rowLayoutChanges.length > 0) {
         this.#events.emit("layout-change", {
           layoutVersion: this.#layout.version,
-          patches: rowLayoutPatches
+          changes: rowLayoutChanges
         });
       }
     });

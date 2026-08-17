@@ -98,11 +98,11 @@
       requestAnimationFrame(tick);
 
       const rowLayoutBatches = [];
-      sheet.events.on("change", ({ patches }) => {
-        for (const patch of patches) {
-          if (patch.type === "row-layout") {
-            rowLayoutRows.push(...patch.rows);
-            rowLayoutBatches.push({ frameId, rowCount: patch.rows.length });
+      sheet.events.on("change", ({ changeSet }) => {
+        for (const change of changeSet.changes) {
+          if (change.type === "row-layout") {
+            rowLayoutRows.push(...change.rows);
+            rowLayoutBatches.push({ frameId, rowCount: change.rows.length });
           }
         }
       });

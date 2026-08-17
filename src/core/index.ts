@@ -25,7 +25,6 @@ export type {
   CellDescriptorSnapshot,
   ColumnFieldMapping,
   Command,
-  Patch,
   Disposer
 } from "./types";
 

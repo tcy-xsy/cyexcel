@@ -71,8 +71,8 @@
           }
         }
       );
-      sheet.events.on("change", ({ patches }) => {
-        timeline.push({ kind: "change", patchTypes: patches.map((patch) => patch.type) });
+      sheet.events.on("change", ({ changeSet }) => {
+        timeline.push({ kind: "change", changeTypes: changeSet.changes.map((change) => change.type) });
       });
       sheet.events.on("error", ({ error, eventName }) => {
         timeline.push({ kind: "error", eventName, message: String(error?.message ?? error) });

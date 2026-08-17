@@ -285,7 +285,7 @@ test("a structural patch interrupts resize preview before pointerup can commit i
   await nextFrame(page);
 
   expect(await editorRect(page, 0, 1)).toEqual(before);
-  expect(await timeline(page)).toEqual([{ kind: "change", patchTypes: ["row-structure"] }]);
+  expect(await timeline(page)).toEqual([{ kind: "change", changeTypes: ["row-structure"] }]);
   await page.evaluate(() => (window as unknown as FixtureWindow).__sheet?.undo());
   expect(await editorRect(page, 0, 1)).toEqual(before);
 });
@@ -384,7 +384,7 @@ test("a pointercancel for another pointer does not terminate the active resize",
   await nextFrame(page);
 
   expect(await editorRect(page, 0, 1)).toEqual({ ...before, left: before.left + 30 });
-  expect(await timeline(page)).toEqual([{ kind: "change", patchTypes: ["column-layout"] }]);
+  expect(await timeline(page)).toEqual([{ kind: "change", changeTypes: ["column-layout"] }]);
 });
 
 for (const testCase of [
@@ -393,7 +393,7 @@ for (const testCase of [
     row: 0,
     column: 1,
     delta: 30,
-    patchType: "column-layout",
+    changeType: "column-layout",
     changedRect: (before: CellRect) => ({ ...before, left: before.left + 30 })
   },
   {
@@ -401,7 +401,7 @@ for (const testCase of [
     row: 1,
     column: 0,
     delta: 20,
-    patchType: "row-layout",
+    changeType: "row-layout",
     changedRect: (before: CellRect) => ({ ...before, top: before.top + 20 })
   }
 ]) {
@@ -421,7 +421,7 @@ for (const testCase of [
 
     const changed = testCase.changedRect(before);
     expect(await editorRect(page, testCase.row, testCase.column)).toEqual(changed);
-    expect(await timeline(page)).toEqual([{ kind: "change", patchTypes: [testCase.patchType] }]);
+    expect(await timeline(page)).toEqual([{ kind: "change", changeTypes: [testCase.changeType] }]);
 
     await page.evaluate(() => (window as unknown as FixtureWindow).__sheet?.undo());
     expect(await editorRect(page, testCase.row, testCase.column)).toEqual(before);
@@ -453,7 +453,7 @@ test("window pointer listeners complete resize when pointer capture throws", asy
       eventName: "interaction:header-pointer-capture",
       message: "forced pointer capture failure"
     },
-    { kind: "change", patchTypes: ["column-layout"] }
+    { kind: "change", changeTypes: ["column-layout"] }
   ]);
 });
 

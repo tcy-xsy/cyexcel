@@ -6,7 +6,7 @@ import {
   type CyExcelCoreOptions,
   type CyExcelPlugin,
   type DataSource,
-  type Patch,
+  type SemanticChange,
   type SceneSnapshot,
   type SelectionSnapshot
 } from "../../src/core";
@@ -40,7 +40,7 @@ void setCellReturnsVoid;
 const command: Command = new SetCellCommand(0, 1, "value");
 void command;
 
-function describePatch(value: Patch): string {
+function describeChange(value: SemanticChange): string {
   switch (value.type) {
     case "cell-value":
     case "cell-style":
@@ -59,16 +59,16 @@ function describePatch(value: Patch): string {
       return "full-reset";
   }
 }
-void describePatch;
+void describeChange;
 
-const rowLayoutPatch: Patch = { type: "row-layout", rows: [2, 4], range };
+const rowLayoutChange: SemanticChange = { type: "row-layout", rows: [2, 4], range };
 // @ts-expect-error a row-layout fact always identifies at least one changed row
-const emptyRowLayoutPatch: Patch = { type: "row-layout", rows: [], range };
-if (rowLayoutPatch.type === "row-layout") {
+const emptyRowLayoutChange: SemanticChange = { type: "row-layout", rows: [], range };
+if (rowLayoutChange.type === "row-layout") {
   // @ts-expect-error row-layout rows are immutable
-  rowLayoutPatch.rows.push(6);
+  rowLayoutChange.rows.push(6);
 }
-void emptyRowLayoutPatch;
+void emptyRowLayoutChange;
 
 const options: CyExcelCoreOptions = {
   columns: [{ id: "name", field: "name", width: 120 }],

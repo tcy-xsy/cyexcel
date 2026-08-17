@@ -52,13 +52,13 @@
 
       window.__sheet = sheet;
       window.__rowLayoutRows = [];
-      const recordRowLayouts = ({ patches }) => {
-        for (const patch of patches) {
-          if (patch.type === "row-layout") window.__rowLayoutRows.push(...patch.rows);
+      const recordRowLayouts = (changes) => {
+        for (const change of changes) {
+          if (change.type === "row-layout") window.__rowLayoutRows.push(...change.rows);
         }
       };
-      sheet.events.on("change", recordRowLayouts);
-      sheet.events.on("layout-change", recordRowLayouts);
+      sheet.events.on("change", ({ changeSet }) => recordRowLayouts(changeSet.changes));
+      sheet.events.on("layout-change", ({ changes }) => recordRowLayouts(changes));
       window.__cyexcelVariableRowHeightReady = true;
     </script>
   </body>

@@ -52,7 +52,7 @@ test("a DOM cell finalizer failure cannot roll back or starve a column transacti
   expect(result.shiftedCell).toBe("outer");
   expect(result.timeline).toEqual([
     { kind: "error", eventName: "finalize:dom-cells", message: "cell update failed" },
-    { kind: "change", modelVersion: 1, patchTypes: ["column-structure"], changeTypes: ["column-structure"] }
+    { kind: "change", modelVersion: 1, changeTypes: ["column-structure"] }
   ]);
   await expect(page.locator(".dom-header")).toHaveText("DOM");
   expect(pageErrors).toEqual([]);
@@ -95,10 +95,10 @@ test("a throwing wrap formatter reports an error after the data commit and prese
   expect(result.timeline).toEqual([
     { kind: "error", eventName: "finalize:wrap-measurement", message: "format failed" },
     { kind: "error", eventName: "finalize:canvas-cell:0:1", message: "format failed" },
-    { kind: "change", modelVersion: 1, patchTypes: ["cell-value"], changeTypes: ["cell-value"] },
+    { kind: "change", modelVersion: 1, changeTypes: ["cell-value"] },
     { kind: "error", eventName: "finalize:wrap-measurement", message: "format failed" },
     { kind: "error", eventName: "finalize:canvas-cell:0:1", message: "format failed" },
-    { kind: "change", modelVersion: 2, patchTypes: ["cell-value"], changeTypes: ["cell-value"] }
+    { kind: "change", modelVersion: 2, changeTypes: ["cell-value"] }
   ]);
 });
 
@@ -151,7 +151,7 @@ test("an editor geometry failure cannot suppress DOM presentation", async ({ pag
   });
   expect(result.timeline).toEqual([
     { kind: "error", eventName: "finalize:editor-geometry", message: "editor geometry failed" },
-    { kind: "change", modelVersion: 1, patchTypes: ["cell-value"], changeTypes: ["cell-value"] }
+    { kind: "change", modelVersion: 1, changeTypes: ["cell-value"] }
   ]);
   expect(pageErrors).toEqual([]);
 });
@@ -169,13 +169,11 @@ test("auto-height publishes its own row-layout receipt after the user cell recei
     {
       kind: "change",
       modelVersion: 1,
-      patchTypes: ["cell-value"],
       changeTypes: ["cell-value"]
     },
     {
       kind: "change",
       modelVersion: 2,
-      patchTypes: ["row-layout"],
       changeTypes: ["row-layout"]
     }
   ]);
@@ -183,7 +181,7 @@ test("auto-height publishes its own row-layout receipt after the user cell recei
     {
       kind: "layout-change",
       layoutVersion: 1,
-      patchTypes: ["row-layout"]
+      changeTypes: ["row-layout"]
     }
   ]);
   expect(timeline?.map((entry) => entry.kind)).toEqual([
@@ -207,7 +205,7 @@ test("a committed change synchronously publishes DOM and canvas presentation bef
 
   expect(result.domText).toBe("published-now");
   expect(result.timeline).toEqual([
-    { kind: "change", modelVersion: 1, patchTypes: ["cell-value"], changeTypes: ["cell-value"] }
+    { kind: "change", modelVersion: 1, changeTypes: ["cell-value"] }
   ]);
 });
 
@@ -227,8 +225,8 @@ test("a renderer mutation intent is replayed FIFO after the outer change", async
 
   expect(result).toMatchObject({ outer: "outer-2", inner: "inner" });
   expect(result.timeline).toEqual([
-    { kind: "change", modelVersion: 1, patchTypes: ["cell-value"], changeTypes: ["cell-value"] },
-    { kind: "change", modelVersion: 2, patchTypes: ["cell-value"], changeTypes: ["cell-value"] }
+    { kind: "change", modelVersion: 1, changeTypes: ["cell-value"] },
+    { kind: "change", modelVersion: 2, changeTypes: ["cell-value"] }
   ]);
 });
 
@@ -252,19 +250,17 @@ test("an asynchronous RAF renderer intent commits only after its read lease rele
     {
       kind: "change",
       modelVersion: 1,
-      patchTypes: ["cell-value"],
       changeTypes: ["cell-value"]
     },
     {
       kind: "change",
       modelVersion: 2,
-      patchTypes: ["row-layout"],
       changeTypes: ["row-layout"]
     },
     {
       kind: "layout-change",
       layoutVersion: 1,
-      patchTypes: ["row-layout"]
+      changeTypes: ["row-layout"]
     }
   ]);
 });

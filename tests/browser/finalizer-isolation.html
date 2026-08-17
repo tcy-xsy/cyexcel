@@ -160,19 +160,18 @@
       sheet.events.on("error", ({ error, eventName }) => {
         timeline.push({ kind: "error", eventName, message: String(error?.message ?? error) });
       });
-      sheet.events.on("change", ({ patches, changeSet }) => {
+      sheet.events.on("change", ({ changeSet }) => {
         timeline.push({
           kind: "change",
           modelVersion: changeSet.modelVersion,
-          patchTypes: patches.map((patch) => patch.type),
           changeTypes: changeSet.changes.map((change) => change.type)
         });
       });
-      sheet.events.on("layout-change", ({ layoutVersion, patches }) => {
+      sheet.events.on("layout-change", ({ layoutVersion, changes }) => {
         timeline.push({
           kind: "layout-change",
           layoutVersion,
-          patchTypes: patches.map((patch) => patch.type)
+          changeTypes: changes.map((change) => change.type)
         });
       });
 
