@@ -46,3 +46,9 @@ export {
   type SurfacePick,
   type SurfaceHostOptions
 } from "./SurfaceHost";
+export {
+  ScrollAxisMapper,
+  DEFAULT_SAFE_NATIVE_EXTENT,
+  type ScrollAxisMapperOptions,
+  type ScrollAxisPosition
+} from "./ScrollAxisMapper";
