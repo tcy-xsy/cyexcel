@@ -130,7 +130,11 @@ import type {
   Patch,
   RowData
 } from "./types";
-import { GridStructureOwner, createGridCommandManager } from "./integration";
+import {
+  GridStructureOwner,
+  StructureTransition,
+  createGridCommandManager
+} from "./integration";
 import {
   validateCyExcelCoreDataDimensions,
   validateCyExcelCoreHeaderGeometry,
@@ -606,7 +610,8 @@ export class CyExcelCore {
     SurfaceSetSnapshot,
     SelectionSnapshot
   >;
-  #structureGeneration = 0;
+  /** Owns the structure version and the teardown that must accompany every bump. */
+  readonly #structure: StructureTransition;
   #disposed = false;
 
   constructor(container: HTMLElement, options: CyExcelCoreOptions = {}) {
@@ -925,7 +930,7 @@ export class CyExcelCore {
       // resize event. Measure once inside every short interaction lease.
       getSurfaces: () => this.#surfaceHost.refresh(),
       getSelection: () => this.#selectionModel.snapshot,
-      getStructureVersion: () => this.#structureGeneration
+      getStructureVersion: () => this.#structure.version
     });
     this.#structureOwner = new GridStructureOwner({
       getColumns: () => this.#columns,
@@ -1009,13 +1014,19 @@ export class CyExcelCore {
         },
         commitResize: (intent) => this.#commitHeaderResize(intent),
         commitReorder: (intent) => {
-          if (intent.structureVersion === this.#structureGeneration) {
+          if (intent.structureVersion === this.#structure.version) {
             this.#commitRowReorder(intent.start, intent.count, intent.target);
           }
         },
         updateHoverAfterGesture: (event, surface) => this.#updateHeaderHover(event, surface),
         reportError: (error, eventName) => this.#events.emit("error", { error, eventName })
       }
+    });
+    this.#structure = new StructureTransition({
+      cancelActiveEdit: () => this.#cancelActiveEdit(),
+      cancelBodyGesture: () => this.#bodyGestures.cancel(),
+      cancelHeaderGesture: () => this.#headerGestures.cancel(true),
+      closeContextMenu: () => this.#contextMenuService.close()
     });
     this.#bodyGestures = new BodyGestureController({
       pointerController: this.#pointerController,
@@ -1025,7 +1036,7 @@ export class CyExcelCore {
       withFrame: (eventName, run) => this.#dispatchInteraction(eventName, run),
       onFillCommit: (intent) => {
         this.#interactionFrames.enqueueIntent(() => {
-          if (intent.structureVersion === this.#structureGeneration) {
+          if (intent.structureVersion === this.#structure.version) {
             this.#commitFillNow(intent.sourceRange, intent.targetRange);
           }
         });
@@ -1633,18 +1644,7 @@ export class CyExcelCore {
     this.#withFinalization(() => {
       this.#measurement.invalidateFor(changeSet.changes);
       if (hasRowStructure || hasColumnStructure) {
-        // Undo/redo reaches this branch without going through the public
-        // structure facade. Cancel before any stale numeric editor anchor
-        // can commit into the newly published row/column order.
-        this.#cancelActiveEdit();
-        const nextStructureGeneration = this.#structureGeneration + 1;
-        if (!Number.isSafeInteger(nextStructureGeneration)) {
-          throw new RangeError("Structure generation exhausted");
-        }
-        this.#structureGeneration = nextStructureGeneration;
-        this.#bodyGestures.cancel();
-        this.#headerGestures.cancel(true);
-        this.#contextMenuService.close();
+        this.#structure.apply();
       }
 
       // The model revision and all authoritative structural roots are already
@@ -2097,7 +2097,7 @@ export class CyExcelCore {
     const cell = hit.cell;
     const structureVersion = frame.structureVersion;
     this.#interactionFrames.enqueueIntent(() => {
-      if (structureVersion !== this.#structureGeneration) {
+      if (structureVersion !== this.#structure.version) {
         return;
       }
       const dispatch = dispatchCellAction(action, cell.row, cell.column);
@@ -2196,7 +2196,7 @@ export class CyExcelCore {
       if (isPointOnFillHandle(point, selection.range, frame.scene)) {
         const range = selection.range;
         this.#interactionFrames.enqueueIntent(() => {
-          if (structureVersion === this.#structureGeneration) {
+          if (structureVersion === this.#structure.version) {
             this.#autoFillDownNow(range);
           }
         });
@@ -2204,7 +2204,7 @@ export class CyExcelCore {
       }
       const active = selection.active;
       this.#interactionFrames.enqueueIntent(() => {
-        if (structureVersion === this.#structureGeneration) {
+        if (structureVersion === this.#structure.version) {
           this.#editorManager.startEdit(active.row, active.column);
         }
       });
@@ -2430,7 +2430,7 @@ export class CyExcelCore {
       structureVersion: frame.structureVersion
     });
     this.#interactionFrames.enqueueIntent(() => {
-      if (payload.structureVersion === this.#structureGeneration) {
+      if (payload.structureVersion === this.#structure.version) {
         this.#events.emit("header-action", payload);
       }
     });
@@ -2499,7 +2499,7 @@ export class CyExcelCore {
   }
 
   #commitHeaderResize(intent: HeaderResizeIntent): void {
-    if (intent.structureVersion !== this.#structureGeneration) {
+    if (intent.structureVersion !== this.#structure.version) {
       this.#withFinalization(() => this.#restoreAuthoritativeScene());
       return;
     }

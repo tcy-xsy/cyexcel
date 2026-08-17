@@ -17,3 +17,4 @@ export {
   type GridCommandManagerOptions,
   type TableCommandManagerOptions
 } from "./CommandRuntime";
+export { StructureTransition, type StructureTransitionOptions } from "./StructureTransition";
