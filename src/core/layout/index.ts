@@ -16,11 +16,9 @@ export { ColumnAxisSnapshot, type ColumnAxisSnapshotOptions } from "./ColumnAxis
 export { RowMetrics, type RowMetricsFragment } from "./RowMetrics";
 export { ViewportSnapshot, type ViewportSnapshotOptions } from "./ViewportSnapshot";
 export { toPhysicalPixelSize } from "./dpr";
-export { toViewportRect } from "./viewportRect";
 export { splitByFrozenBoundary, type AxisSplit } from "./frozenRegions";
 export { remapRowIndex, type RowStructureChange } from "./rowStructure";
 export { remapColumnIndex, type ColumnStructureChange } from "./columnStructure";
-export { getSelectionBottomRightRect } from "./selectionGeometry";
 export {
   remapIndex,
   validateAxisChange,

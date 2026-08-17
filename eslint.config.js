@@ -71,6 +71,10 @@ export default tseslint.config(
     // no coordinate authority. What is banned is anything that can re-derive a
     // second coordinate truth: the LayoutEngine itself, the scroll-subtraction
     // adapter, and the mutable ViewportState shape.
+    //
+    // `toViewportRect`/`getSelectionBottomRightRect` no longer exist — Phase 8
+    // deleted them as dead compatibility adapters. They stay listed on purpose:
+    // this list records what must never come back, not merely what exists.
     files: [
       "src/core/render/**/*.ts",
       "src/core/interaction/**/*.ts",
