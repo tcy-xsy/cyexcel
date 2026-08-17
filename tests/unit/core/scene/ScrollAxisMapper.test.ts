@@ -303,3 +303,69 @@ describe("ScrollAxisMapper fractional offsets", () => {
     }
   });
 });
+
+describe("ScrollAxisMapper reconcile: seek vs continuous scroll", () => {
+  it("treats the first observation as a seek and maps it proportionally", () => {
+    const mapper = segmentedMapper();
+    // Half the native range means half the logical axis, not half a window.
+    const position = mapper.reconcile(mapper.maxNativeScroll / 2);
+    expect(position).not.toBe(null);
+    mapper.commit(position!);
+    expect(mapper.toLogical(position!.nativeOffset)).toBeCloseTo(mapper.maxLogicalScroll / 2, 6);
+  });
+
+  it("maps the scrollbar's bottom to the document's last logical pixel", () => {
+    const mapper = segmentedMapper();
+    const position = mapper.reconcile(mapper.maxNativeScroll);
+    mapper.commit(position!);
+    expect(mapper.toLogical(position!.nativeOffset)).toBe(mapper.maxLogicalScroll);
+  });
+
+  it("maps the scrollbar's top back to logical 0", () => {
+    const mapper = segmentedMapper();
+    mapper.commit(mapper.reconcile(mapper.maxNativeScroll)!);
+    const position = mapper.reconcile(0);
+    mapper.commit(position!);
+    expect(mapper.toLogical(position!.nativeOffset)).toBe(0);
+  });
+
+  it("keeps a continuous scroll pixel-accurate instead of rescaling it", () => {
+    const mapper = segmentedMapper();
+    mapper.commit(mapper.reconcile(mapper.maxNativeScroll / 2)!);
+    const native = mapper.toNative(mapper.toLogical(0)).nativeOffset;
+
+    // A one-viewport step must move the logical position by exactly one
+    // viewport — a proportional mapping would multiply it by the axis ratio.
+    const before = mapper.toLogical(native);
+    const stepped = native + 100;
+    expect(mapper.reconcile(stepped)).toBe(null);
+    expect(mapper.toLogical(stepped) - before).toBe(100);
+  });
+
+  it("still recentres near a window edge during continuous scrolling", () => {
+    const mapper = segmentedMapper();
+    mapper.commit(mapper.reconcile(mapper.maxNativeScroll / 2)!);
+    let native = mapper.toNative(mapper.toLogical(mapper.maxNativeScroll / 2)).nativeOffset;
+
+    // Walk toward the high edge in sub-viewport steps; one of them must trigger
+    // a recentre, and it must preserve the logical position.
+    let recentred = null;
+    for (let step = 0; step < 200 && !recentred; step += 1) {
+      native = Math.min(native + 90, mapper.maxNativeScroll);
+      const logical = mapper.toLogical(native);
+      recentred = mapper.reconcile(native);
+      if (recentred) {
+        expect(recentred.segmentOrigin + recentred.nativeOffset).toBeCloseTo(logical, 6);
+      }
+    }
+    expect(recentred).not.toBe(null);
+  });
+
+  it("never reconciles an unsegmented axis", () => {
+    const mapper = new ScrollAxisMapper({ safeNativeExtent: 1_000 });
+    mapper.setMetrics(800, 100);
+    expect(mapper.reconcile(0)).toBe(null);
+    expect(mapper.reconcile(700)).toBe(null);
+  });
+
+});

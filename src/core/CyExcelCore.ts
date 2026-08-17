@@ -96,6 +96,7 @@ import { DeferredMutationQueue } from "./model";
 import { PluginManager, type CyExcelPlugin } from "./plugins";
 import {
   SceneSnapshot,
+  ScrollAxisMapper,
   SurfaceHost,
   clientPoint,
   type SurfacePoint,
@@ -588,6 +589,9 @@ export class CyExcelCore {
   readonly #bodyGestures: BodyGestureController;
   /** Owns every header pointer gesture: resize, header selection, row reorder and the reorder auto-scroll loop. */
   readonly #headerGestures: HeaderGestureController;
+  /** Maps logical scroll offsets onto what the browser can natively scroll. Identity until the content exceeds the safe native extent. */
+  readonly #verticalScroll = new ScrollAxisMapper();
+  readonly #horizontalScroll = new ScrollAxisMapper();
   #autoHeightContinuationFrame: number | null = null;
   #finalizationDepth = 0;
   readonly #mutationIntents: DeferredMutationQueue;
@@ -1831,10 +1835,68 @@ export class CyExcelCore {
    * (10-column dataset, last column's text visibly clipped even scrolled
    * all the way right) — see doc/progress.md's Step 18 patch entry.
    */
+  /**
+   * Feeds the current content and viewport metrics to both scroll mappers and
+   * sizes the spacer to the *native* extent they allow, which is capped at
+   * whatever the browser can actually scroll. For any table below that cap the
+   * native extent equals the logical one, so the spacer is sized exactly as it
+   * was before segmenting existed.
+   */
   #updateSpacerSize(root: LayoutRoot = this.#layout.root): void {
-    const totalWidth = root.columnAxis.getTotalWidth();
-    this.#spacer.style.width = `${totalWidth + this.#rowHeaderWidth}px`;
-    this.#spacer.style.height = `${root.rowMetrics.totalHeight + this.#headerHeight()}px`;
+    const headerHeight = this.#headerHeight();
+    this.#horizontalScroll.setMetrics(
+      root.columnAxis.getTotalWidth(),
+      Math.max(0, this.#scroller.clientWidth - this.#rowHeaderWidth)
+    );
+    this.#verticalScroll.setMetrics(
+      root.rowMetrics.totalHeight,
+      Math.max(0, this.#scroller.clientHeight - headerHeight)
+    );
+    this.#spacer.style.width = `${this.#horizontalScroll.nativeExtent + this.#rowHeaderWidth}px`;
+    this.#spacer.style.height = `${this.#verticalScroll.nativeExtent + headerHeight}px`;
+  }
+
+  /**
+   * Lets each axis reconcile the native offset the scroller now reports: a
+   * continuous scroll keeps the 1:1 windowed mapping and only recentres near
+   * the window's ends, while a jump (scrollbar drag) is treated as a seek and
+   * mapped proportionally across the whole logical axis.
+   *
+   * Deliberately has no "suppress our own scroll event" token: assigning
+   * `scrollTop` fires its event *asynchronously*, so a synchronous flag would
+   * already be cleared by the time the event lands and would suppress nothing.
+   * Instead this relies on `recenter()` being idempotent — the follow-up event
+   * re-runs this, gets `null` for both axes, and stops. The cost is one extra
+   * Scene per recentre, which happens at most once per half window of
+   * scrolling; the benefit is that no genuine user scroll can ever be
+   * swallowed by a stale suppression token.
+   */
+  #recenterScroll(): void {
+    const nativeTop = Math.max(0, this.#scroller.scrollTop);
+    const nativeLeft = Math.max(0, this.#scroller.scrollLeft);
+    const vertical = this.#verticalScroll.reconcile(nativeTop);
+    const horizontal = this.#horizontalScroll.reconcile(nativeLeft);
+    if (!vertical && !horizontal) {
+      return;
+    }
+    if (vertical) {
+      this.#verticalScroll.commit(vertical);
+      this.#scroller.scrollTop = vertical.nativeOffset;
+    }
+    if (horizontal) {
+      this.#horizontalScroll.commit(horizontal);
+      this.#scroller.scrollLeft = horizontal.nativeOffset;
+    }
+  }
+
+  /** Moves the scroller to a logical position, picking a segment that can express it. */
+  #applyLogicalScroll(logicalTop: number, logicalLeft: number): void {
+    const vertical = this.#verticalScroll.toNative(logicalTop);
+    const horizontal = this.#horizontalScroll.toNative(logicalLeft);
+    this.#verticalScroll.commit(vertical);
+    this.#horizontalScroll.commit(horizontal);
+    this.#scroller.scrollTop = vertical.nativeOffset;
+    this.#scroller.scrollLeft = horizontal.nativeOffset;
   }
 
   /** Publishes gesture-only geometry without changing the authoritative Layout root or History. */
@@ -1887,9 +1949,12 @@ export class CyExcelCore {
    * (see createDom's bodyTop/bodyLeft offsets).
    */
   #readViewport(): ViewportState {
+    // Clamped here rather than inside the mapper: macOS rubber-band overscroll
+    // reports a negative scrollTop/scrollLeft, and the DOM boundary is where
+    // that messiness belongs — the mapper stays strict so real bugs still throw.
     return {
-      scrollTop: this.#scroller.scrollTop,
-      scrollLeft: this.#scroller.scrollLeft,
+      scrollTop: this.#verticalScroll.toLogical(Math.max(0, this.#scroller.scrollTop)),
+      scrollLeft: this.#horizontalScroll.toLogical(Math.max(0, this.#scroller.scrollLeft)),
       width: Math.max(0, this.#scroller.clientWidth - this.#rowHeaderWidth),
       height: Math.max(0, this.#scroller.clientHeight - this.#headerHeight())
     };
@@ -2021,8 +2086,7 @@ export class CyExcelCore {
     if (!target) {
       return;
     }
-    this.#scroller.scrollTop = target.scrollTop;
-    this.#scroller.scrollLeft = target.scrollLeft;
+    this.#applyLogicalScroll(target.scrollTop, target.scrollLeft);
   }
 
   #routeBodyFill(context: CorePointerInputContext) {
@@ -2317,6 +2381,7 @@ export class CyExcelCore {
         this.#editorManager.cancelEdit();
       }
     }
+    this.#recenterScroll();
     this.#syncViewport();
     this.#renderScheduler.invalidateAll();
   };

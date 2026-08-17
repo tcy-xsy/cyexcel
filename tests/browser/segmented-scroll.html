@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel segmented-scroll fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 400px;
+        height: 200px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/src/core/index.ts";
+
+      // 800,000 rows x 20px = 16,000,000 logical px, which is past the
+      // 15,000,000px safe native extent — so this fixture is segmented, while
+      // every other browser fixture stays on the identity path.
+      const ROW_COUNT = 800000;
+      const ROW_HEIGHT = 20;
+      const HEADER_HEIGHT = 24;
+      const columns = Array.from({ length: 4 }, (_unused, index) => ({
+        id: `c${index}`,
+        field: `c${index}`,
+        width: 100,
+        header: `C${index}`
+      }));
+
+      const dataSource = {
+        getRowCount: () => ROW_COUNT,
+        getColumnCount: () => columns.length,
+        getCell: (row, column) => `${row}-${column}`,
+        setCell() {
+          throw new Error("read-only fixture");
+        }
+      };
+
+      // A paint probe, not a data probe: TableStore caches cell reads, so a
+      // scroll back into already-visited rows never reaches the DataSource and
+      // would look like "nothing was rendered". The canvas renderer runs for
+      // every visible cell on every frame, so it reports exactly which rows are
+      // on screen right now.
+      let minPaintedRow = Number.POSITIVE_INFINITY;
+      let maxPaintedRow = Number.NEGATIVE_INFINITY;
+      const probeRenderer = {
+        kind: "canvas",
+        paint(context) {
+          if (context.row < minPaintedRow) minPaintedRow = context.row;
+          if (context.row > maxPaintedRow) maxPaintedRow = context.row;
+        }
+      };
+      for (const column of columns) {
+        column.renderer = probeRenderer;
+      }
+
+      const sheet = new CyExcelCore(document.getElementById("app"), {
+        dataSource,
+        columns,
+        rowHeight: ROW_HEIGHT,
+        headerHeight: HEADER_HEIGHT
+      });
+
+      const scroller = document.querySelector("#app").firstElementChild;
+
+      window.__cyexcelSegmentedScroll = {
+        rowCount: ROW_COUNT,
+        rowHeight: ROW_HEIGHT,
+        headerHeight: HEADER_HEIGHT,
+        logicalExtent: ROW_COUNT * ROW_HEIGHT,
+        resetProbe() {
+          minPaintedRow = Number.POSITIVE_INFINITY;
+          maxPaintedRow = Number.NEGATIVE_INFINITY;
+        },
+        get requestedRows() {
+          return { min: minPaintedRow, max: maxPaintedRow };
+        },
+        /** Forces a repaint for the case where the scroll position did not actually change. */
+        forceRepaint() {
+          sheet.resize();
+        },
+        scrollTo(nativeTop) {
+          scroller.scrollTop = nativeTop;
+        },
+        get nativeScrollTop() {
+          return scroller.scrollTop;
+        },
+        get nativeScrollHeight() {
+          return scroller.scrollHeight;
+        },
+        get nativeMaxScrollTop() {
+          return scroller.scrollHeight - scroller.clientHeight;
+        },
+        sheet
+      };
+      window.__cyexcelSegmentedScrollReady = true;
+    </script>
+  </body>
+</html>

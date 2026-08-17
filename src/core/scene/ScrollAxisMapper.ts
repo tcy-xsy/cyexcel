@@ -56,6 +56,8 @@ export class ScrollAxisMapper {
   #viewportSize = 0;
   #segmentOrigin = 0;
   #version = 0;
+  /** Last offset seen by `reconcile()`, used to tell a seek from a continuous scroll. */
+  #lastNativeOffset: number | null = null;
 
   constructor(options: ScrollAxisMapperOptions = {}) {
     const safeNativeExtent = options.safeNativeExtent ?? DEFAULT_SAFE_NATIVE_EXTENT;
@@ -172,13 +174,67 @@ export class ScrollAxisMapper {
     return next.segmentOrigin === this.#segmentOrigin ? null : next;
   }
 
-  /** Adopts a position produced by `toNative()`/`recenter()`. */
+  /**
+   * Maps a native offset proportionally across the whole logical axis, so the
+   * scrollbar's own extremes mean the document's extremes.
+   *
+   * Used only for discontinuous jumps. A windowed 1:1 mapping cannot serve
+   * them: dragging the thumb to the bottom moves the native offset to its
+   * maximum while the origin is still 0, which is only `maxNativeScroll` into
+   * a longer axis — on this fixture's scale that is 93.75% of the way down,
+   * and it gets worse the larger the table.
+   */
+  proportionalLogical(nativeOffset: number): number {
+    assertFiniteNonNegative("nativeOffset", nativeOffset);
+    if (this.maxNativeScroll <= 0) {
+      return 0;
+    }
+    const ratio = Math.min(nativeOffset / this.maxNativeScroll, 1);
+    return ratio * this.maxLogicalScroll;
+  }
+
+  /**
+   * Reconciles a freshly observed native offset and returns the position to
+   * write back, or `null` to leave the scroller alone.
+   *
+   * Distinguishes the two ways a native offset changes, because one mapping
+   * cannot serve both:
+   *
+   * - a *continuous* change (wheel, keyboard, drag-select autoscroll) must stay
+   *   pixel-accurate, so it keeps the 1:1 windowed mapping and only recentres
+   *   near the window's ends;
+   * - a *jump* (dragging the scrollbar thumb, or assigning scrollTop) is a seek
+   *   to a position in the whole document, so it maps proportionally.
+   *
+   * The threshold is the viewport itself: no continuous scroll gesture advances
+   * by more than one screen between events, and any seek worth distinguishing
+   * is larger than that.
+   */
+  reconcile(nativeOffset: number): ScrollAxisPosition | null {
+    assertFiniteNonNegative("nativeOffset", nativeOffset);
+    const previous = this.#lastNativeOffset;
+    this.#lastNativeOffset = nativeOffset;
+    if (!this.segmented) {
+      return null;
+    }
+    const jumped = previous === null || Math.abs(nativeOffset - previous) > this.#jumpThreshold();
+    if (!jumped) {
+      return this.recenter(nativeOffset);
+    }
+    const next = this.toNative(this.proportionalLogical(nativeOffset));
+    return next.segmentOrigin === this.#segmentOrigin && next.nativeOffset === nativeOffset
+      ? null
+      : next;
+  }
+
+  /** Adopts a position produced by `toNative()`/`recenter()`/`reconcile()`. */
   commit(position: ScrollAxisPosition): void {
     assertFiniteNonNegative("segmentOrigin", position.segmentOrigin);
     if (position.segmentOrigin === this.#segmentOrigin) {
       return;
     }
     this.#segmentOrigin = Math.min(position.segmentOrigin, this.maxSegmentOrigin);
+    this.#lastNativeOffset = position.nativeOffset;
     this.#version += 1;
   }
 
@@ -190,5 +246,14 @@ export class ScrollAxisMapper {
    */
   #recenterGuard(): number {
     return this.maxNativeScroll / 4;
+  }
+
+  /**
+   * Above this per-event delta an offset change is a seek rather than a
+   * continuous scroll. One viewport is the natural line: no wheel, keyboard or
+   * autoscroll step advances by a whole screen between scroll events.
+   */
+  #jumpThreshold(): number {
+    return Math.max(this.#viewportSize, 1);
   }
 }

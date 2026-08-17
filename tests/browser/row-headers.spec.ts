@@ -408,10 +408,14 @@ test("clicking the corner selects everything", async ({ page }) => {
   // y=10 is within the corner band (headerHeight is 20).
   await page.mouse.click(rowHeaderBox.x + 20, rowHeaderBox.y + 10);
 
-  const interiorColumnBoundary = await sampleAlpha(page, 1, 59, 5, 3, 10);
-  const interiorRowBoundary = await sampleAlpha(page, 1, 5, 19, 10, 3);
-  expect(interiorColumnBoundary).toBe(0);
-  expect(interiorRowBoundary).toBe(0);
+  // Polled rather than sampled once: the repaint is scheduled on a RAF, so on
+  // a loaded machine the click can return before the select-all frame lands
+  // and the canvas still shows the initial single-cell selection — whose right
+  // border sits exactly at x=59, the interior boundary sampled below. Every
+  // other interaction in this file sleeps 50ms for the same reason; polling is
+  // both more robust under load and faster when the frame is already there.
+  await expect.poll(() => sampleAlpha(page, 1, 59, 5, 3, 10)).toBe(0);
+  await expect.poll(() => sampleAlpha(page, 1, 5, 19, 10, 3)).toBe(0);
 });
 
 /** Mean absolute per-byte difference between two ImageData buffers of the same size — text anti-aliasing can jitter a couple of RGB units between identical-looking repaints, so exact byte equality is too strict. */
