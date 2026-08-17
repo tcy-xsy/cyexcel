@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel clipboard benchmark (plain copy + huge-array-cell copy)</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 900px;
+        height: 500px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/dist/core.js";
+      import { buildBenchmarkColumns, buildBenchmarkRows } from "/tests/performance/support/dataset.ts";
+
+      const ROW_COUNT = 500;
+      const COLUMN_COUNT = 50;
+      const HUGE_ARRAY_LENGTH = 100_000;
+      const HUGE_ARRAY_ROW = 0;
+      const HUGE_ARRAY_COLUMN = COLUMN_COUNT - 1;
+
+      const container = document.getElementById("app");
+      const columns = buildBenchmarkColumns(COLUMN_COUNT);
+      const data = buildBenchmarkRows(ROW_COUNT, COLUMN_COUNT);
+      // A single cell holding a 100k-item array — everything else in this
+      // sheet is plain scalars, so the "plain copy" scenario (rows 1-200,
+      // deliberately excluding row 0) never touches it.
+      data[HUGE_ARRAY_ROW][columns[HUGE_ARRAY_COLUMN].field] = Array.from(
+        { length: HUGE_ARRAY_LENGTH },
+        (_unused, index) => index
+      );
+
+      const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+
+      function observeLongTasks() {
+        const durations = [];
+        let observer;
+        if (typeof PerformanceObserver !== "undefined") {
+          try {
+            observer = new PerformanceObserver((list) => {
+              for (const entry of list.getEntries()) {
+                durations.push(entry.duration);
+              }
+            });
+            observer.observe({ entryTypes: ["longtask"] });
+          } catch {
+            observer = undefined;
+          }
+        }
+        return {
+          stop() {
+            observer?.disconnect();
+            return durations.length;
+          }
+        };
+      }
+
+      async function runPlainCopy() {
+        const range = { startRow: 1, startColumn: 0, endRow: 200, endColumn: COLUMN_COUNT - 1 }; // 200 rows x 50 cols = 10,000 cells
+        const planStart = performance.now();
+        sheet.planCopy(range);
+        const planMs = performance.now() - planStart;
+
+        const copyStart = performance.now();
+        await sheet.copy({ range });
+        const copyMs = performance.now() - copyStart;
+
+        return { planMs, copyMs };
+      }
+
+      async function runHugeArrayCopy() {
+        const range = {
+          startRow: HUGE_ARRAY_ROW,
+          startColumn: HUGE_ARRAY_COLUMN,
+          endRow: HUGE_ARRAY_ROW,
+          endColumn: HUGE_ARRAY_COLUMN
+        };
+        const longTasks = observeLongTasks();
+        const start = performance.now();
+        // "raw" mode is what fully serializes the cell (see
+        // tests/browser/clipboard.spec.ts's "fully serializes an array cell
+        // in raw mode, not just its preview") — the worst-case main-thread
+        // cost this scenario needs to measure.
+        await sheet.copy({ mode: "raw", range });
+        const copyMs = performance.now() - start;
+        const longTaskCount = longTasks.stop();
+
+        return { copyMs, longTaskCount };
+      }
+
+      window.__sheet = sheet;
+      window.__cyexcelRunPlainCopy = runPlainCopy;
+      window.__cyexcelRunHugeArrayCopy = runHugeArrayCopy;
+      window.__cyexcelPerfReady = true;
+    </script>
+  </body>
+</html>

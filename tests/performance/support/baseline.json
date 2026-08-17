@@ -1,0 +1,18 @@
+{
+  "recordedAt": "2026-08-07T02:45:00.000Z",
+  "environment": {
+    "browser": "chrome 151.0.7922.76 (Playwright channel: chrome)",
+    "os": "macOS 15.4.1 (Darwin 24.4.0)",
+    "buildMode": "dist/ (pnpm build output, unminified rollup bundle) — sandboxed/headless CI-style session environment, not a dedicated reference desktop; see doc/progress.md Step 15 entry. Recorded with `pnpm test:perf` (--workers=1, serial) — running these tests in parallel with each other under CPU contention inflates every timing metric well past this baseline, which is why test:perf pins --workers=1."
+  },
+  "scenarios": {
+    "firstPaint": { "constructMs": 4.9, "readyMs": 37.1, "heapBytes": 1965535560, "domNodeCount": 11 },
+    "scroll": { "fps": 60.0, "p95FrameMs": 17.4, "longTaskCount": 0 },
+    "singleCellUpdate": { "commandMs": 0.3, "paintMs": 22.1 },
+    "batchUpdate": { "transactionMs": 33.9, "repaintMs": 24.6 },
+    "clipboardPlain": { "planMs": 1.5, "copyMs": 7.7 },
+    "clipboardHugeArray": { "copyMs": 11.6, "longTaskCount": 0 },
+    "domRendererScroll": { "domNodeGrowth": 0, "heapGrowthBytes": 0 },
+    "lifecycle": { "heapGrowthBytes": 0 }
+  }
+}

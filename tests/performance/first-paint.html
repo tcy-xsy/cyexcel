@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel first-paint benchmark (1,000,000 rows x 50 columns)</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 900px;
+        height: 500px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <!-- Imports the real BUILT artifact, not /src/... — "首屏" numbers must
+         reflect what a real consumer's bundle actually does, matching the
+         Step 15 rule "固定...production build" (see tests/build/dist-esm.html
+         for the precedent this fixture follows). -->
+    <script type="module">
+      import { CyExcelCore } from "/dist/core.js";
+      import { buildBenchmarkColumns, buildBenchmarkRows } from "/tests/performance/support/dataset.ts";
+
+      const ROW_COUNT = 1_000_000;
+      const COLUMN_COUNT = 50;
+
+      function nextFrame() {
+        return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }
+
+      async function run() {
+        const container = document.getElementById("app");
+        const columns = buildBenchmarkColumns(COLUMN_COUNT);
+        // Data generation itself is a benchmark-harness cost, not part of
+        // "首屏可交互时间" (a real consumer already has their DataSource
+        // ready before constructing the sheet) — left out of the timed
+        // window on purpose.
+        const data = buildBenchmarkRows(ROW_COUNT, COLUMN_COUNT);
+
+        const constructStart = performance.now();
+        const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+        const constructMs = performance.now() - constructStart;
+
+        await nextFrame();
+        const readyMs = performance.now() - constructStart;
+
+        const heapBytes = performance.memory?.usedJSHeapSize ?? null;
+        const domNodeCount = container.querySelectorAll("*").length;
+
+        window.__sheet = sheet;
+        window.__cyexcelPerfMetrics = { constructMs, readyMs, heapBytes, domNodeCount };
+        window.__cyexcelPerfReady = true;
+      }
+
+      run();
+    </script>
+  </body>
+</html>

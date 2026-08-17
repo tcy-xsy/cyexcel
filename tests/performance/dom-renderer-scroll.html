@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel DOM-renderer continuous-scroll benchmark</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 900px;
+        height: 500px;
+      }
+      .cy-perf-toggle {
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/dist/core.js";
+      import { buildBenchmarkColumns, buildBenchmarkRows } from "/tests/performance/support/dataset.ts";
+
+      const ROW_COUNT = 200_000;
+      const COLUMN_COUNT = 10;
+
+      // Same DOM-renderer-factory shape as tests/browser/custom-cells.html's
+      // toggleRendererFactory — mounts/unmounts a real <button> per visible
+      // cell, pooled by DOMCellManager as cells scroll in/out.
+      const toggleRendererFactory = {
+        kind: "dom",
+        pointerOwnership: "surface",
+        create() {
+          let button;
+          let currentValue;
+          return {
+            mount(host, context) {
+              button = document.createElement("button");
+              button.type = "button";
+              button.className = "cy-perf-toggle";
+              currentValue = context.value;
+              button.textContent = currentValue ? "on" : "off";
+              host.append(button);
+            },
+            update(context) {
+              currentValue = context.value;
+              button.textContent = currentValue ? "on" : "off";
+            },
+            destroy() {
+              button.remove();
+            }
+          };
+        }
+      };
+
+      const container = document.getElementById("app");
+      const columns = buildBenchmarkColumns(COLUMN_COUNT);
+      columns[0] = { ...columns[0], renderer: toggleRendererFactory };
+      const data = buildBenchmarkRows(ROW_COUNT, COLUMN_COUNT);
+      const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+
+      function runScrollWithDomTrend(durationMs, sampleIntervalMs) {
+        return new Promise((resolve) => {
+          const scroller = container.firstElementChild;
+          const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+          const samples = [];
+          const start = performance.now();
+          let lastSampleAt = start;
+
+          function sample() {
+            samples.push({
+              tMs: performance.now() - start,
+              domNodeCount: container.querySelectorAll("*").length,
+              heapBytes: performance.memory?.usedJSHeapSize ?? null
+            });
+          }
+
+          sample();
+
+          function tick(now) {
+            const elapsed = now - start;
+
+            if (now - lastSampleAt >= sampleIntervalMs) {
+              lastSampleAt = now;
+              sample();
+            }
+
+            if (elapsed >= durationMs) {
+              sample();
+              resolve(samples);
+              return;
+            }
+
+            const cycleProgress = (elapsed % 2000) / 2000;
+            const t = cycleProgress < 0.5 ? cycleProgress * 2 : 2 - cycleProgress * 2;
+            scroller.scrollTop = Math.round(t * maxScroll);
+            requestAnimationFrame(tick);
+          }
+
+          requestAnimationFrame(tick);
+        });
+      }
+
+      window.__sheet = sheet;
+      window.__cyexcelRunScrollWithDomTrend = runScrollWithDomTrend;
+      window.__cyexcelPerfReady = true;
+    </script>
+  </body>
+</html>

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel batch-update benchmark (100,000 cells, one transaction)</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 900px;
+        height: 500px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/dist/core.js";
+      import { buildBenchmarkColumns, buildBenchmarkRows, buildBenchmarkRow } from "/tests/performance/support/dataset.ts";
+
+      const ROW_COUNT = 200_000;
+      const COLUMN_COUNT = 50;
+      const PASTE_ROW_COUNT = 2000; // 2000 x 50 = 100,000 cells
+
+      const container = document.getElementById("app");
+      const columns = buildBenchmarkColumns(COLUMN_COUNT);
+      const data = buildBenchmarkRows(ROW_COUNT, COLUMN_COUNT);
+      const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+
+      // paste() (not a loop of setCell()) is the only public API that
+      // commits a whole range as one Command/one transaction/one History
+      // entry (src/core/clipboard/ClipboardService.ts's doc comment: "one
+      // paste = one transaction = one History entry") — exactly what
+      // "批量更新...transaction、History、重绘耗时" needs to measure, unlike
+      // setCell() which is its own transaction per call.
+      const pasteRows = Array.from({ length: PASTE_ROW_COUNT }, (_unused, row) => {
+        const rowData = buildBenchmarkRow(row + 1_000_000, COLUMN_COUNT); // offset so pasted values differ from the base dataset
+        return columns.map((column) => String(rowData[column.field])).join("\t");
+      });
+      const pasteText = pasteRows.join("\n");
+
+      function nextFrame() {
+        return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }
+
+      async function runBatchUpdate() {
+        const range = {
+          startRow: 0,
+          startColumn: 0,
+          endRow: PASTE_ROW_COUNT - 1,
+          endColumn: COLUMN_COUNT - 1
+        };
+
+        const before = performance.now();
+        await sheet.paste({ range, text: pasteText });
+        const afterTransaction = performance.now();
+
+        await nextFrame();
+        const afterPaint = performance.now();
+
+        return {
+          transactionMs: afterTransaction - before,
+          repaintMs: afterPaint - afterTransaction
+        };
+      }
+
+      window.__sheet = sheet;
+      window.__cyexcelRunBatchUpdate = runBatchUpdate;
+      window.__cyexcelPerfReady = true;
+    </script>
+  </body>
+</html>

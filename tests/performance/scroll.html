@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel continuous-scroll benchmark (1,000,000 rows)</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 900px;
+        height: 500px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore } from "/dist/core.js";
+      import { buildBenchmarkColumns, buildBenchmarkRows } from "/tests/performance/support/dataset.ts";
+
+      const ROW_COUNT = 1_000_000;
+      const COLUMN_COUNT = 20;
+
+      const container = document.getElementById("app");
+      const columns = buildBenchmarkColumns(COLUMN_COUNT);
+      const data = buildBenchmarkRows(ROW_COUNT, COLUMN_COUNT);
+      const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+
+      /**
+       * Bounces the internal scroller (the sole direct child of `container`,
+       * see CyExcelCore.ts's `container.append(scroller)`) top<->bottom for
+       * `durationMs`, sampling one frame-time delta per rAF tick and every
+       * `longtask` PerformanceObserver entry along the way. Resolves with
+       * FPS/P95 frame time/long-task count — driven entirely by standard Web
+       * APIs, no CDP session needed.
+       */
+      function runScroll(durationMs) {
+        return new Promise((resolve) => {
+          const scroller = container.firstElementChild;
+          const maxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+
+          const longTaskDurations = [];
+          let observer;
+          if (typeof PerformanceObserver !== "undefined") {
+            try {
+              observer = new PerformanceObserver((list) => {
+                for (const entry of list.getEntries()) {
+                  longTaskDurations.push(entry.duration);
+                }
+              });
+              observer.observe({ entryTypes: ["longtask"] });
+            } catch {
+              observer = undefined;
+            }
+          }
+
+          const frameDeltas = [];
+          const start = performance.now();
+          let lastTime = start;
+
+          function tick(now) {
+            frameDeltas.push(now - lastTime);
+            lastTime = now;
+            const elapsed = now - start;
+
+            if (elapsed >= durationMs) {
+              observer?.disconnect();
+              // First sample's "delta" is skewed by setup work before the
+              // loop started, not a real frame — excluded from both stats.
+              const samples = frameDeltas.slice(1);
+              const totalMs = samples.reduce((sum, value) => sum + value, 0);
+              const fps = samples.length > 0 && totalMs > 0 ? (samples.length / totalMs) * 1000 : 0;
+              const sorted = [...samples].sort((a, b) => a - b);
+              const p95Index = sorted.length > 0 ? Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95)) : 0;
+              const p95FrameMs = sorted.length > 0 ? sorted[p95Index] : 0;
+              resolve({ fps, p95FrameMs, longTaskCount: longTaskDurations.length });
+              return;
+            }
+
+            // Triangle-wave bounce between top and bottom every 2s.
+            const cycleProgress = (elapsed % 2000) / 2000;
+            const t = cycleProgress < 0.5 ? cycleProgress * 2 : 2 - cycleProgress * 2;
+            scroller.scrollTop = Math.round(t * maxScroll);
+            requestAnimationFrame(tick);
+          }
+
+          requestAnimationFrame(tick);
+        });
+      }
+
+      window.__sheet = sheet;
+      window.__cyexcelRunScroll = runScroll;
+      window.__cyexcelPerfReady = true;
+    </script>
+  </body>
+</html>
