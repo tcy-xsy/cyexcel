@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { remapRowIndex } from "../../../../src/core";
+import { remapRowIndex, validateAxisChange } from "../../../../src/core/layout";
 
 describe("remapRowIndex — insert", () => {
   it("leaves rows before the insertion point unchanged", () => {
@@ -90,5 +90,23 @@ describe("remapRowIndex — move defaults target to start (a no-op move)", () =>
     for (let row = 0; row < 6; row += 1) {
       expect(remapRowIndex(row, change)).toBe(row);
     }
+  });
+});
+
+describe("validateAxisChange", () => {
+  it("requires a pre-removal target outside the moved block", () => {
+    expect(() =>
+      validateAxisChange({ axis: "row", operation: "move", start: 2, count: 2, target: 3 }, 8)
+    ).toThrow("inside the moved block");
+
+    expect(() =>
+      validateAxisChange({ axis: "row", operation: "move", start: 2, count: 2, target: 8 }, 8)
+    ).not.toThrow();
+  });
+
+  it("rejects out-of-range structural operations before they reach an axis owner", () => {
+    expect(() =>
+      validateAxisChange({ axis: "column", operation: "delete", start: 3, count: 2 }, 4)
+    ).toThrow("outside axis length");
   });
 });

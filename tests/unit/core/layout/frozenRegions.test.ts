@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { splitByFrozenBoundary } from "../../../../src/core";
+import { splitByFrozenBoundary } from "../../../../src/core/layout";
 
 describe("splitByFrozenBoundary", () => {
   it("puts everything in the scrollable half when nothing is frozen", () => {

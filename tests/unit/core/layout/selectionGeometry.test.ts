@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { LayoutEngine, getSelectionBottomRightRect } from "../../../../src/core";
+import { LayoutEngine, getSelectionBottomRightRect } from "../../../../src/core/layout";
 
 function createLayout(freeze?: { rows?: number; columns?: number }): LayoutEngine {
   return new LayoutEngine({

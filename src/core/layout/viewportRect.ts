@@ -2,7 +2,8 @@ import type { CellRect, ViewportState } from "./LayoutEngine";
 
 /**
  * `LayoutEngine.getCellRect()` returns absolute content-space coordinates
- * (row * rowHeight, independent of scroll). Anything drawn or positioned in
+ * (a row's cumulative offset from row 0, independent of scroll — see
+ * `LayoutEngine.getRowOffset()`). Anything drawn or positioned in
  * a viewport-sized, `position: sticky`-pinned layer (the content canvas, the
  * DOM cell editor overlay, and — from Step 8 — DOMCellManager's mounted
  * cells) needs that rect shifted by the current scroll offset first, or it

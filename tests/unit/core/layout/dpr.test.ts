@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { toPhysicalPixelSize } from "../../../../src/core";
+import { toPhysicalPixelSize } from "../../../../src/core/layout";
 
 describe("toPhysicalPixelSize", () => {
   it("scales the logical size by dpr", () => {

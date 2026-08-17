@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { toViewportRect } from "../../../../src/core";
+import { toViewportRect } from "../../../../src/core/layout";
 
 describe("toViewportRect", () => {
   it("subtracts the current scroll offset from an absolute content rect", () => {
