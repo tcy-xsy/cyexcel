@@ -24,7 +24,7 @@ export interface ClipboardServiceOptions {
   readonly getSelectionRange: () => CellRange;
   readonly getStoreVersion: () => number;
   /** Expected to be a single Command execution (e.g. one SetRangeCommand), so one paste = one transaction = one History entry. */
-  readonly applyRangeCommand: (range: CellRange, values: readonly (readonly unknown[])[]) => void;
+  readonly applyRangeCommand: (range: CellRange, values: readonly (readonly unknown[])[]) => void | Promise<void>;
   readonly io: ClipboardIO;
   readonly createWorker?: () => SerializeWorkerLike;
   readonly options?: ClipboardOptions;
@@ -161,7 +161,7 @@ export class ClipboardService {
       return;
     }
 
-    this.#options.applyRangeCommand(
+    await this.#options.applyRangeCommand(
       { startRow: anchor.startRow, startColumn: anchor.startColumn, endRow, endColumn },
       values
     );

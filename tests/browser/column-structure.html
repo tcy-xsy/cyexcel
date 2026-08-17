@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel column structure fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 400px;
+        height: 200px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore, createBasicContextMenuPlugin } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+      // Four 60px columns (a/b/c/d), each cell "<row><field>" so a
+      // structural change is verifiable purely from getCell() values —
+      // no pixel sampling needed except for the hide/show tests, which
+      // genuinely need to observe LayoutEngine's painted width.
+      const columns = ["a", "b", "c", "d"].map((field) => ({
+        id: field,
+        field,
+        width: 60,
+        header: field.toUpperCase()
+      }));
+      const data = Array.from({ length: 3 }, (_unused, row) =>
+        Object.fromEntries(columns.map((column) => [column.field, `${row}${column.field}`]))
+      );
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        data,
+        rowHeight: 24,
+        headerHeight: 24,
+        plugins: [createBasicContextMenuPlugin()]
+      });
+
+      window.__sheet = sheet;
+      window.__cyexcelColumnStructureReady = true;
+    </script>
+  </body>
+</html>

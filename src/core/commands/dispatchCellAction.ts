@@ -1,7 +1,6 @@
-import { SetCellCommand } from "../commands";
-import type { TableStore } from "../data";
+import type { CellAction } from "../cells/types";
 import type { Command } from "../types";
-import type { CellAction } from "./types";
+import { SetCellCommand } from "./SetCellCommand";
 
 export type CellActionDispatch =
   | { readonly kind: "command"; readonly command: Command }
@@ -20,13 +19,12 @@ export type CellActionDispatch =
  */
 export function dispatchCellAction(
   action: CellAction,
-  store: TableStore,
   row: number,
   column: number
 ): CellActionDispatch {
   switch (action.type) {
     case "set-value":
-      return { kind: "command", command: new SetCellCommand(store, row, column, action.value) };
+      return { kind: "command", command: new SetCellCommand(row, column, action.value) };
     case "start-edit":
       return { kind: "start-edit" };
   }

@@ -101,9 +101,11 @@ test("right-clicking the column header band opens a menu with a column-header-ta
   // y < headerHeight (24px) — the header band, not the body.
   await page.mouse.click(box.x + 150, box.y + 10, { button: "right" }); // "age" column header
 
+  // basicMenuPlugin now also contributes items for "column-header" (Step
+  // 17), so this fixture's own item is no longer first — click it directly
+  // by id instead of counting ArrowDown presses through the merged menu.
   await expect(page.locator('[data-item-id="log-column-header"]')).toBeVisible();
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("Enter");
+  await page.locator('[data-item-id="log-column-header"]').click();
 
   expect(await getRuns(page)).toEqual([{ target: "column-header", column: 1 }]);
 });

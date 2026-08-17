@@ -1,31 +1,16 @@
-import type { Command, Patch } from "../types";
+import type { CommitReceipt } from "../mutations";
 
-export interface HistoryEntry {
-  readonly commands: readonly Command[];
-  readonly patches: readonly Patch[];
-}
+export type HistoryEntry = CommitReceipt;
 
 export interface HistoryManagerOptions {
-  /** Maximum number of entries kept in the undo stack. Default: 100. */
   readonly maxEntries?: number | undefined;
-  /**
-   * Approximate byte budget for the undo stack, estimated via
-   * `JSON.stringify(entry.patches).length` per entry. This is a cheap
-   * heuristic, not an exact memory measurement. Default: ~5,000,000
-   * (roughly 5MB of stringified patch data).
-   */
   readonly maxBytes?: number | undefined;
 }
 
 const DEFAULT_MAX_ENTRIES = 100;
 const DEFAULT_MAX_BYTES = 5_000_000;
 
-/**
- * Pure undo/redo stack bookkeeping — knows nothing about how a Command is
- * executed or undone. CommandManager owns that; this only tracks which
- * HistoryEntry objects exist and evicts the oldest ones under budget
- * pressure.
- */
+/** Receipt-only history. Stack ownership changes only after replay succeeds. */
 export class HistoryManager {
   #undoStack: HistoryEntry[] = [];
   #redoStack: HistoryEntry[] = [];
@@ -55,20 +40,28 @@ export class HistoryManager {
     this.#evict();
   }
 
-  undo(): HistoryEntry | undefined {
-    const entry = this.#undoStack.pop();
-    if (entry) {
-      this.#redoStack.push(entry);
-    }
-    return entry;
+  peekUndo(): HistoryEntry | undefined {
+    return this.#undoStack[this.#undoStack.length - 1];
   }
 
-  redo(): HistoryEntry | undefined {
-    const entry = this.#redoStack.pop();
-    if (entry) {
-      this.#undoStack.push(entry);
+  peekRedo(): HistoryEntry | undefined {
+    return this.#redoStack[this.#redoStack.length - 1];
+  }
+
+  commitUndo(entry: HistoryEntry): void {
+    if (this.peekUndo() !== entry) {
+      throw new Error("Undo history changed before replay completed");
     }
-    return entry;
+    this.#undoStack.pop();
+    this.#redoStack.push(entry);
+  }
+
+  commitRedo(entry: HistoryEntry): void {
+    if (this.peekRedo() !== entry) {
+      throw new Error("Redo history changed before replay completed");
+    }
+    this.#redoStack.pop();
+    this.#undoStack.push(entry);
   }
 
   clear(): void {
@@ -77,20 +70,13 @@ export class HistoryManager {
   }
 
   #evict(): void {
+    let bytes = this.#undoStack.reduce((total, entry) => total + entry.historyBytes, 0);
     while (
       this.#undoStack.length > 1 &&
-      (this.#undoStack.length > this.#maxEntries ||
-        this.#estimateBytes() > this.#maxBytes)
+      (this.#undoStack.length > this.#maxEntries || bytes > this.#maxBytes)
     ) {
-      this.#undoStack.shift();
+      const removed = this.#undoStack.shift();
+      bytes -= removed?.historyBytes ?? 0;
     }
-  }
-
-  #estimateBytes(): number {
-    let total = 0;
-    for (const entry of this.#undoStack) {
-      total += JSON.stringify(entry.patches).length;
-    }
-    return total;
   }
 }

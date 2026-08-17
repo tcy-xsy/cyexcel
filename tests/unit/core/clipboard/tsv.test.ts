@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { decodeTsv, encodeTsv, escapeTsvCell } from "../../../../src/core";
+import { decodeTsv, encodeTsv, escapeTsvCell } from "../../../../src/core/clipboard";
 
 describe("escapeTsvCell", () => {
   it("leaves plain text untouched", () => {

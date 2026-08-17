@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { ClipboardWorkerClient, encodeTsv } from "../../../../src/core";
-import type { SerializeWorkerLike } from "../../../../src/core";
+import { ClipboardWorkerClient, encodeTsv } from "../../../../src/core/clipboard";
+import type { SerializeWorkerLike } from "../../../../src/core/clipboard";
 
 interface FakeWorker extends SerializeWorkerLike {
   readonly sent: unknown[];

@@ -175,3 +175,25 @@ test("copy({ download: true }) triggers a real file download instead of writing 
   });
   expect(Buffer.concat(chunks).toString("utf-8")).toBe("Alice\t30\r\nBob\t40");
 });
+
+test(`${MOD}+click adds a disconnected region, but copying only serializes the active one`, async ({
+  page
+}) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  // Select "Alice" (name, row 0), then Ctrl/Cmd+click Bob's age (row 1) —
+  // the active region becomes just that one cell; "Alice" stays selected as
+  // a second, non-active region but must not be copied (Step 16's "copy
+  // only acts on the active region" scope decision, doc/progress.md).
+  await page.mouse.click(box.x + 10, box.y + 10);
+  await page.keyboard.down(MOD);
+  await page.mouse.click(box.x + 120, box.y + 30);
+  await page.keyboard.up(MOD);
+  await page.keyboard.press(`${MOD}+C`);
+
+  await page.locator("#scratch").click();
+  await page.keyboard.press(`${MOD}+V`);
+
+  await expect(page.locator("#scratch")).toHaveValue("40");
+});

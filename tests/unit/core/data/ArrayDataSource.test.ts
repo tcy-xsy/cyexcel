@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { ArrayDataSource, CyExcelError, CyExcelErrorCode } from "../../../../src/core";
+import { ArrayDataSource } from "../../../../src/core/data";
+import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
 
 describe("ArrayDataSource", () => {
   it("reads and writes by numeric index through a stable column field", () => {
@@ -122,21 +123,32 @@ describe("ArrayDataSource — insertRows", () => {
     expect(source.getCell(2, 0)).toBe("A");
   });
 
-  it("inserting into a large source shifts the existing array in place instead of copying it", () => {
+  it("inserting into a large source does not rewrite the caller-owned top-level rows array", () => {
     const rows = Array.from({ length: 1_000_000 }, (_unused, index) => ({ name: `R${index}`, price: index }));
     const source = new ArrayDataSource(rows, columns());
 
     source.insertRows(0, [["new", 0]]);
 
-    // splice() mutates `rows` in place — it's still the exact same array instance.
+    // Structural ownership is internal; only row objects remain shared.
     expect(source.getRowCount()).toBe(1_000_001);
-    expect(rows.length).toBe(1_000_001);
+    expect(rows.length).toBe(1_000_000);
   });
 
   it("throws a stable error code when inserting into a readonly source", () => {
     const source = new ArrayDataSource([{ name: "A" }], [{ id: "name", field: "name" }], { readonly: true });
 
     expect(() => source.insertRows(0, [["B"]])).toThrow(CyExcelError);
+  });
+
+  it("rejects zero-count and out-of-range inserts before splicing the caller-owned rows array", () => {
+    const rows = [{ name: "A" }, { name: "B" }];
+    const source = new ArrayDataSource(rows, columns());
+
+    expect(() => source.insertRows(1, [])).toThrow(RangeError);
+    expect(() => source.insertRows(3, [["C"]])).toThrow(RangeError);
+
+    expect(rows.map((row) => row.name)).toEqual(["A", "B"]);
+    expect(source.getRowCount()).toBe(2);
   });
 });
 
@@ -162,6 +174,17 @@ describe("ArrayDataSource — deleteRows", () => {
     const source = new ArrayDataSource([{ name: "A" }], columns(), { readonly: true });
 
     expect(() => source.deleteRows(0, 1)).toThrow(CyExcelError);
+  });
+
+  it("rejects zero-count and out-of-range deletes before mutating rows", () => {
+    const rows = [{ name: "A" }, { name: "B" }];
+    const source = new ArrayDataSource(rows, columns());
+
+    expect(() => source.deleteRows(1, 0)).toThrow(RangeError);
+    expect(() => source.deleteRows(1, 2)).toThrow(RangeError);
+
+    expect(rows.map((row) => row.name)).toEqual(["A", "B"]);
+    expect(source.getRowCount()).toBe(2);
   });
 });
 
@@ -203,13 +226,170 @@ describe("ArrayDataSource — moveRows", () => {
 
     source.moveRows(1, 1, 3);
 
-    // The exact same object reference ends up at the new position.
-    expect(rows[2]).toBe(rowB);
+    // The caller's array order is isolated, while the moved row object remains shared.
+    source.setCell(2, 0, "B2");
+    expect(rowB.name).toBe("B2");
+    expect(rows[1]).toBe(rowB);
   });
 
   it("throws a stable error code when moving rows in a readonly source", () => {
     const source = new ArrayDataSource([{ name: "A" }, { name: "B" }], columns(), { readonly: true });
 
     expect(() => source.moveRows(0, 1, 1)).toThrow(CyExcelError);
+  });
+
+  it("rejects invalid moves before mutating row order", () => {
+    const rows = ["A", "B", "C"].map((name) => ({ name }));
+    const source = new ArrayDataSource(rows, columns());
+
+    expect(() => source.moveRows(0, 0, 3)).toThrow(RangeError);
+    expect(() => source.moveRows(0, 2, 1)).toThrow(RangeError);
+    expect(() => source.moveRows(2, 2, 0)).toThrow(RangeError);
+
+    expect(names(source)).toEqual(["A", "B", "C"]);
+  });
+});
+
+describe("ArrayDataSource — insertColumns", () => {
+  function rows() {
+    return [
+      { name: "A", price: 1 },
+      { name: "B", price: 2 }
+    ];
+  }
+  function baseColumns() {
+    return [
+      { id: "name", field: "name" },
+      { id: "price", field: "price" }
+    ];
+  }
+
+  it("inserts column definitions at the given position", () => {
+    const source = new ArrayDataSource(rows(), baseColumns());
+
+    source.insertColumns(1, [{ id: "qty", field: "qty" }]);
+
+    expect(source.getColumnCount()).toBe(3);
+    expect(source.getCell(0, 0)).toBe("A"); // name unaffected
+    expect(source.getCell(0, 2)).toBe(1); // price shifted right
+  });
+
+  it("does not touch any row's data — a newly inserted column reads as undefined until written", () => {
+    const source = new ArrayDataSource(rows(), baseColumns());
+
+    source.insertColumns(0, [{ id: "new", field: "new" }]);
+
+    expect(source.getCell(0, 0)).toBeUndefined();
+    expect(source.getCell(1, 0)).toBeUndefined();
+  });
+
+  it("throws a stable error code when inserting into a readonly source", () => {
+    const source = new ArrayDataSource(rows(), baseColumns(), { readonly: true });
+
+    expect(() => source.insertColumns(0, [{ id: "new", field: "new" }])).toThrow(CyExcelError);
+  });
+
+  it("rejects zero-count and out-of-range inserts before changing column mappings", () => {
+    const source = new ArrayDataSource(rows(), baseColumns());
+
+    expect(() => source.insertColumns(1, [])).toThrow(RangeError);
+    expect(() => source.insertColumns(3, [{ id: "qty", field: "qty" }])).toThrow(RangeError);
+
+    expect(source.getColumnCount()).toBe(2);
+    expect(source.getCell(0, 0)).toBe("A");
+    expect(source.getCell(0, 1)).toBe(1);
+  });
+});
+
+describe("ArrayDataSource — deleteColumns", () => {
+  function rows() {
+    return [{ name: "A", price: 1, qty: 5 }];
+  }
+  function baseColumns() {
+    return [
+      { id: "name", field: "name" },
+      { id: "price", field: "price" },
+      { id: "qty", field: "qty" }
+    ];
+  }
+
+  it("removes the given range of columns", () => {
+    const source = new ArrayDataSource(rows(), baseColumns());
+
+    source.deleteColumns(1, 1); // remove "price"
+
+    expect(source.getColumnCount()).toBe(2);
+    expect(source.getCell(0, 0)).toBe("A");
+    expect(source.getCell(0, 1)).toBe(5); // qty shifted left into price's old slot
+  });
+
+  it("never actually deletes the underlying row data — re-inserting the same column definition restores access to it", () => {
+    const source = new ArrayDataSource(rows(), baseColumns());
+    const priceColumn = baseColumns()[1]!;
+
+    source.deleteColumns(1, 1);
+    source.insertColumns(1, [priceColumn]);
+
+    expect(source.getCell(0, 1)).toBe(1);
+  });
+
+  it("throws a stable error code when deleting from a readonly source", () => {
+    const source = new ArrayDataSource(rows(), baseColumns(), { readonly: true });
+
+    expect(() => source.deleteColumns(0, 1)).toThrow(CyExcelError);
+  });
+
+  it("rejects zero-count and out-of-range deletes before changing column mappings", () => {
+    const source = new ArrayDataSource(rows(), baseColumns());
+
+    expect(() => source.deleteColumns(1, 0)).toThrow(RangeError);
+    expect(() => source.deleteColumns(2, 2)).toThrow(RangeError);
+
+    expect(source.getColumnCount()).toBe(3);
+    expect(source.getCell(0, 0)).toBe("A");
+    expect(source.getCell(0, 1)).toBe(1);
+    expect(source.getCell(0, 2)).toBe(5);
+  });
+});
+
+describe("ArrayDataSource — moveColumns", () => {
+  function rows() {
+    return [{ a: "A", b: "B", c: "C" }];
+  }
+  function baseColumns() {
+    return [
+      { id: "a", field: "a" },
+      { id: "b", field: "b" },
+      { id: "c", field: "c" }
+    ];
+  }
+
+  it("moves a block of columns, data following via field name rather than position", () => {
+    const source = new ArrayDataSource(rows(), baseColumns());
+
+    source.moveColumns(0, 1, 3); // move "a" to the end: [b, c, a]
+
+    expect(source.getCell(0, 0)).toBe("B");
+    expect(source.getCell(0, 1)).toBe("C");
+    expect(source.getCell(0, 2)).toBe("A");
+  });
+
+  it("throws a stable error code when moving columns in a readonly source", () => {
+    const source = new ArrayDataSource(rows(), baseColumns(), { readonly: true });
+
+    expect(() => source.moveColumns(0, 1, 1)).toThrow(CyExcelError);
+  });
+
+  it("rejects invalid moves before changing column mappings", () => {
+    const source = new ArrayDataSource(rows(), baseColumns());
+
+    expect(() => source.moveColumns(0, 0, 3)).toThrow(RangeError);
+    expect(() => source.moveColumns(0, 2, 1)).toThrow(RangeError);
+    expect(() => source.moveColumns(2, 2, 0)).toThrow(RangeError);
+
+    expect(source.getColumnCount()).toBe(3);
+    expect(source.getCell(0, 0)).toBe("A");
+    expect(source.getCell(0, 1)).toBe("B");
+    expect(source.getCell(0, 2)).toBe("C");
   });
 });

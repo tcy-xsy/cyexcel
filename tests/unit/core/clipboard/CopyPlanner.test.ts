@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { CopyPlanner } from "../../../../src/core";
-import type { RuntimeColumn } from "../../../../src/core";
+import type { RuntimeColumn } from "../../../../src/core/cells";
+import { CopyPlanner } from "../../../../src/core/clipboard";
 
 function columnWithPolicy(copy = true): Pick<RuntimeColumn, "clipboard"> {
   return { clipboard: { copy, paste: true } };

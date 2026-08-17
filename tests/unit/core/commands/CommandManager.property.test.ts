@@ -1,12 +1,9 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import {
-  ArrayDataSource,
-  CommandManager,
-  SetCellCommand,
-  TableStore
-} from "../../../../src/core";
+import { SetCellCommand } from "../../../../src/core/commands";
+import { ArrayDataSource, TableStore } from "../../../../src/core/data";
+import { createTableCommandManager } from "../../../../src/core/integration";
 
 const ROW_COUNT = 5;
 const COLUMNS = [
@@ -54,14 +51,14 @@ describe("CommandManager — random command sequences", () => {
           // historyLimit is sized to the batch so eviction never kicks in —
           // this property is about undo correctness, not budget eviction
           // (that has its own tests in CommandManager.test.ts).
-          const manager = new CommandManager(store, {
+          const manager = createTableCommandManager(store, {
             historyLimit: operations.length + 1
           });
           const initial = snapshot(store);
 
           for (const operation of operations) {
             manager.execute(
-              new SetCellCommand(store, operation.row, operation.column, operation.value)
+              new SetCellCommand(operation.row, operation.column, operation.value)
             );
           }
 

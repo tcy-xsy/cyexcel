@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   CellTypeRegistry,
   ColumnManager,
-  buildCellGrid,
   registerBuiltinCellTypes
-} from "../../../../src/core";
+} from "../../../../src/core/cells";
+import { buildCellGrid } from "../../../../src/core/clipboard";
 
 function manager(): ColumnManager {
   const registry = new CellTypeRegistry();

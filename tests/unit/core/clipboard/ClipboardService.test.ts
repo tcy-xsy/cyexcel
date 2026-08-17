@@ -1,17 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  ArrayDataSource,
   CellTypeRegistry,
-  ClipboardService,
   ColumnManager,
-  CommandManager,
-  SetRangeCommand,
-  TableStore,
-  escapeTsvCell,
   registerBuiltinCellTypes
-} from "../../../../src/core";
-import type { ClipboardIO } from "../../../../src/core";
+} from "../../../../src/core/cells";
+import { ClipboardService, escapeTsvCell } from "../../../../src/core/clipboard";
+import type { ClipboardIO } from "../../../../src/core/clipboard";
+import { SetRangeCommand } from "../../../../src/core/commands";
+import { ArrayDataSource, TableStore } from "../../../../src/core/data";
+import { createTableCommandManager } from "../../../../src/core/integration";
 
 function fakeIo(overrides: Partial<ClipboardIO> = {}): ClipboardIO & {
   writeText: ReturnType<typeof vi.fn>;
@@ -41,7 +39,7 @@ function setup(columnDefs: { id: string; type?: string }[] = [{ id: "name" }, { 
     columnDefs.map((c) => ({ id: c.id, field: c.id }))
   );
   const store = new TableStore(dataSource);
-  const commandManager = new CommandManager(store);
+  const commandManager = createTableCommandManager(store);
 
   return { registry, columnManager, store, commandManager, dataSource };
 }
@@ -68,7 +66,7 @@ function makeService(
     getSelectionRange: () => ({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }),
     getStoreVersion: () => store.version,
     applyRangeCommand: (range, values) => {
-      commandManager.execute(new SetRangeCommand(store, range, values));
+      commandManager.execute(new SetRangeCommand(range, values));
     },
     io,
     ...(overrides.options !== undefined ? { options: overrides.options } : {})
@@ -109,7 +107,7 @@ describe("ClipboardService.copy", () => {
       [{ id: "tags", field: "tags" }]
     );
     const store = new TableStore(dataSource);
-    const commandManager = new CommandManager(store);
+    const commandManager = createTableCommandManager(store);
     const io = fakeIo();
     const service = new ClipboardService({
       getCellValue: (row, column) => store.getCell(row, column),
@@ -122,7 +120,7 @@ describe("ClipboardService.copy", () => {
       },
       getSelectionRange: () => ({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 }),
       getStoreVersion: () => store.version,
-      applyRangeCommand: (range, values) => commandManager.execute(new SetRangeCommand(store, range, values)),
+      applyRangeCommand: (range, values) => { commandManager.execute(new SetRangeCommand(range, values)); },
       io
     });
 
@@ -200,7 +198,7 @@ describe("ClipboardService.copy", () => {
       parseValue: (_row, _column, text) => text,
       getSelectionRange: () => ({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }),
       getStoreVersion: () => s.store.version,
-      applyRangeCommand: (range, values) => s.commandManager.execute(new SetRangeCommand(s.store, range, values)),
+      applyRangeCommand: (range, values) => { s.commandManager.execute(new SetRangeCommand(range, values)); },
       io,
       createWorker: () => {
         const worker = {
@@ -272,7 +270,7 @@ describe("ClipboardService.paste", () => {
       { id: "age", field: "age" }
     ]);
     const store = new TableStore(dataSource);
-    const commandManager = new CommandManager(store);
+    const commandManager = createTableCommandManager(store);
     const service = new ClipboardService({
       getCellValue: (row, column) => store.getCell(row, column),
       getColumn: (column) => columnManager.getColumn(column),
@@ -284,7 +282,7 @@ describe("ClipboardService.paste", () => {
       },
       getSelectionRange: () => ({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }),
       getStoreVersion: () => store.version,
-      applyRangeCommand: (range, values) => commandManager.execute(new SetRangeCommand(store, range, values)),
+      applyRangeCommand: (range, values) => { commandManager.execute(new SetRangeCommand(range, values)); },
       io: fakeIo()
     });
 
