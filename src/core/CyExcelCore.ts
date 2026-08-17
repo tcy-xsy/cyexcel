@@ -62,6 +62,7 @@ import {
   InteractionFrameProvider,
   KeyboardController,
   PointerController,
+  BodyGestureController,
   PointerInteractionSession,
   RowReorderController,
   SelectionModel,
@@ -593,11 +594,8 @@ export class CyExcelCore {
   readonly #overscanRows: number;
   readonly #overscanColumns: number;
 
-  #bodyInteractionSession: PointerInteractionSession | null = null;
-  #bodyGesture: {
-    readonly kind: "fill" | "selection";
-    readonly structureVersion: number;
-  } | null = null;
+  /** Owns the body pointer gesture's kind, structure version and capture session. */
+  readonly #bodyGestures: BodyGestureController;
   #headerInteractionSession: PointerInteractionSession | null = null;
   #headerGesture: {
     readonly kind: HeaderGestureKind;
@@ -973,6 +971,21 @@ export class CyExcelCore {
     this.#pointerController = new PointerController({
       selection: this.#selectionModel,
       onSelectionChange: () => this.#renderScheduler.invalidateSelection()
+    });
+    this.#bodyGestures = new BodyGestureController({
+      pointerController: this.#pointerController,
+      fillHandleController: this.#fillHandleController,
+      captureTarget: this.#contentCanvas,
+      focusTarget: this.#contentCanvas,
+      withFrame: (eventName, run) => this.#dispatchInteraction(eventName, run),
+      onFillCommit: (intent) => {
+        this.#interactionFrames.enqueueIntent(() => {
+          if (intent.structureVersion === this.#structureGeneration) {
+            this.#commitFillNow(intent.sourceRange, intent.targetRange);
+          }
+        });
+      },
+      onError: (error, eventName) => this.#events.emit("error", { error, eventName })
     });
     this.#inputRouter = new InputRouter({
       surfacePolicy: (context) => this.#resolvePointerInputTarget(context)
@@ -1417,7 +1430,7 @@ export class CyExcelCore {
       return;
     }
     this.#cancelHeaderGesture(false);
-    this.#cancelBodyGesture();
+    this.#bodyGestures.cancel();
     this.#disposed = true;
     this.#mutationIntents.dispose();
     this.#stopRowReorderAutoScroll();
@@ -1597,7 +1610,7 @@ export class CyExcelCore {
           throw new RangeError("Structure generation exhausted");
         }
         this.#structureGeneration = nextStructureGeneration;
-        this.#cancelBodyGesture();
+        this.#bodyGestures.cancel();
         this.#cancelHeaderGesture(true);
         this.#contextMenuService.close();
       }
@@ -1988,24 +2001,12 @@ export class CyExcelCore {
   }
 
   #routeBodyFill(context: CorePointerInputContext) {
-    const { event, frame } = context;
-    if (event.button !== 0 || !frame.selection || frame.structureVersion === undefined) {
-      return declineInput();
-    }
-    const point = context.point as SurfacePoint<"body">;
-    if (!this.#fillHandleController.handlePointerDown(
-      point,
-      frame.selection,
-      frame.scene,
-      frame.structureVersion
-    )) {
-      return declineInput();
-    }
-
-    event.preventDefault();
-    this.#contentCanvas.focus();
-    this.#startBodyInteraction("fill", event, frame.structureVersion);
-    return handleInput(undefined);
+    const began = this.#bodyGestures.tryBeginFill(
+      context.point as SurfacePoint<"body">,
+      context.event,
+      context.frame
+    );
+    return began ? handleInput(undefined) : declineInput();
   }
 
   /** A custom renderer only owns the input when its single hitTest call returns an action. */
@@ -2062,39 +2063,22 @@ export class CyExcelCore {
   }
 
   #startBodySelection(context: CorePointerInputContext): void {
-    const structureVersion = context.frame.structureVersion;
-    if (structureVersion === undefined) {
-      throw new Error("Body selection requires a structure version");
-    }
-    this.#pointerController.down(
-      context.point,
-      context.frame.scene,
-      structureVersion,
-      {
-        shift: context.event.shiftKey,
-        button: context.event.button,
-        ctrlOrMeta: context.event.ctrlKey || context.event.metaKey
-      }
+    this.#bodyGestures.beginSelection(
+      context.point as SurfacePoint<"body">,
+      context.event,
+      context.frame
     );
-    this.#contentCanvas.focus();
-
-    if (context.event.button === 0) {
-      this.#startBodyInteraction("selection", context.event, structureVersion);
-    } else {
-      // A secondary click may update the selection, but it never owns a drag.
-      this.#pointerController.cancel();
-    }
   }
 
   #handleDelegatedPointerDown = (event: PointerEvent): void => {
     if (!event.isPrimary || (event.button !== 0 && event.button !== 2)) {
       return;
     }
-    if (this.#bodyInteractionSession) {
-      if (!this.#bodyInteractionSession.matches(event.pointerId)) {
+    if (this.#bodyGestures.isActive) {
+      if (!this.#bodyGestures.matchesPointer(event.pointerId)) {
         return;
       }
-      this.#cancelBodyGesture();
+      this.#bodyGestures.cancel();
     }
     if (this.#headerInteractionSession) {
       if (!this.#headerInteractionSession.matches(event.pointerId)) {
@@ -2110,7 +2094,7 @@ export class CyExcelCore {
       }).handled
     );
     if (handled === undefined) {
-      this.#cancelBodyGesture();
+      this.#bodyGestures.cancel();
       this.#cancelHeaderGesture(true);
     }
   };
@@ -2145,107 +2129,6 @@ export class CyExcelCore {
       }
     }
     return noInputTarget();
-  }
-
-  #startBodyInteraction(
-    kind: "fill" | "selection",
-    event: PointerEvent,
-    structureVersion: number
-  ): void {
-    const session = new PointerInteractionSession({
-      pointerId: event.pointerId,
-      captureTarget: this.#contentCanvas,
-      onMove: this.#handleBodyPointerMove,
-      onComplete: this.#completeBodyGesture,
-      onCancel: () => {
-        if (this.#bodyInteractionSession === session) {
-          this.#cancelBodyGesture();
-        }
-      },
-      onCaptureError: (error, phase) => {
-        this.#events.emit("error", {
-          error,
-          eventName: `interaction:body-pointer-${phase}`
-        });
-      }
-    });
-    this.#bodyGesture = { kind, structureVersion };
-    this.#bodyInteractionSession = session;
-  }
-
-  #handleBodyPointerMove = (event: PointerEvent): void => {
-    const gesture = this.#bodyGesture;
-    if (!gesture) {
-      return;
-    }
-    const handled = this.#dispatchInteraction("body-pointer-move", (frame) => {
-      if (
-        frame.structureVersion === undefined ||
-        frame.structureVersion !== gesture.structureVersion
-      ) {
-        this.#cancelBodyGesture();
-        return;
-      }
-      const point = frame.surfaces.clientToSurface(
-        clientPoint(event.clientX, event.clientY),
-        "body"
-      );
-      if (!point) {
-        this.#cancelBodyGesture();
-        return;
-      }
-      if (gesture.kind === "fill") {
-        this.#fillHandleController.handlePointerMove(
-          point,
-          frame.scene,
-          frame.structureVersion
-        );
-      } else {
-        this.#pointerController.move(point, frame.scene, frame.structureVersion);
-      }
-      return true;
-    });
-    if (handled !== true) {
-      this.#cancelBodyGesture();
-    }
-  };
-
-  #completeBodyGesture = (_event: PointerEvent): void => {
-    const gesture = this.#bodyGesture;
-    this.#bodyInteractionSession = null;
-    this.#bodyGesture = null;
-    if (!gesture) {
-      return;
-    }
-    this.#dispatchInteraction("body-pointer-up", (frame) => {
-      if (frame.structureVersion !== gesture.structureVersion) {
-        return;
-      }
-      if (gesture.kind === "fill") {
-        const intent = this.#fillHandleController.handlePointerUp(gesture.structureVersion);
-        if (intent) {
-          this.#interactionFrames.enqueueIntent(() => {
-            if (intent.structureVersion === this.#structureGeneration) {
-              this.#commitFillNow(intent.sourceRange, intent.targetRange);
-            }
-          });
-        }
-      } else {
-        this.#pointerController.up(gesture.structureVersion);
-      }
-    });
-    // Also covers frame acquisition failures and structure mismatches.
-    this.#fillHandleController.cancel();
-    this.#pointerController.cancel();
-  };
-
-  #cancelBodyGesture(): void {
-    const session = this.#bodyInteractionSession;
-    this.#bodyInteractionSession = null;
-    this.#bodyGesture = null;
-    session?.dispose();
-    this.#fillHandleController.cancel();
-    this.#pointerController.cancel();
   }
 
   #handleDblClick = (event: MouseEvent): void => {

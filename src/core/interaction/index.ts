@@ -57,6 +57,13 @@ export {
   type PointerInteractionSessionState
 } from "./sessions/PointerInteractionSession";
 export {
+  BodyGestureController,
+  type BodyFillCommitIntent,
+  type BodyGestureControllerOptions,
+  type BodyGestureFrame,
+  type BodyGestureKind
+} from "./sessions/BodyGestureController";
+export {
   InteractionFrameProvider,
   type InteractionSceneSnapshot,
   type InteractionIntentQueue,
