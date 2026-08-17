@@ -96,7 +96,7 @@ import { DeferredMutationQueue } from "./model";
 import { PluginManager, type CyExcelPlugin } from "./plugins";
 import {
   SceneSnapshot,
-  ScrollAxisMapper,
+  ViewportManager,
   SurfaceHost,
   clientPoint,
   type SurfacePoint,
@@ -518,7 +518,6 @@ type CorePointerInputContext = InputCandidateContext<
  */
 export class CyExcelCore {
   readonly #scroller: HTMLDivElement;
-  readonly #spacer: HTMLDivElement;
   readonly #headerCanvas: HTMLCanvasElement;
   readonly #rowHeaderCanvas: HTMLCanvasElement;
   readonly #contentCanvas: HTMLCanvasElement;
@@ -589,9 +588,8 @@ export class CyExcelCore {
   readonly #bodyGestures: BodyGestureController;
   /** Owns every header pointer gesture: resize, header selection, row reorder and the reorder auto-scroll loop. */
   readonly #headerGestures: HeaderGestureController;
-  /** Maps logical scroll offsets onto what the browser can natively scroll. Identity until the content exceeds the safe native extent. */
-  readonly #verticalScroll = new ScrollAxisMapper();
-  readonly #horizontalScroll = new ScrollAxisMapper();
+  /** The sole owner of the scroller's native offsets and the spacer's size. */
+  readonly #viewport: ViewportManager;
   #autoHeightContinuationFrame: number | null = null;
   #finalizationDepth = 0;
   readonly #mutationIntents: DeferredMutationQueue;
@@ -661,7 +659,16 @@ export class CyExcelCore {
       }
     });
     this.#scroller = dom.scroller;
-    this.#spacer = dom.spacer;
+    this.#viewport = new ViewportManager({
+      scroller: dom.scroller,
+      spacer: dom.spacer,
+      // Read per call rather than captured: the column header band's height
+      // depends on how many group levels #headerManager actually resolved.
+      getBandSizes: () => ({
+        rowHeaderWidth: this.#rowHeaderWidth,
+        columnHeaderHeight: this.#headerHeight()
+      })
+    });
     this.#headerCanvas = dom.headerCanvas;
     this.#rowHeaderCanvas = dom.rowHeaderCanvas;
     this.#contentCanvas = dom.contentCanvas;
@@ -988,7 +995,7 @@ export class CyExcelCore {
         invalidateRowHeader: () =>
           this.#renderScheduler.invalidatePresentation({ rowHeader: true }),
         scrollVerticallyBy: (delta) => {
-          this.#scroller.scrollTop += delta;
+          this.#viewport.scrollNativeBy(delta);
           this.#syncViewport();
           this.#renderScheduler.invalidateAll();
         },
@@ -1843,17 +1850,7 @@ export class CyExcelCore {
    * was before segmenting existed.
    */
   #updateSpacerSize(root: LayoutRoot = this.#layout.root): void {
-    const headerHeight = this.#headerHeight();
-    this.#horizontalScroll.setMetrics(
-      root.columnAxis.getTotalWidth(),
-      Math.max(0, this.#scroller.clientWidth - this.#rowHeaderWidth)
-    );
-    this.#verticalScroll.setMetrics(
-      root.rowMetrics.totalHeight,
-      Math.max(0, this.#scroller.clientHeight - headerHeight)
-    );
-    this.#spacer.style.width = `${this.#horizontalScroll.nativeExtent + this.#rowHeaderWidth}px`;
-    this.#spacer.style.height = `${this.#verticalScroll.nativeExtent + headerHeight}px`;
+    this.#viewport.setContentSize(root.columnAxis.getTotalWidth(), root.rowMetrics.totalHeight);
   }
 
   /**
@@ -1872,31 +1869,12 @@ export class CyExcelCore {
    * swallowed by a stale suppression token.
    */
   #recenterScroll(): void {
-    const nativeTop = Math.max(0, this.#scroller.scrollTop);
-    const nativeLeft = Math.max(0, this.#scroller.scrollLeft);
-    const vertical = this.#verticalScroll.reconcile(nativeTop);
-    const horizontal = this.#horizontalScroll.reconcile(nativeLeft);
-    if (!vertical && !horizontal) {
-      return;
-    }
-    if (vertical) {
-      this.#verticalScroll.commit(vertical);
-      this.#scroller.scrollTop = vertical.nativeOffset;
-    }
-    if (horizontal) {
-      this.#horizontalScroll.commit(horizontal);
-      this.#scroller.scrollLeft = horizontal.nativeOffset;
-    }
+    this.#viewport.reconcile();
   }
 
   /** Moves the scroller to a logical position, picking a segment that can express it. */
   #applyLogicalScroll(logicalTop: number, logicalLeft: number): void {
-    const vertical = this.#verticalScroll.toNative(logicalTop);
-    const horizontal = this.#horizontalScroll.toNative(logicalLeft);
-    this.#verticalScroll.commit(vertical);
-    this.#horizontalScroll.commit(horizontal);
-    this.#scroller.scrollTop = vertical.nativeOffset;
-    this.#scroller.scrollLeft = horizontal.nativeOffset;
+    this.#viewport.scrollToLogical(logicalTop, logicalLeft);
   }
 
   /** Publishes gesture-only geometry without changing the authoritative Layout root or History. */
@@ -1949,15 +1927,7 @@ export class CyExcelCore {
    * (see createDom's bodyTop/bodyLeft offsets).
    */
   #readViewport(): ViewportState {
-    // Clamped here rather than inside the mapper: macOS rubber-band overscroll
-    // reports a negative scrollTop/scrollLeft, and the DOM boundary is where
-    // that messiness belongs — the mapper stays strict so real bugs still throw.
-    return {
-      scrollTop: this.#verticalScroll.toLogical(Math.max(0, this.#scroller.scrollTop)),
-      scrollLeft: this.#horizontalScroll.toLogical(Math.max(0, this.#scroller.scrollLeft)),
-      width: Math.max(0, this.#scroller.clientWidth - this.#rowHeaderWidth),
-      height: Math.max(0, this.#scroller.clientHeight - this.#headerHeight())
-    };
+    return this.#viewport.readState();
   }
 
   #createSceneSnapshot(viewportState: ViewportState, layoutRoot: LayoutRoot = this.#layout.root): SceneSnapshot {
@@ -2086,7 +2056,7 @@ export class CyExcelCore {
     if (!target) {
       return;
     }
-    this.#applyLogicalScroll(target.scrollTop, target.scrollLeft);
+    this.#applyLogicalScroll(target.logicalTop, target.logicalLeft);
   }
 
   #routeBodyFill(context: CorePointerInputContext) {

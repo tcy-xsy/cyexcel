@@ -191,12 +191,12 @@ describe("SceneSnapshot.getScrollTargetForCell", () => {
     });
 
     expect(scene.getScrollTargetForCell({ row: 7, column: 4 })).toEqual({
-      scrollTop: 70,
-      scrollLeft: 70
+      logicalTop: 70,
+      logicalLeft: 70
     });
     expect(scene.getScrollTargetForCell({ row: 1, column: 1 })).toEqual({
-      scrollTop: 0,
-      scrollLeft: 0
+      logicalTop: 0,
+      logicalLeft: 0
     });
   });
 
@@ -209,8 +209,8 @@ describe("SceneSnapshot.getScrollTargetForCell", () => {
     });
 
     expect(scene.getScrollTargetForCell({ row: 0, column: 0 })).toEqual({
-      scrollTop: 40,
-      scrollLeft: 50
+      logicalTop: 40,
+      logicalLeft: 50
     });
     expect(scene.getScrollTargetForCell({ row: -1, column: 0 })).toBeNull();
   });

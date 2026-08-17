@@ -163,9 +163,16 @@ export interface SceneCellAddress {
   readonly column: number;
 }
 
+/**
+ * A logical scroll position, not a DOM one. Named `logicalTop`/`logicalLeft`
+ * rather than `scrollTop`/`scrollLeft` on purpose: these are offsets into the
+ * Scene's own coordinate space, which on a segmented axis is not the same
+ * number the scroller carries, and the DOM-shaped names invited exactly the
+ * confusion the §12 scroll gate exists to prevent.
+ */
 export interface SceneScrollTarget {
-  readonly scrollTop: number;
-  readonly scrollLeft: number;
+  readonly logicalTop: number;
+  readonly logicalLeft: number;
 }
 
 export interface SceneLocalPoint {
@@ -586,28 +593,28 @@ export class SceneSnapshot {
       return null;
     }
     const rect = this.getCellRectInPane(cell, pane);
-    let scrollTop = this.#viewport.scrollTop;
-    let scrollLeft = this.#viewport.scrollLeft;
+    let logicalTop = this.#viewport.scrollTop;
+    let logicalLeft = this.#viewport.scrollLeft;
 
     if (pane.scroll.y === "scroll") {
       const clipBottom = pane.clipRect.y + pane.clipRect.height;
       if (rect.y < pane.clipRect.y) {
-        scrollTop = Math.max(0, scrollTop + rect.y - pane.clipRect.y);
+        logicalTop = Math.max(0, logicalTop + rect.y - pane.clipRect.y);
       } else if (rect.y + rect.height > clipBottom) {
-        scrollTop = Math.max(0, scrollTop + rect.y + rect.height - clipBottom);
+        logicalTop = Math.max(0, logicalTop + rect.y + rect.height - clipBottom);
       }
     }
 
     if (pane.scroll.x === "scroll") {
       const clipRight = pane.clipRect.x + pane.clipRect.width;
       if (rect.x < pane.clipRect.x) {
-        scrollLeft = Math.max(0, scrollLeft + rect.x - pane.clipRect.x);
+        logicalLeft = Math.max(0, logicalLeft + rect.x - pane.clipRect.x);
       } else if (rect.x + rect.width > clipRight) {
-        scrollLeft = Math.max(0, scrollLeft + rect.x + rect.width - clipRight);
+        logicalLeft = Math.max(0, logicalLeft + rect.x + rect.width - clipRight);
       }
     }
 
-    return Object.freeze({ scrollTop, scrollLeft });
+    return Object.freeze({ logicalTop, logicalLeft });
   }
 
   getSelectionHandleFragment(range: CellRange, handleSize: number): SceneSelectionHandleFragment | null {

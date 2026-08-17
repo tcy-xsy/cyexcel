@@ -52,3 +52,11 @@ export {
   type ScrollAxisMapperOptions,
   type ScrollAxisPosition
 } from "./ScrollAxisMapper";
+export {
+  ViewportManager,
+  type HeaderBandSizes,
+  type LogicalViewport,
+  type ScrollerBox,
+  type SpacerBox,
+  type ViewportManagerOptions
+} from "./ViewportManager";

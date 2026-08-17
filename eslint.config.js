@@ -137,14 +137,13 @@ export default tseslint.config(
   },
   {
     // Migration plan §12: DOM scroll offsets and the devicePixelRatio global
-    // each have exactly one owner. `ignores` below is the whitelist, and it is
-    // meant to *shrink*: once ViewportManager/ScrollMapper are extracted from
-    // CyExcelCore (Phase 7), CyExcelCore.ts comes off the scroll list.
+    // each have exactly one owner. The whitelist below has now shrunk to those
+    // owners alone — `CyExcelCore.ts` came off it once ViewportManager took
+    // over the scroller and the spacer (Phase 7).
     files: ["src/**/*.ts"],
     ignores: [
       "src/core/scene/**/*.ts",
       "src/core/layout/**/*.ts",
-      "src/core/CyExcelCore.ts",
       "src/core/render/dprCanvas.ts"
     ],
     rules: {
