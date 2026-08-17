@@ -27,7 +27,14 @@
         <div class="toolbar-group">
           <button class="button" id="undoButton" type="button">撤销</button>
           <button class="button" id="redoButton" type="button">重做</button>
-          <span class="hint-inline">核心还没绑定 Ctrl/Cmd+Z，只能靠这两个按钮</span>
+          <span class="hint-inline">Ctrl/Cmd+Z 撤销、Ctrl/Cmd+Shift+Z 或 Ctrl/Cmd+Y 重做也能用</span>
+        </div>
+        <div class="toolbar-group">
+          <button class="button" id="exportButton" type="button">导出选区为 TSV</button>
+          <span class="hint-inline" id="shortcutHint">
+            调用 <code>sheet.copy({ download: true })</code>；Ctrl/Cmd+S 是同一个动作的快捷键
+            （<code>sheet.registerShortcut()</code> 演示），Ctrl/Cmd+K 切换主题
+          </span>
         </div>
       </section>
 
@@ -53,12 +60,16 @@
               <label>行 overscan <input id="overscanRowsInput" type="number" min="0" value="4" /></label>
               <label>列 overscan <input id="overscanColumnsInput" type="number" min="0" value="2" /></label>
             </div>
+            <label class="field-checkbox">
+              <input id="headerGroupsToggle" type="checkbox" checked />
+              分组表头（Step 19，开启后列头右键菜单的插入/删除/隐藏列会被禁用——分组引用了列索引，结构变了索引就错位了）
+            </label>
             <button class="button primary" id="rebuildButton" type="button">应用并重建</button>
             <p class="hint">
               修改后会整个 <code>dispose()</code> + 重新 <code>new CyExcelCore()</code>——
-              行高 / overscan 目前不支持热更新（<code>LayoutEngine</code> 构造后只读）。冻结行列
-              选项虽然存在，但 <code>ContentLayerRenderer</code> 还不会绘制冻结区域（见右下角
-              "尚未实现"），所以这里先不放这个开关。
+              这里的行高是新实例的默认值；表格创建后仍可拖动行号右侧的行边界单独调高/调低。
+              “产品名称”列已开启自动换行，长名称会在进入可见区时按内容增高；overscan 仍需通过重建修改。
+              冻结行列本身已经能正确绘制（<code>freeze</code> 选项），只是这个配置面板还没有对应控件。
             </p>
           </section>
 
@@ -79,8 +90,8 @@
           <section class="panel">
             <h2>操作提示（真实交互）</h2>
             <ul class="hint-list">
-              <li>点击 / 拖拽会移动内部选中的单元格，用来决定双击 / Enter 编辑哪一格——
-                目前没有可视的选中高亮框（见"尚未实现"）</li>
+              <li>点击 / 拖拽移动选中的单元格（会画出蓝色高亮框），用来决定双击 / Enter
+                编辑哪一格；Ctrl/Cmd+click 追加不连续区域，Shift+click 延伸最近一次选区</li>
               <li>方向键、Tab、Home、End 移动这个内部选区</li>
               <li>双击、按 Enter 或直接输入字符，会在对应格子位置弹出真实的编辑输入框</li>
               <li>Esc 取消编辑；中文输入法组合期间不会提前提交</li>
@@ -90,6 +101,21 @@
                 "number"</code>，覆盖 <code>format()</code>）——右侧"读取 / 写入单元格"对每种
                 类型都做了对应的输入解析（数字、<code>true</code>/<code>false</code>、日期字符串、
                 逗号分隔的数组、合法 JSON）</li>
+              <li>点行号选中一行或拖拽多选几行后，把鼠标移到选区的上/下边缘（会出现一条
+                插入指示线）按住拖动，可以把这些行重新排列到新位置（<code>rowReorder</code>
+                选项，插入式移动，不会覆盖/丢失目标位置原有数据）；拖拽过程中按 Esc 可以
+                取消，拖到可视区域边缘会自动滚动。边缘之外的拖拽仍然是原有的多选，行为
+                不变</li>
+              <li>表头是三层嵌套分组（<code>headerGroups</code> 的 <code>children</code>
+                递归结构，Step 19）——"全部字段"下面是"商品信息"/"运营信息"两个中间层，
+                再往下才是"标识"/"价格数量"这些贴着列标题的叶子分组。配置了分组后，列头
+                右键菜单里"插入/删除/隐藏列"这几项会被阻塞（分组引用了列索引，结构变了
+                索引就错位了）——点击后菜单会正常关闭、错误打到控制台，不会卡死</li>
+              <li>叶子表头里，<code>sku</code>/<code>price</code>/<code>inStock</code>/
+                <code>status</code> 四列配了自定义标题，其余列没配——没配的那几列显示
+                电子表格字母（B、D、E...），不是列 id（<code>columnLetterFallback</code>
+                选项，参考 Univer 的 <code>customizeColumnHeader()</code>：字母和自定义
+                标题同一行二选一，不是字母行 + 标题行两行堆叠）</li>
             </ul>
           </section>
 
@@ -106,19 +132,18 @@
 
           <section class="panel muted">
             <h2>尚未实现</h2>
+            <p class="hint">
+              这份清单只保留真正还没做的——真实表头、选中高亮框、冻结行列绘制、列宽拖拽、
+              多区域选择、复制粘贴、右键菜单、Hook / Event 系统这些早就实现了，之前一直
+              忘了从这里删掉。
+            </p>
             <ul class="roadmap-list">
-              <li>真实表头（列标题 / 分组）</li>
-              <li>选中单元格 / 区域的可视高亮框（<code>SelectionLayerRenderer</code> 目前只清空图层）</li>
-              <li>冻结行列的实际绘制（选项存在，但冻结区域从未被画出来）</li>
-              <li>拖拽调整列宽</li>
-              <li>多区域选择</li>
-              <li>复制粘贴与 CopyPlan</li>
-              <li>右键菜单</li>
-              <li>Hook / Event 系统</li>
               <li>多 Sheet</li>
-              <li>排序、过滤</li>
-              <li>主题着色画布内容（当前文字颜色写死，见下方网格说明）</li>
-              <li><code>&lt;cy-excel&gt;</code> 属性化配置入口</li>
+              <li>排序、过滤（milestone 2 后续 Step）</li>
+              <li>可配置的运行时主题（当前 <code>theme.ts</code> 是写死的颜色常量，不能通过
+                <code>CyExcelCoreOptions</code> 自定义）</li>
+              <li><code>&lt;cy-excel&gt;</code> 属性化配置入口（Step 13 评估后决定跳过，见
+                <code>doc/progress.md</code>）</li>
             </ul>
           </section>
         </aside>

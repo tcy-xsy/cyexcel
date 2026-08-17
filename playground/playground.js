@@ -9,6 +9,7 @@ import {
 
 const PRODUCTS = [
   "工业温度传感器",
+  "适用于高温高湿工业现场的远程温度与振动一体化监测传感器",
   "户外电源模组",
   "智能门锁套件",
   "车载充电底座",
@@ -43,10 +44,14 @@ const inStockRenderer = {
 // format()). Every built-in CellType (src/core/cells/builtins.ts) plus the
 // custom "money" type (extends "number", see CUSTOM_COLUMN_TYPES below) is
 // represented here so the playground actually shows what's implemented.
+// Step 19（Univer 参考）：columnLetterFallback 打开后，没配 header 的列显示
+// 电子表格字母（B/D/E/...），配了 header 的列照常显示自定义标题——同一行，
+// 字母和自定义标题二选一，不是两行堆叠。这里故意只给一半列配 header，让
+// playground 里同时看到两种效果。
 const COLUMNS = [
-  { id: "sku", field: "sku", width: 140, type: "text", label: "SKU" },
-  { id: "name", field: "name", width: 200, type: "text", label: "产品名称" },
-  { id: "price", field: "price", width: 110, type: "money", label: "单价" },
+  { id: "sku", field: "sku", width: 140, type: "text", label: "SKU", header: "SKU" },
+  { id: "name", field: "name", width: 200, type: "text", label: "产品名称", wrap: true },
+  { id: "price", field: "price", width: 110, type: "money", label: "单价", header: "单价" },
   { id: "quantity", field: "quantity", width: 90, type: "number", label: "数量" },
   { id: "region", field: "region", width: 110, type: "text", label: "地区" },
   // 数据类型（boolean/date/select…）和编辑控件是两个独立维度，不会被自动绑定——
@@ -59,6 +64,7 @@ const COLUMNS = [
     width: 90,
     type: "boolean",
     label: "有库存",
+    header: "有库存",
     renderer: inStockRenderer,
     createEditor: () => createBooleanCellEditor()
   },
@@ -76,6 +82,7 @@ const COLUMNS = [
     width: 110,
     type: "select",
     label: "状态",
+    header: "状态",
     options: STATUSES.map((value) => ({ value })),
     createEditor: (context) => createSelectCellEditor(context.column.options ?? [])
   },
@@ -114,6 +121,36 @@ const COLUMNS = [
           }
         }
       })
+  }
+];
+
+// Step 19: arbitrary-depth nested grouped headers — a group node either
+// gives `columns` directly (leaf-adjacent row) or `children` (this group's
+// span is the union of its children's spans, one row further out). Three
+// levels here (the old Step 9 fixture only ever showed two), covering every
+// column in COLUMNS above so the grouping is visually obvious end-to-end.
+const HEADER_GROUPS = [
+  {
+    id: "all",
+    title: "全部字段",
+    children: [
+      {
+        id: "product",
+        title: "商品信息",
+        children: [
+          { id: "identity", title: "标识", columns: [0, 1] },
+          { id: "pricing", title: "价格数量", columns: [2, 3] }
+        ]
+      },
+      {
+        id: "ops",
+        title: "运营信息",
+        children: [
+          { id: "logistics", title: "地区库存", columns: [4, 5, 6] },
+          { id: "meta-group", title: "状态与元数据", columns: [7, 8, 9] }
+        ]
+      }
+    ]
   }
 ];
 
@@ -224,6 +261,7 @@ const rowCountSelect = document.getElementById("rowCountSelect");
 const rowHeightInput = document.getElementById("rowHeightInput");
 const overscanRowsInput = document.getElementById("overscanRowsInput");
 const overscanColumnsInput = document.getElementById("overscanColumnsInput");
+const headerGroupsToggle = document.getElementById("headerGroupsToggle");
 const rebuildButton = document.getElementById("rebuildButton");
 const cellRow = document.getElementById("cellRow");
 const cellColumn = document.getElementById("cellColumn");
@@ -236,6 +274,8 @@ const metricFps = document.getElementById("metricFps");
 
 let core = null;
 let currentRowCount = 0;
+let statusBarDefaultText = "";
+let statusBarErrorTimeoutId = null;
 
 function populateCellColumnSelect() {
   cellColumn.innerHTML = "";
@@ -266,6 +306,11 @@ function rebuild() {
     core.dispose();
     core = null;
   }
+  if (statusBarErrorTimeoutId !== null) {
+    clearTimeout(statusBarErrorTimeoutId);
+    statusBarErrorTimeoutId = null;
+  }
+  statusBar.classList.remove("status-bar--error");
 
   const rows = buildRows(config.rowCount);
   // Pass every real ColumnDefinition field through as-is — only "label" is
@@ -287,21 +332,90 @@ function rebuild() {
     columnTypes: CUSTOM_COLUMN_TYPES,
     headerHeight: 28,
     rowHeaderWidth: 48,
+    // Step 18：点行号选中整行后，把鼠标移到选区的上/下边缘（会出现一条插入
+    // 指示线）按住拖动即可重新排列行顺序——插入式移动，不会覆盖/丢失目标位置
+    // 原有数据；边缘之外的拖拽仍然是原有的多选。
+    rowReorder: true,
+    // Step 19：三层嵌套分组表头。配置了 headerGroups 后，列头右键菜单里
+    // createBasicContextMenuPlugin() 贡献的"插入/删除/隐藏列"这几项会被
+    // headerGroups 阻塞（分组引用了列索引，结构变了索引就错位了）——现在这
+    // 几项会直接显示为禁用态（basicMenuPlugin.ts 的 hasHeaderGroups() 检
+    // 查），且真的被点到时也会把错误抛到 statusBar，不会再是"什么反应都没
+    // 有"。下面这个复选框可以直接关掉 headerGroups，用来实际体验插入/删除
+    // 列这个功能。
+    headerGroups: headerGroupsToggle.checked ? HEADER_GROUPS : undefined,
+    // Univer 参考实现：没配 header 的列显示电子表格字母（B/D/E/...），配了
+    // header 的列（sku/price/inStock/status）照常显示自定义标题——同一行
+    // 二选一，不是字母行 + 标题行两行堆叠。
+    columnLetterFallback: true,
     plugins: [createBasicContextMenuPlugin()]
   });
   const elapsed = performance.now() - start;
 
+  registerPlaygroundShortcuts(core);
+
   currentRowCount = config.rowCount;
   metricConstruct.textContent = `${elapsed.toFixed(1)} ms`;
-  statusBar.textContent =
+  statusBarDefaultText =
     `${currentRowCount.toLocaleString("zh-CN")} 行 × ${COLUMNS.length} 列 · ` +
     `行高 ${config.rowHeight}px · overscan ${config.overscanRows}/${config.overscanColumns}`;
+  statusBar.textContent = statusBarDefaultText;
+
+  // 右键菜单 action 抛错（比如 headerGroups 开着时点了插入/删除列）现在会
+  // 通过 core.events 的 "error" 事件转发出来——之前只有 console.error，用
+  // 户在页面上完全看不出"点了没反应"到底是不是出错了。这里临时把错误信息
+  // 顶到 statusBar 上几秒钟，然后再切回正常的行列统计文案。
+  core.events.on("error", ({ error, eventName }) => {
+    if (statusBarErrorTimeoutId !== null) {
+      clearTimeout(statusBarErrorTimeoutId);
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    statusBar.textContent = `⚠ ${eventName}：${message}`;
+    statusBar.classList.add("status-bar--error");
+    statusBarErrorTimeoutId = setTimeout(() => {
+      statusBar.textContent = statusBarDefaultText;
+      statusBar.classList.remove("status-bar--error");
+      statusBarErrorTimeoutId = null;
+    }, 5000);
+  });
 
   const maxRow = Math.max(0, currentRowCount - 1);
   if (Number(cellRow.value) > maxRow) {
     cellRow.value = String(maxRow);
   }
   cellRow.max = String(maxRow);
+}
+
+const shortcutHint = document.getElementById("shortcutHint");
+const exportButton = document.getElementById("exportButton");
+
+/** Shared by the toolbar button and the Ctrl/Cmd+S shortcut below — same call, two triggers. */
+function exportSelection(sheetCore) {
+  return sheetCore.copy({ download: true }).then(() => {
+    if (shortcutHint) {
+      shortcutHint.textContent =
+        "上次动作：把当前选区导出成 TSV 文件下载了（sheet.copy({ download: true })）";
+    }
+  });
+}
+
+/**
+ * Step 18：sheet.registerShortcut() 演示——每次 rebuild() 重建 core 都要重新
+ * 注册一遍（dispose() 会清空旧实例的 ShortcutRegistry，不需要手动注销旧的）。
+ */
+function registerPlaygroundShortcuts(sheetCore) {
+  sheetCore.registerShortcut("Mod+K", () => {
+    themeButton.click();
+    if (shortcutHint) {
+      shortcutHint.textContent = "上次动作：Ctrl/Cmd+K 切换了主题（registerShortcut 演示）";
+    }
+  });
+  sheetCore.registerShortcut("Mod+S", () => {
+    void exportSelection(sheetCore);
+  });
+  exportButton.onclick = () => {
+    void exportSelection(sheetCore);
+  };
 }
 
 undoButton.addEventListener("click", () => {

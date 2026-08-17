@@ -26,6 +26,45 @@ export default tseslint.config(
     }
   },
   {
+    files: ["src/core/commands/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "../data",
+              message: "Command handlers consume narrow mutation capabilities; concrete owners belong in integration."
+            },
+            {
+              name: "../data/index",
+              message: "Command handlers consume narrow mutation capabilities; concrete owners belong in integration."
+            },
+            {
+              name: "../data/TableStore",
+              message: "Command handlers consume narrow mutation capabilities; concrete owners belong in integration."
+            }
+          ],
+          patterns: [
+            {
+              group: [
+                "../layout",
+                "../layout/*",
+                "../integration",
+                "../integration/*",
+                "../render",
+                "../render/*",
+                "../editors",
+                "../editors/*"
+              ],
+              message: "Command handlers consume narrow mutation capabilities; concrete owners belong in integration."
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
     // Plain browser script (loaded via <script type="module">, not built or
     // type-checked), so DOM/browser globals need the same no-undef
     // exemption the .ts block gets from the TypeScript compiler instead.
