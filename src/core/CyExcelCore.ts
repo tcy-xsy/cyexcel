@@ -56,6 +56,7 @@ import {
 import { HookManager, PRODUCTION_HOOK_REGISTRY } from "./hooks";
 import {
   FillHandleController,
+  HeaderGestureController,
   HeaderResizeController,
   HeaderSelectionController,
   InputRouter,
@@ -63,7 +64,6 @@ import {
   KeyboardController,
   PointerController,
   BodyGestureController,
-  PointerInteractionSession,
   RowReorderController,
   SelectionModel,
   computeFillValues,
@@ -221,10 +221,6 @@ export interface CyExcelCoreOptions {
 
 const DEFAULT_ROW_HEIGHT = 24;
 const AUTO_HEIGHT_MAX_SYNC_PASSES = 2;
-/** How close to the body's top/bottom edge (in screen pixels) a row-reorder drag auto-scrolls the container — same idea as native drag-and-drop auto-scroll. */
-const ROW_REORDER_AUTO_SCROLL_EDGE_PX = 32;
-/** Fastest auto-scroll speed (px per animation frame), reached right at the edge; scales down to 0 at ROW_REORDER_AUTO_SCROLL_EDGE_PX away from it. */
-const ROW_REORDER_AUTO_SCROLL_MAX_SPEED = 16;
 
 interface DomLayer {
   readonly scroller: HTMLDivElement;
@@ -509,13 +505,6 @@ type CorePointerInputContext = InputCandidateContext<
   EventTarget
 >;
 
-type HeaderGestureKind =
-  | "column-resize"
-  | "column-selection"
-  | "row-resize"
-  | "row-reorder"
-  | "row-selection";
-
 /**
  * The integration layer: DataSource -> TableStore -> CommandManager -> Patch
  * -> RenderScheduler/Canvas -> DOM editor overlay, all wired to a real
@@ -596,14 +585,8 @@ export class CyExcelCore {
 
   /** Owns the body pointer gesture's kind, structure version and capture session. */
   readonly #bodyGestures: BodyGestureController;
-  #headerInteractionSession: PointerInteractionSession | null = null;
-  #headerGesture: {
-    readonly kind: HeaderGestureKind;
-    readonly structureVersion: number;
-  } | null = null;
-  /** Last pointer position seen during an armed row-reorder drag — the auto-scroll loop re-evaluates against this on every animation frame, not just on the pointermove events that update it, since scrolling needs to keep happening even while the pointer itself stays still near an edge. */
-  #rowReorderLastClientY: number | null = null;
-  #rowReorderAutoScrollFrame: number | null = null;
+  /** Owns every header pointer gesture: resize, header selection, row reorder and the reorder auto-scroll loop. */
+  readonly #headerGestures: HeaderGestureController;
   #autoHeightContinuationFrame: number | null = null;
   #finalizationDepth = 0;
   readonly #mutationIntents: DeferredMutationQueue;
@@ -905,7 +888,7 @@ export class CyExcelCore {
     this.#mutationIntents = new DeferredMutationQueue({
       revisionGate: this.#store.coordinator.revisionGate,
       isGuarded: () => this.#finalizationDepth > 0,
-      beforeRun: () => this.#cancelResizeGesture(true),
+      beforeRun: () => this.#headerGestures.cancelResizeOnly(true),
       onError: (error) => this.#events.emit("error", { error, eventName: "deferred-mutation" })
     });
     initialization.defer(() => this.#mutationIntents.dispose());
@@ -971,6 +954,48 @@ export class CyExcelCore {
     this.#pointerController = new PointerController({
       selection: this.#selectionModel,
       onSelectionChange: () => this.#renderScheduler.invalidateSelection()
+    });
+    this.#headerGestures = new HeaderGestureController({
+      resizeController: this.#headerResizeController,
+      selectionController: this.#headerSelectionController,
+      rowReorderController: this.#rowReorderController,
+      selectionModel: this.#selectionModel,
+      columnCaptureTarget: this.#headerCanvas,
+      rowCaptureTarget: this.#rowHeaderCanvas,
+      bodyCursorTarget: document.body,
+      host: {
+        withFrame: (eventName, run) => this.#dispatchInteraction(eventName, run),
+        enqueueIntent: (run) => this.#interactionFrames.enqueueIntent(run),
+        // Preparing a Layout root stays here: a gesture controller that
+        // reached for LayoutEngine itself would rebuild the second coordinate
+        // truth ADR 0002 removed.
+        publishResizePreview: (preview) => {
+          this.#publishResizePreview(
+            preview.axis === "column"
+              ? this.#layout.prepareSetColumnWidth(preview.column, preview.width)
+              : this.#layout.prepareSetRowHeight(preview.row, preview.height)
+          );
+        },
+        restoreAuthoritativeScene: () => {
+          this.#withFinalization(() => this.#restoreAuthoritativeScene());
+        },
+        invalidateSelection: () => this.#renderScheduler.invalidateSelection(),
+        invalidateRowHeader: () =>
+          this.#renderScheduler.invalidatePresentation({ rowHeader: true }),
+        scrollVerticallyBy: (delta) => {
+          this.#scroller.scrollTop += delta;
+          this.#syncViewport();
+          this.#renderScheduler.invalidateAll();
+        },
+        commitResize: (intent) => this.#commitHeaderResize(intent),
+        commitReorder: (intent) => {
+          if (intent.structureVersion === this.#structureGeneration) {
+            this.#commitRowReorder(intent.start, intent.count, intent.target);
+          }
+        },
+        updateHoverAfterGesture: (event, surface) => this.#updateHeaderHover(event, surface),
+        reportError: (error, eventName) => this.#events.emit("error", { error, eventName })
+      }
     });
     this.#bodyGestures = new BodyGestureController({
       pointerController: this.#pointerController,
@@ -1418,7 +1443,7 @@ export class CyExcelCore {
   /** Re-reads the container's current size and repaints. No automatic ResizeObserver — call this explicitly. */
   resize(): void {
     this.#enqueueOrRunMutation(() => {
-      this.#cancelHeaderGesture(true);
+      this.#headerGestures.cancel(true);
       this.#resizeCanvases();
       this.#syncViewport();
       this.#renderScheduler.invalidateAll();
@@ -1429,11 +1454,10 @@ export class CyExcelCore {
     if (this.#disposed) {
       return;
     }
-    this.#cancelHeaderGesture(false);
+    this.#headerGestures.cancel(false);
     this.#bodyGestures.cancel();
     this.#disposed = true;
     this.#mutationIntents.dispose();
-    this.#stopRowReorderAutoScroll();
     if (this.#autoHeightContinuationFrame !== null) {
       cancelAnimationFrame(this.#autoHeightContinuationFrame);
       this.#autoHeightContinuationFrame = null;
@@ -1611,7 +1635,7 @@ export class CyExcelCore {
         }
         this.#structureGeneration = nextStructureGeneration;
         this.#bodyGestures.cancel();
-        this.#cancelHeaderGesture(true);
+        this.#headerGestures.cancel(true);
         this.#contextMenuService.close();
       }
 
@@ -2080,11 +2104,11 @@ export class CyExcelCore {
       }
       this.#bodyGestures.cancel();
     }
-    if (this.#headerInteractionSession) {
-      if (!this.#headerInteractionSession.matches(event.pointerId)) {
+    if (this.#headerGestures.isActive) {
+      if (!this.#headerGestures.matchesPointer(event.pointerId)) {
         return;
       }
-      this.#cancelHeaderGesture(true);
+      this.#headerGestures.cancel(true);
     }
     const handled = this.#dispatchInteraction("pointer-down", (frame) =>
       this.#inputRouter.dispatch(frame, {
@@ -2095,7 +2119,7 @@ export class CyExcelCore {
     );
     if (handled === undefined) {
       this.#bodyGestures.cancel();
-      this.#cancelHeaderGesture(true);
+      this.#headerGestures.cancel(true);
     }
   };
 
@@ -2347,7 +2371,7 @@ export class CyExcelCore {
   };
 
   #handleScroll = (): void => {
-    this.#cancelResizeGesture(true);
+    this.#headerGestures.cancelResizeOnly(true);
     if (this.#editorManager.isEditing()) {
       if (this.#scrollCommitPolicy === "commit") {
         void this.#editorManager.commitEdit();
@@ -2385,7 +2409,7 @@ export class CyExcelCore {
 
     event.preventDefault();
     this.#contentCanvas.focus();
-    this.#startHeaderInteraction(kind, event, frame.structureVersion);
+    this.#headerGestures.begin(kind, event, frame.structureVersion);
     if (kind === "column-resize") {
       this.#headerCanvas.style.cursor = "col-resize";
     } else {
@@ -2478,7 +2502,7 @@ export class CyExcelCore {
     this.#contentCanvas.focus();
     if (gestureKind && event.button === 0 && this.#headerSelectionController.dragging) {
       event.preventDefault();
-      this.#startHeaderInteraction(gestureKind, event, frame.structureVersion);
+      this.#headerGestures.begin(gestureKind, event, frame.structureVersion);
     }
     return handleInput(undefined);
   }
@@ -2508,190 +2532,9 @@ export class CyExcelCore {
     event.preventDefault();
     this.#contentCanvas.focus();
     document.body.style.cursor = "grabbing";
-    this.#startHeaderInteraction("row-reorder", event, frame.structureVersion);
+    this.#headerGestures.begin("row-reorder", event, frame.structureVersion);
     return handleInput(undefined);
   }
-
-  #startHeaderInteraction(
-    kind: HeaderGestureKind,
-    event: PointerEvent,
-    structureVersion: number
-  ): void {
-    const captureTarget = kind.startsWith("column-")
-      ? this.#headerCanvas
-      : this.#rowHeaderCanvas;
-    const session = new PointerInteractionSession({
-      pointerId: event.pointerId,
-      captureTarget,
-      onMove: this.#handleHeaderPointerMove,
-      onComplete: this.#completeHeaderGesture,
-      onCancel: () => {
-        if (this.#headerInteractionSession === session) {
-          this.#cancelHeaderGesture(true);
-        }
-      },
-      onCaptureError: (error, phase) => {
-        this.#events.emit("error", {
-          error,
-          eventName: `interaction:header-pointer-${phase}`
-        });
-      }
-    });
-    this.#headerGesture = { kind, structureVersion };
-    this.#headerInteractionSession = session;
-  }
-
-  /** Cancels only resize gestures; ordinary scroll must not kill row auto-scroll/reorder. */
-  #cancelResizeGesture(publish: boolean): void {
-    if (
-      this.#headerGesture?.kind === "column-resize" ||
-      this.#headerGesture?.kind === "row-resize"
-    ) {
-      this.#cancelHeaderGesture(publish);
-    }
-  }
-
-  #cancelHeaderGesture(publishResizePreview: boolean): void {
-    const hadResizePreview = this.#headerResizeController.previewPublished;
-    const session = this.#headerInteractionSession;
-    this.#headerInteractionSession = null;
-    this.#headerGesture = null;
-    session?.dispose();
-    this.#headerResizeController.cancel();
-    this.#headerSelectionController.cancel();
-    this.#rowReorderController?.cancel();
-    this.#stopRowReorderAutoScroll();
-    this.#headerCanvas.style.cursor = "";
-    this.#rowHeaderCanvas.style.cursor = "";
-    document.body.style.cursor = "";
-    if (publishResizePreview && hadResizePreview) {
-      this.#withFinalization(() => this.#restoreAuthoritativeScene());
-    }
-  }
-
-  #handleHeaderPointerMove = (event: PointerEvent): void => {
-    const gesture = this.#headerGesture;
-    if (!gesture) {
-      return;
-    }
-
-    const handled = this.#dispatchInteraction("header-pointer-move", (frame) => {
-      if (frame.structureVersion !== gesture.structureVersion) {
-        this.#cancelHeaderGesture(true);
-        return false;
-      }
-      const surface = gesture.kind.startsWith("column-")
-        ? "column-header"
-        : "row-header";
-      const point = frame.surfaces.clientToSurface(
-        clientPoint(event.clientX, event.clientY),
-        surface
-      );
-      if (!point) {
-        return false;
-      }
-
-      if (gesture.kind === "column-resize" || gesture.kind === "row-resize") {
-        const preview = this.#headerResizeController.handlePointerMove(
-          point,
-          frame.scene,
-          gesture.structureVersion
-        );
-        if (preview) {
-          const root = preview.axis === "column"
-            ? this.#layout.prepareSetColumnWidth(preview.column, preview.width)
-            : this.#layout.prepareSetRowHeight(preview.row, preview.height);
-          this.#publishResizePreview(root);
-        }
-        return true;
-      }
-
-      if (gesture.kind === "column-selection" || gesture.kind === "row-selection") {
-        const action = this.#headerSelectionController.move(
-          point,
-          frame.scene,
-          this.#selectionModel,
-          gesture.structureVersion
-        );
-        if (action) {
-          this.#renderScheduler.invalidateSelection();
-        }
-        return true;
-      }
-
-      this.#rowReorderLastClientY = event.clientY;
-      this.#applyRowReorderPointerMove(frame);
-      this.#startRowReorderAutoScroll();
-      return true;
-    });
-    if (handled !== true) {
-      this.#cancelHeaderGesture(true);
-    }
-  };
-
-  #completeHeaderGesture = (event: PointerEvent): void => {
-    const gesture = this.#headerGesture;
-    const hadResizePreview = this.#headerResizeController.previewPublished;
-    this.#headerInteractionSession = null;
-    this.#headerGesture = null;
-    if (!gesture) {
-      return;
-    }
-    if (gesture.kind === "row-reorder") {
-      this.#stopRowReorderAutoScroll();
-      document.body.style.cursor = "";
-    }
-
-    let completed = false;
-    this.#dispatchInteraction("header-pointer-up", (frame) => {
-      if (frame.structureVersion !== gesture.structureVersion) {
-        return;
-      }
-      completed = true;
-      if (gesture.kind === "column-resize" || gesture.kind === "row-resize") {
-        const intent = this.#headerResizeController.handlePointerUp(
-          gesture.structureVersion
-        );
-        if (intent) {
-          this.#interactionFrames.enqueueIntent(() => this.#commitHeaderResize(intent));
-        } else if (hadResizePreview) {
-          this.#interactionFrames.enqueueIntent(() => {
-            this.#withFinalization(() => this.#restoreAuthoritativeScene());
-          });
-        }
-      } else if (
-        gesture.kind === "column-selection" ||
-        gesture.kind === "row-selection"
-      ) {
-        this.#headerSelectionController.up(gesture.structureVersion);
-      } else {
-        const intent = this.#rowReorderController?.handlePointerUp(
-          gesture.structureVersion
-        );
-        if (intent) {
-          this.#interactionFrames.enqueueIntent(() => {
-            if (intent.structureVersion === this.#structureGeneration) {
-              this.#commitRowReorder(intent.start, intent.count, intent.target);
-            }
-          });
-        }
-      }
-    });
-
-    if (!completed) {
-      this.#headerResizeController.cancel();
-      this.#headerSelectionController.cancel();
-      this.#rowReorderController?.cancel();
-      if (hadResizePreview) {
-        this.#withFinalization(() => this.#restoreAuthoritativeScene());
-      }
-    }
-    this.#renderScheduler.invalidatePresentation({ rowHeader: true });
-    this.#updateHeaderHover(
-      event,
-      gesture.kind.startsWith("column-") ? "column-header" : "row-header"
-    );
-  };
 
   #commitHeaderResize(intent: HeaderResizeIntent): void {
     if (intent.structureVersion !== this.#structureGeneration) {
@@ -2730,13 +2573,13 @@ export class CyExcelCore {
   }
 
   #handleHeaderPointerHover = (event: PointerEvent): void => {
-    if (!this.#headerInteractionSession) {
+    if (!this.#headerGestures.isActive) {
       this.#updateHeaderHover(event, "column-header");
     }
   };
 
   #handleRowHeaderPointerHover = (event: PointerEvent): void => {
-    if (!this.#headerInteractionSession) {
+    if (!this.#headerGestures.isActive) {
       this.#updateHeaderHover(event, "row-header");
     }
   };
@@ -2789,110 +2632,6 @@ export class CyExcelCore {
     });
   }
 
-  #applyRowReorderPointerMove(frame: CoreInteractionFrame): void {
-    const gesture = this.#headerGesture;
-    if (
-      gesture?.kind !== "row-reorder" ||
-      frame.structureVersion !== gesture.structureVersion ||
-      this.#rowReorderLastClientY === null
-    ) {
-      return;
-    }
-    const rowHeader = frame.surfaces.get("row-header");
-    if (!rowHeader) {
-      return;
-    }
-    const point = frame.surfaces.clientToSurface(
-      clientPoint(rowHeader.clientOrigin.x, this.#rowReorderLastClientY),
-      "row-header"
-    );
-    if (!point) {
-      return;
-    }
-    this.#rowReorderController?.handlePointerMove(
-      point.y,
-      frame.scene,
-      gesture.structureVersion
-    );
-    this.#renderScheduler.invalidatePresentation({ rowHeader: true });
-  }
-
-  #startRowReorderAutoScroll(): void {
-    if (this.#rowReorderAutoScrollFrame !== null) {
-      return;
-    }
-    const tick = (): void => {
-      const gesture = this.#headerGesture;
-      if (gesture?.kind !== "row-reorder" || this.#rowReorderLastClientY === null) {
-        this.#rowReorderAutoScrollFrame = null;
-        return;
-      }
-
-      const delta = this.#dispatchInteraction("row-reorder-auto-scroll", (frame) => {
-        if (frame.structureVersion !== gesture.structureVersion) {
-          return null;
-        }
-        const rowHeader = frame.surfaces.get("row-header");
-        if (!rowHeader || this.#rowReorderLastClientY === null) {
-          return null;
-        }
-        const bodyTop = rowHeader.clientOrigin.y;
-        const bodyBottom = bodyTop + rowHeader.cssSize.height;
-        const y = this.#rowReorderLastClientY;
-        if (y < bodyTop + ROW_REORDER_AUTO_SCROLL_EDGE_PX) {
-          const depth = Math.min(
-            ROW_REORDER_AUTO_SCROLL_EDGE_PX,
-            Math.max(0, bodyTop + ROW_REORDER_AUTO_SCROLL_EDGE_PX - y)
-          );
-          return -ROW_REORDER_AUTO_SCROLL_MAX_SPEED *
-            (depth / ROW_REORDER_AUTO_SCROLL_EDGE_PX);
-        }
-        if (y > bodyBottom - ROW_REORDER_AUTO_SCROLL_EDGE_PX) {
-          const depth = Math.min(
-            ROW_REORDER_AUTO_SCROLL_EDGE_PX,
-            Math.max(0, y - (bodyBottom - ROW_REORDER_AUTO_SCROLL_EDGE_PX))
-          );
-          return ROW_REORDER_AUTO_SCROLL_MAX_SPEED *
-            (depth / ROW_REORDER_AUTO_SCROLL_EDGE_PX);
-        }
-        return 0;
-      });
-
-      if (delta === undefined || delta === null) {
-        this.#cancelHeaderGesture(true);
-        return;
-      }
-      if (delta !== 0) {
-        this.#scroller.scrollTop += delta;
-        this.#syncViewport();
-        this.#renderScheduler.invalidateAll();
-        const moved = this.#dispatchInteraction("row-reorder-auto-scroll-move", (frame) => {
-          if (frame.structureVersion !== gesture.structureVersion) {
-            return false;
-          }
-          this.#applyRowReorderPointerMove(frame);
-          return true;
-        });
-        if (moved !== true) {
-          this.#cancelHeaderGesture(true);
-          return;
-        }
-      }
-
-      if (this.#headerGesture?.kind === "row-reorder") {
-        this.#rowReorderAutoScrollFrame = requestAnimationFrame(tick);
-      }
-    };
-    this.#rowReorderAutoScrollFrame = requestAnimationFrame(tick);
-  }
-
-  #stopRowReorderAutoScroll(): void {
-    if (this.#rowReorderAutoScrollFrame !== null) {
-      cancelAnimationFrame(this.#rowReorderAutoScrollFrame);
-      this.#rowReorderAutoScrollFrame = null;
-    }
-    this.#rowReorderLastClientY = null;
-  }
 }
 
 export function createCyExcelCore(

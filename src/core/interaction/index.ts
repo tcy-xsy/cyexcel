@@ -57,6 +57,15 @@ export {
   type PointerInteractionSessionState
 } from "./sessions/PointerInteractionSession";
 export {
+  HeaderGestureController,
+  type CursorTarget,
+  type HeaderGestureControllerOptions,
+  type HeaderGestureFrame,
+  type HeaderGestureHost,
+  type HeaderGestureKind,
+  type HeaderGestureSurface
+} from "./sessions/HeaderGestureController";
+export {
   BodyGestureController,
   type BodyFillCommitIntent,
   type BodyGestureControllerOptions,
