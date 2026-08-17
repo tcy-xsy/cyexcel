@@ -18,7 +18,12 @@ export {
   SelectionLayerRenderer,
   type SelectionLayerRendererOptions
 } from "./SelectionLayerRenderer";
-export { configureCanvasForDpr, getEffectiveDpr, type ResizableCanvas } from "./dprCanvas";
+export {
+  configureCanvasForDpr,
+  getEffectiveDpr,
+  readDevicePixelRatio,
+  type ResizableCanvas
+} from "./dprCanvas";
 export {
   CanvasSurface,
   type CanvasSurfaceSnapshot,

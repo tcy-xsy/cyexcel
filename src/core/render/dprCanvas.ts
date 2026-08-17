@@ -9,6 +9,24 @@ export interface ResizableCanvas {
   };
 }
 
+/**
+ * The single read of the `devicePixelRatio` global in the whole core.
+ *
+ * Everything downstream (CanvasSurface, configureCanvasForDpr, the renderers)
+ * takes a dpr *parameter* so it stays injectable in unit tests; this function
+ * exists so that the one place which must consult the environment is inside
+ * the surface layer that owns backing stores. The lint gate in
+ * eslint.config.js enforces that no other module touches the global.
+ *
+ * Guards `window` so importing the core in a non-DOM runtime stays safe.
+ */
+export function readDevicePixelRatio(): number {
+  if (typeof window === "undefined") {
+    return 1;
+  }
+  return window.devicePixelRatio || 1;
+}
+
 /** The exact ratio used for both backing-store size and the context transform. */
 export function getEffectiveDpr(devicePixelRatio: number, maxDpr: number = DEFAULT_MAX_DPR): number {
   if (!Number.isFinite(devicePixelRatio) || devicePixelRatio <= 0) {

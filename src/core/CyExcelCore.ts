@@ -107,6 +107,7 @@ import {
   RenderScheduler,
   SelectionLayerRenderer,
   computeWrappedCellHeight,
+  readDevicePixelRatio,
   type Canvas2DLike
 } from "./render";
 import { CELL_FONT, CELL_PADDING } from "./render/theme";
@@ -1899,7 +1900,7 @@ export class CyExcelCore {
 
   #resizeCanvases(): void {
     const rect = this.#scroller.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = readDevicePixelRatio();
     const headerHeight = this.#headerHeight();
     const bodyHeight = Math.max(0, rect.height - headerHeight);
     const bodyWidth = Math.max(0, rect.width - this.#rowHeaderWidth);
