@@ -68,6 +68,44 @@ export function createChangeSet(modelVersion: number, changes: readonly Semantic
 }
 
 /**
+ * Which axis-level facts a commit carried. Every consumer that used to scan the
+ * change list itself — and CyExcelCore scanned it three times over — asks for
+ * this once instead.
+ */
+export interface StructuralChangeSummary {
+  readonly hasRowStructure: boolean;
+  readonly hasColumnStructure: boolean;
+  readonly hasColumnLayout: boolean;
+  readonly hasRowLayout: boolean;
+}
+
+export function summarizeStructuralChanges(
+  changes: readonly SemanticChange[]
+): StructuralChangeSummary {
+  let hasRowStructure = false;
+  let hasColumnStructure = false;
+  let hasColumnLayout = false;
+  let hasRowLayout = false;
+  for (const change of changes) {
+    switch (change.type) {
+      case "row-structure":
+        hasRowStructure = true;
+        break;
+      case "column-structure":
+        hasColumnStructure = true;
+        break;
+      case "column-layout":
+        hasColumnLayout = true;
+        break;
+      case "row-layout":
+        hasRowLayout = true;
+        break;
+    }
+  }
+  return Object.freeze({ hasRowStructure, hasColumnStructure, hasColumnLayout, hasRowLayout });
+}
+
+/**
  * Compiles ordered semantic changes into coalescable drawing work. This is
  * deliberately lossy: consumers that need model semantics must use ChangeSet.
  */

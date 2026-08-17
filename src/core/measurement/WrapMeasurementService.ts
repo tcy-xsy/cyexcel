@@ -1,4 +1,5 @@
 import type { RuntimeColumn } from "../cells";
+import type { SemanticChange } from "../data";
 import type { RowHeightProvenance } from "../layout";
 import { computeWrappedCellHeight, type Canvas2DLike } from "../render";
 import { CELL_PADDING } from "../render/theme";
@@ -192,6 +193,36 @@ export class WrapMeasurementService {
       updates: Object.freeze(updates),
       measuredWithoutResize: Object.freeze(measuredWithoutResize)
     });
+  }
+
+  /**
+   * Applies one commit's worth of semantic changes to the cache.
+   *
+   * The rules live here rather than at the call site because the cache is this
+   * service's own state: a caller that has to remember "a range edit forgets a
+   * span, a structural edit forgets everything" is a caller that can get it
+   * subtly wrong, and CyExcelCore previously spread exactly those rules across
+   * two separate passes over the change list.
+   */
+  invalidateFor(changes: readonly SemanticChange[]): void {
+    for (const change of changes) {
+      switch (change.type) {
+        case "cell-value":
+          this.forgetRow(change.row);
+          break;
+        case "range-value":
+          this.forgetRowRange(change.range.startRow, change.range.endRow);
+          break;
+        case "row-structure":
+        case "column-structure":
+        case "column-layout":
+        case "full-reset":
+          // Any axis-level change makes every cached "row N was measured"
+          // claim stale — either the row moved or its available width did.
+          this.forgetAll();
+          return;
+      }
+    }
   }
 
   markMeasured(rows: Iterable<number>): void {

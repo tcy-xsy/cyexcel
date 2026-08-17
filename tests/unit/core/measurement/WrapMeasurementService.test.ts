@@ -299,3 +299,46 @@ describe("WrapMeasurementService.rowsNeedingDefaultReset", () => {
     ).toEqual([]);
   });
 });
+
+describe("WrapMeasurementService.invalidateFor", () => {
+  function measuredHarness(): Harness {
+    const harness = createService({ sceneHeight: 240 });
+    harness.service.markMeasured(harness.service.visibleUnmeasuredRows(harness.scene));
+    return harness;
+  }
+
+  it("forgets exactly the edited row for a cell-value fact", () => {
+    const harness = measuredHarness();
+    harness.service.invalidateFor([{ type: "cell-value", row: 2, column: 0 }]);
+    expect(harness.service.visibleUnmeasuredRows(harness.scene)).toEqual([2]);
+  });
+
+  it("forgets the whole span for a range-value fact", () => {
+    const harness = measuredHarness();
+    harness.service.invalidateFor([
+      { type: "range-value", range: { startRow: 1, startColumn: 0, endRow: 3, endColumn: 0 } }
+    ]);
+    expect(harness.service.visibleUnmeasuredRows(harness.scene)).toEqual([1, 2, 3]);
+  });
+
+  it("forgets the whole epoch for any axis-level fact", () => {
+    for (const change of [
+      { type: "row-structure", operation: "insert", start: 0, count: 1 },
+      { type: "column-structure", operation: "delete", start: 0, count: 1 },
+      { type: "column-layout", column: 0 },
+      { type: "full-reset" }
+    ] as const) {
+      const harness = measuredHarness();
+      expect(harness.service.measuredRowCount).toBeGreaterThan(0);
+      harness.service.invalidateFor([change]);
+      expect(harness.service.measuredRowCount).toBe(0);
+    }
+  });
+
+  it("leaves the cache alone when nothing in the list touches it", () => {
+    const harness = measuredHarness();
+    const before = harness.service.measuredRowCount;
+    harness.service.invalidateFor([{ type: "cell-style", row: 0, column: 0 }]);
+    expect(harness.service.measuredRowCount).toBe(before);
+  });
+});

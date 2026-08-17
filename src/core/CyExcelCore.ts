@@ -44,6 +44,7 @@ import {
   TableStore,
   compileDirtySet,
   createChangeSet,
+  summarizeStructuralChanges,
   type ArrayDataSourceColumn
 } from "./data";
 import type { CellEditorFactory } from "./editors";
@@ -1622,26 +1623,14 @@ export class CyExcelCore {
       this.#commandManager.lastChangeSet?.modelVersion === this.#store.version
         ? this.#commandManager.lastChangeSet
         : createChangeSet(this.#store.version, patches);
+    // One pass over the change list instead of the three this method used to
+    // make, and the measurement cache's own invalidation rules now live with
+    // the cache rather than being spelled out here.
+    const summary = summarizeStructuralChanges(changeSet.changes);
+    const { hasRowStructure, hasColumnStructure, hasColumnLayout, hasRowLayout } = summary;
+    const hasAxisChange = hasRowStructure || hasColumnStructure || hasColumnLayout;
     this.#withFinalization(() => {
-      let hasRowStructure = false;
-      let hasColumnStructure = false;
-      let hasColumnLayout = false;
-      for (const patch of patches) {
-        if (patch.type === "row-structure") {
-          hasRowStructure = true;
-        } else if (patch.type === "column-structure") {
-          hasColumnStructure = true;
-        } else if (patch.type === "column-layout") {
-          hasColumnLayout = true;
-        } else if (patch.type === "cell-value") {
-          this.#measurement.forgetRow(patch.row);
-        } else if (patch.type === "range-value") {
-          this.#measurement.forgetRowRange(patch.range.startRow, patch.range.endRow);
-        } else if (patch.type === "full-reset") {
-          this.#measurement.forgetAll();
-        }
-      }
-
+      this.#measurement.invalidateFor(changeSet.changes);
       if (hasRowStructure || hasColumnStructure) {
         // Undo/redo reaches this branch without going through the public
         // structure facade. Cancel before any stale numeric editor anchor
@@ -1660,18 +1649,8 @@ export class CyExcelCore {
       // The model revision and all authoritative structural roots are already
       // committed. Derived bookkeeping and user formatters are finalizers too:
       // failures are observable, but can neither escape nor suppress change.
-      if (hasRowStructure || hasColumnStructure || hasColumnLayout || patches.some((patch) => patch.type === "row-layout")) {
+      if (hasAxisChange || hasRowLayout) {
         this.#runFinalizer("spacer", () => this.#updateSpacerSize());
-      }
-      if (hasRowStructure || hasColumnStructure || hasColumnLayout) {
-        this.#measurement.forgetAll();
-      }
-      if (
-        hasRowStructure ||
-        hasColumnStructure ||
-        hasColumnLayout ||
-        patches.some((patch) => patch.type === "row-layout")
-      ) {
         this.#runFinalizer("selection-invalidation", () => this.#renderScheduler.invalidateSelection());
       }
 

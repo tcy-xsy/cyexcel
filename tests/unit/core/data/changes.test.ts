@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compileDirtySet, createChangeSet } from "../../../../src/core/data";
+import { compileDirtySet, createChangeSet, summarizeStructuralChanges } from "../../../../src/core/data";
 import type { SemanticChange } from "../../../../src/core/data";
 
 describe("ChangeSet", () => {
@@ -114,5 +114,50 @@ describe("compileDirtySet", () => {
         domHeaders: true
       });
     }
+  });
+});
+
+describe("summarizeStructuralChanges", () => {
+  it("reports nothing for a change list with no axis facts", () => {
+    expect(
+      summarizeStructuralChanges([
+        { type: "cell-value", row: 0, column: 0 },
+        { type: "range-value", range: { startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 } }
+      ])
+    ).toEqual({
+      hasRowStructure: false,
+      hasColumnStructure: false,
+      hasColumnLayout: false,
+      hasRowLayout: false
+    });
+  });
+
+  it("reports each axis fact independently, and all of them together", () => {
+    expect(
+      summarizeStructuralChanges([
+        { type: "row-structure", operation: "insert", start: 0, count: 1 },
+        { type: "column-structure", operation: "delete", start: 1, count: 2 },
+        { type: "column-layout", column: 3 },
+        {
+          type: "row-layout",
+          rows: [4],
+          range: { startRow: 4, startColumn: 0, endRow: 9, endColumn: 2 }
+        }
+      ])
+    ).toEqual({
+      hasRowStructure: true,
+      hasColumnStructure: true,
+      hasColumnLayout: true,
+      hasRowLayout: true
+    });
+  });
+
+  it("stays false for an empty list", () => {
+    expect(summarizeStructuralChanges([])).toEqual({
+      hasRowStructure: false,
+      hasColumnStructure: false,
+      hasColumnLayout: false,
+      hasRowLayout: false
+    });
   });
 });
