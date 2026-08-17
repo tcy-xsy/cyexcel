@@ -40,6 +40,12 @@ export {
   type FillHandleControllerOptions,
   type FillHandleCommitIntent
 } from "./FillHandleController";
+export {
+  computeFillPlan,
+  computeAutoFillDownTargetRow,
+  type AutoFillDownBounds,
+  type FillPlanSources
+} from "./fillPlan";
 export { computeFillValues } from "./fillValues";
 export {
   RowReorderController,

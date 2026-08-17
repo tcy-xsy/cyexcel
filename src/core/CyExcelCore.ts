@@ -66,7 +66,8 @@ import {
   BodyGestureController,
   RowReorderController,
   SelectionModel,
-  computeFillValues,
+  computeFillPlan,
+  computeAutoFillDownTargetRow,
   declineInput,
   getDeclaredDomPointerInputTarget,
   handleInput,
@@ -2187,88 +2188,25 @@ export class CyExcelCore {
     });
   };
 
-  /**
-   * Double-clicking the fill handle extends the selection straight down to
-   * match the length of the nearest non-empty neighbor column (left, or
-   * right if the selection is already at column 0) — Excel's own
-   * double-click-fill-handle behavior. Scans down from the selection's own
-   * first row until an empty cell ends the neighbor's run.
-   */
+  /** Double-clicking the fill handle extends the selection down to match the nearest non-empty neighbor column's run — see computeAutoFillDownTargetRow(). */
   #autoFillDownNow(range: CellRange): void {
-    const neighborColumn = range.startColumn > 0 ? range.startColumn - 1 : range.startColumn + 1;
-    if (neighborColumn < 0 || neighborColumn >= this.#columns.length) {
+    const targetRow = computeAutoFillDownTargetRow(
+      range,
+      { columnCount: this.#columns.length, rowCount: this.#dataSource.getRowCount() },
+      (row, column) => this.#store.getCell(row, column)
+    );
+    if (targetRow === null) {
       return;
     }
-
-    let targetRow = range.endRow;
-    for (let row = range.startRow; row < this.#dataSource.getRowCount(); row += 1) {
-      const value = this.#store.getCell(row, neighborColumn);
-      if (value === null || value === undefined || value === "") {
-        break;
-      }
-      targetRow = row;
-    }
-    if (targetRow <= range.endRow) {
-      return;
-    }
-
     this.#commitFillNow(range, { ...range, endRow: targetRow });
   }
 
-  /**
-   * Applies a fill-handle result (drag or double-click auto-fill) as one
-   * SetRangeCommand — a single undo step, same convention paste (Step 10)
-   * and the row-structure commands (Step 12) use. `targetRange` always
-   * extends `sourceRange` down or right, never both — see
-   * FillHandleController. Columns with `clipboard.paste === false` keep
-   * their existing values in the extended region, the same semantic
-   * ClipboardService.paste() uses for read-only columns.
-   */
+  /** Applies a fill-handle result (drag or double-click auto-fill) as one SetRangeCommand, then moves the selection onto what was just filled. The value matrix itself is computed by computeFillPlan(). */
   #commitFillNow(sourceRange: CellRange, targetRange: CellRange): void {
-    const rows = targetRange.endRow - targetRange.startRow + 1;
-    const columns = targetRange.endColumn - targetRange.startColumn + 1;
-    const values: unknown[][] = Array.from({ length: rows }, () => new Array<unknown>(columns).fill(undefined));
-
-    for (let row = sourceRange.startRow; row <= sourceRange.endRow; row += 1) {
-      for (let column = sourceRange.startColumn; column <= sourceRange.endColumn; column += 1) {
-        values[row - targetRange.startRow]![column - targetRange.startColumn] = this.#store.getCell(row, column);
-      }
-    }
-
-    if (targetRange.endRow > sourceRange.endRow) {
-      const newRowCount = targetRange.endRow - sourceRange.endRow;
-      for (let column = sourceRange.startColumn; column <= sourceRange.endColumn; column += 1) {
-        const relativeColumn = column - targetRange.startColumn;
-        const readOnly = this.#columnManager.getColumn(column).clipboard.paste === false;
-        const known = Array.from({ length: sourceRange.endRow - sourceRange.startRow + 1 }, (_unused, index) =>
-          this.#store.getCell(sourceRange.startRow + index, column)
-        );
-        const filled = readOnly ? null : computeFillValues(known, newRowCount);
-        for (let index = 0; index < newRowCount; index += 1) {
-          const row = sourceRange.endRow + 1 + index;
-          values[row - targetRange.startRow]![relativeColumn] = readOnly
-            ? this.#store.getCell(row, column)
-            : filled![index];
-        }
-      }
-    } else if (targetRange.endColumn > sourceRange.endColumn) {
-      const newColumnCount = targetRange.endColumn - sourceRange.endColumn;
-      for (let row = sourceRange.startRow; row <= sourceRange.endRow; row += 1) {
-        const known = Array.from(
-          { length: sourceRange.endColumn - sourceRange.startColumn + 1 },
-          (_unused, index) => this.#store.getCell(row, sourceRange.startColumn + index)
-        );
-        const filled = computeFillValues(known, newColumnCount);
-        for (let index = 0; index < newColumnCount; index += 1) {
-          const column = sourceRange.endColumn + 1 + index;
-          const relativeColumn = column - targetRange.startColumn;
-          const readOnly = this.#columnManager.getColumn(column).clipboard.paste === false;
-          values[row - targetRange.startRow]![relativeColumn] = readOnly
-            ? this.#store.getCell(row, column)
-            : filled[index];
-        }
-      }
-    }
+    const values = computeFillPlan(sourceRange, targetRange, {
+      getCell: (row, column) => this.#store.getCell(row, column),
+      isPasteBlocked: (column) => this.#columnManager.getColumn(column).clipboard.paste === false
+    });
 
     this.#applyCommandNow(new SetRangeCommand(targetRange, values));
     this.#selectionModel.selectCell(targetRange.startRow, targetRange.startColumn);
