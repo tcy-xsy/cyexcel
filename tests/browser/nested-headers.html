@@ -22,7 +22,9 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore, HeaderManager, hitTestHeaderGroup } from "/src/core/index.ts";
+      import { CyExcelCore } from "/src/core/index.ts";
+      // HeaderManager and hitTestHeaderGroup are internal owners, not public API.
+      import { HeaderManager, hitTestHeaderGroup } from "/src/core/headers/index.ts";
 
       const container = document.getElementById("app");
       const columns = Array.from({ length: 6 }, (_unused, index) => ({

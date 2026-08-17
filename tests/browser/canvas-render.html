@@ -8,14 +8,12 @@
   <body>
     <canvas id="canvas"></canvas>
     <script type="module">
-      import {
-        ContentLayerRenderer,
-        LayoutEngine,
-        SceneSnapshot,
-        SkeletonSnapshot,
-        ViewportSnapshot,
-        configureCanvasForDpr
-      } from "/src/core/index.ts";
+      // Internal geometry and renderer owners are deliberately absent from the
+      // public barrel (they would advertise a second mutation path), so this
+      // fixture imports them from their owning modules like the unit tests do.
+      import { ContentLayerRenderer, configureCanvasForDpr } from "/src/core/render/index.ts";
+      import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "/src/core/layout/index.ts";
+      import { SceneSnapshot } from "/src/core/scene/index.ts";
 
       const canvas = document.getElementById("canvas");
       const dpr = window.devicePixelRatio || 1;
