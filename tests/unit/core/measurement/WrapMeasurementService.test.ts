@@ -342,3 +342,77 @@ describe("WrapMeasurementService.invalidateFor", () => {
     expect(harness.service.measuredRowCount).toBe(before);
   });
 });
+
+describe("WrapMeasurementService.rowsToMeasureFor", () => {
+  const noReset = {
+    hasColumnStructureChange: false,
+    rowHeightProvenance: new Map<number, "auto" | "manual">(),
+    defaultRowHeight: DEFAULT_ROW_HEIGHT
+  };
+
+  it("returns the visible unmeasured rows when a wrap column exists", () => {
+    const harness = createService({ sceneHeight: 240 });
+    const result = harness.service.rowsToMeasureFor(harness.scene, noReset);
+
+    expect(result.rows.size).toBeGreaterThan(0);
+    expect(result.visibleUnmeasuredCount).toBe(result.rows.size);
+  });
+
+  it("skips the visible scan entirely when nothing wraps", () => {
+    const harness = createService({ columns: [textColumn()], sceneHeight: 240 });
+    const result = harness.service.rowsToMeasureFor(harness.scene, noReset);
+
+    expect(result.rows.size).toBe(0);
+    expect(result.visibleUnmeasuredCount).toBe(0);
+  });
+
+  it("still finds auto-owned rows to shrink after the last wrap column is deleted", () => {
+    // The half that is easy to forget: these rows are already marked measured,
+    // so the visible scan can never surface them, and without this branch they
+    // would keep their wrapped height forever.
+    const layout = createLayout();
+    layout.setRowHeight(2, 60);
+    const harness = createService({ columns: [textColumn()], layout, sceneHeight: 240 });
+
+    const result = harness.service.rowsToMeasureFor(harness.scene, {
+      hasColumnStructureChange: true,
+      rowHeightProvenance: new Map([[2, "auto"]]),
+      defaultRowHeight: DEFAULT_ROW_HEIGHT
+    });
+
+    expect([...result.rows]).toEqual([2]);
+    // Not from the visible scan, so it must not extend the follow-up pass.
+    expect(result.visibleUnmeasuredCount).toBe(0);
+  });
+
+  it("does not look for shrink candidates while a wrap column still exists", () => {
+    const layout = createLayout();
+    layout.setRowHeight(2, 60);
+    const harness = createService({ layout, sceneHeight: 240 });
+
+    const result = harness.service.rowsToMeasureFor(harness.scene, {
+      hasColumnStructureChange: true,
+      rowHeightProvenance: new Map([[2, "auto"]]),
+      defaultRowHeight: DEFAULT_ROW_HEIGHT
+    });
+
+    expect(result.visibleUnmeasuredCount).toBe(result.rows.size);
+  });
+
+  it("reports the visible count separately from the merged set", () => {
+    const layout = createLayout();
+    layout.setRowHeight(7, 60);
+    const harness = createService({ columns: [textColumn()], layout, sceneHeight: 48 });
+
+    const result = harness.service.rowsToMeasureFor(harness.scene, {
+      hasColumnStructureChange: true,
+      rowHeightProvenance: new Map([[7, "auto"]]),
+      defaultRowHeight: DEFAULT_ROW_HEIGHT
+    });
+
+    // Row 7 is off-screen: it belongs in the merged set but must not make the
+    // caller schedule another visible-measurement pass.
+    expect(result.rows.has(7)).toBe(true);
+    expect(result.visibleUnmeasuredCount).toBe(0);
+  });
+});

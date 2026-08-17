@@ -1665,25 +1665,14 @@ export class CyExcelCore {
       if (sceneReady && receiptScene) {
         this.#reprojectEditor(receiptScene);
 
-        const hasWrapColumns = this.#measurement.hasWrapColumns();
-        const visibleUnmeasuredRows = hasWrapColumns
-          ? this.#measurement.visibleUnmeasuredRows(receiptScene)
-          : [];
-        const rowsToMeasure = new Set(visibleUnmeasuredRows);
-        if (!hasWrapColumns && hasColumnStructure) {
-          // Deleting the last wrap column has to shrink auto-owned rows back;
-          // they are already "measured", so the visible scan never finds them.
-          for (const row of this.#measurement.rowsNeedingDefaultReset(
-            receiptScene,
-            this.#layout.root.rowHeightProvenance,
-            this.#layout.rowHeight
-          )) {
-            rowsToMeasure.add(row);
-          }
-        }
-        const rowResizeScheduled = measurementPassesRemaining > 0 && rowsToMeasure.size > 0
+        const measurement = this.#measurement.rowsToMeasureFor(receiptScene, {
+          hasColumnStructureChange: hasColumnStructure,
+          rowHeightProvenance: this.#layout.root.rowHeightProvenance,
+          defaultRowHeight: this.#layout.rowHeight
+        });
+        const rowResizeScheduled = measurementPassesRemaining > 0 && measurement.rows.size > 0
           ? this.#measureAndResizeRows(
-              rowsToMeasure,
+              measurement.rows,
               receiptScene,
               measurementPassesRemaining - 1
             )
@@ -1702,10 +1691,7 @@ export class CyExcelCore {
           // flushes both receipts against its final Scene.
           this.#runFinalizer("render-frame", () => this.#renderScheduler.flushNow());
         }
-        if (
-          measurementPassesRemaining === 0 &&
-          visibleUnmeasuredRows.length > 0
-        ) {
+        if (measurementPassesRemaining === 0 && measurement.visibleUnmeasuredCount > 0) {
           this.#scheduleAutoHeightContinuation();
         }
       }

@@ -151,6 +151,43 @@ export class WrapMeasurementService {
   }
 
   /**
+   * Which rows a freshly published Scene needs measured, and how many of them
+   * came from the visible scan.
+   *
+   * Assembling this was previously the caller's job: it had to know to skip the
+   * visible scan when nothing wraps, *and* to remember that deleting the last
+   * wrap column still leaves auto-owned rows that must shrink back — rows the
+   * visible scan can never find, because they are already marked measured.
+   * Getting only the first half right is a silent bug (rows stay tall forever),
+   * so both halves belong behind one call.
+   *
+   * `visibleUnmeasuredCount` is reported separately because it, not the merged
+   * set, decides whether another measurement pass has to be scheduled.
+   */
+  rowsToMeasureFor(
+    scene: SceneSnapshot,
+    options: {
+      readonly hasColumnStructureChange: boolean;
+      readonly rowHeightProvenance: ReadonlyMap<number, Exclude<RowHeightProvenance, "default">>;
+      readonly defaultRowHeight: number;
+    }
+  ): { readonly rows: ReadonlySet<number>; readonly visibleUnmeasuredCount: number } {
+    const hasWrapColumns = this.hasWrapColumns();
+    const visibleUnmeasuredRows = hasWrapColumns ? this.visibleUnmeasuredRows(scene) : [];
+    const rows = new Set(visibleUnmeasuredRows);
+    if (!hasWrapColumns && options.hasColumnStructureChange) {
+      for (const row of this.rowsNeedingDefaultReset(
+        scene,
+        options.rowHeightProvenance,
+        options.defaultRowHeight
+      )) {
+        rows.add(row);
+      }
+    }
+    return { rows, visibleUnmeasuredCount: visibleUnmeasuredRows.length };
+  }
+
+  /**
    * Measures `rows` against `basis` and reports what would have to change.
    * Rows whose height is `manual` are never measured — a hand-resized row
    * keeps its height until the user changes it again.
