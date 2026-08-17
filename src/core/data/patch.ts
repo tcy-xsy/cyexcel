@@ -21,8 +21,25 @@ function patchKey(patch: Patch): string {
         patch.count,
         patch.target ?? ""
       ].join(":");
+    case "column-structure":
+      return [
+        "column-structure",
+        patch.operation,
+        patch.start,
+        patch.count,
+        patch.target ?? ""
+      ].join(":");
     case "column-layout":
       return `column-layout:${patch.column}`;
+    case "row-layout":
+      return [
+        "row-layout",
+        patch.rows.join(","),
+        patch.range.startRow,
+        patch.range.startColumn,
+        patch.range.endRow,
+        patch.range.endColumn
+      ].join(":");
     case "full-reset":
       return "full-reset";
   }

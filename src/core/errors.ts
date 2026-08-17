@@ -15,7 +15,16 @@ export const CyExcelErrorCode = {
   UnknownCellType: "unknown-cell-type",
   UnknownHook: "unknown-hook",
   AsyncHookNotSupported: "async-hook-not-supported",
-  StructuralModificationNotSupported: "structural-modification-not-supported"
+  StructuralModificationNotSupported: "structural-modification-not-supported",
+  HeaderGroupsBlockColumnStructureChange: "header-groups-block-column-structure-change",
+  MutationBlockedByReadLease: "mutation-blocked-by-read-lease",
+  MutationConflict: "mutation-conflict",
+  MutationNotSupported: "mutation-not-supported",
+  ReentrantMutation: "reentrant-mutation",
+  MutationRuntimeFaulted: "mutation-runtime-faulted",
+  MutationRuntimeDisposed: "mutation-runtime-disposed",
+  PluginRuntimeNotReady: "plugin-runtime-not-ready",
+  PluginDisposed: "plugin-disposed"
 } as const;
 
 export type CyExcelErrorCode =

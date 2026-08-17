@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { mergePatches } from "../../../../src/core";
-import type { Patch } from "../../../../src/core";
+import { mergePatches } from "../../../../src/core/data";
+import type { Patch } from "../../../../src/core/types";
 
 describe("mergePatches", () => {
   it("dedupes structurally identical patches, keeping the first occurrence", () => {
@@ -68,5 +68,37 @@ describe("mergePatches", () => {
       { type: "column-layout", column: 2 },
       { type: "column-layout", column: 3 }
     ]);
+  });
+
+  it("dedupes row-layout batches by their complete row set", () => {
+    const patches: Patch[] = [
+      {
+        type: "row-layout",
+        rows: [1, 4],
+        range: { startRow: 1, startColumn: 0, endRow: 9, endColumn: 2 }
+      },
+      {
+        type: "row-layout",
+        rows: [1, 4],
+        range: { startRow: 1, startColumn: 0, endRow: 9, endColumn: 2 }
+      },
+      {
+        type: "row-layout",
+        rows: [1, 5],
+        range: { startRow: 1, startColumn: 0, endRow: 9, endColumn: 2 }
+      },
+      {
+        type: "row-layout",
+        rows: [4, 1],
+        range: { startRow: 1, startColumn: 0, endRow: 9, endColumn: 2 }
+      },
+      {
+        type: "row-layout",
+        rows: [1, 4],
+        range: { startRow: 1, startColumn: 0, endRow: 10, endColumn: 2 }
+      }
+    ];
+
+    expect(mergePatches(patches)).toEqual([patches[0], patches[2], patches[3], patches[4]]);
   });
 });
