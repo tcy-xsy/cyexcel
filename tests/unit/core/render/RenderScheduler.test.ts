@@ -9,6 +9,7 @@ import type {
   RenderTarget
 } from "../../../../src/core/render";
 import type { RenderFrame } from "../../../../src/core/render/RenderScheduler";
+import { compileDirtySet } from "../../../../src/core/data";
 
 interface SceneContract {
   readonly modelVersion: number;
@@ -94,8 +95,8 @@ describe("RenderScheduler frame coalescing", () => {
     const target = createCapturingTarget();
     const scheduler = createRenderScheduler(target, { frameScheduler });
 
-    scheduler.invalidatePatch({ type: "cell-value", row: 0, column: 0 });
-    scheduler.invalidatePatch({ type: "cell-value", row: 1, column: 1 });
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 0, column: 0 }]));
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 1, column: 1 }]));
     scheduler.invalidateAll();
 
     expect(requestFrameCallCount()).toBe(1);
@@ -111,10 +112,10 @@ describe("RenderScheduler dirty-region merging", () => {
     const target = createCapturingTarget();
     const scheduler = createRenderScheduler(target, { frameScheduler });
 
-    scheduler.invalidatePatch({
+    scheduler.invalidateDirtySet(compileDirtySet([{
       type: "range-value",
       range: { startRow: 1, startColumn: 1, endRow: 3, endColumn: 3 }
-    });
+    }]));
     flush();
 
     expect(target.lastDirty).toEqual({
@@ -128,11 +129,11 @@ describe("RenderScheduler dirty-region merging", () => {
     const target = createCapturingTarget();
     const scheduler = createRenderScheduler(target, { frameScheduler });
 
-    scheduler.invalidatePatch({
+    scheduler.invalidateDirtySet(compileDirtySet([{
       type: "row-layout",
       rows: [2, 5],
       range: { startRow: 2, startColumn: 0, endRow: 9, endColumn: 3 }
-    });
+    }]));
     flush();
 
     expect(target.lastDirty).toEqual({
@@ -147,7 +148,7 @@ describe("RenderScheduler dirty-region merging", () => {
     const scheduler = createRenderScheduler(target, { frameScheduler });
 
     scheduler.invalidateAll();
-    scheduler.invalidatePatch({ type: "cell-value", row: 0, column: 0 });
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 0, column: 0 }]));
 
     expect(requestFrameCallCount()).toBe(1);
     flush();
@@ -160,8 +161,8 @@ describe("RenderScheduler dirty-region merging", () => {
     const target = createCapturingTarget();
     const scheduler = createRenderScheduler(target, { frameScheduler });
 
-    scheduler.invalidatePatch({ type: "cell-value", row: 0, column: 0 });
-    scheduler.invalidatePatch({ type: "cell-value", row: 0, column: 1 });
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 0, column: 0 }]));
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 0, column: 1 }]));
     flush();
 
     expect(target.lastDirty).toEqual({
@@ -175,8 +176,8 @@ describe("RenderScheduler dirty-region merging", () => {
     const target = createCapturingTarget();
     const scheduler = createRenderScheduler(target, { frameScheduler, maxDirtyRegions: 3 });
 
-    scheduler.invalidatePatch({ type: "cell-value", row: 0, column: 0 });
-    scheduler.invalidatePatch({ type: "cell-value", row: 10, column: 10 });
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 0, column: 0 }]));
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 10, column: 10 }]));
     flush();
 
     expect(target.lastDirty).toEqual({
@@ -193,10 +194,10 @@ describe("RenderScheduler dirty-region merging", () => {
     const target = createCapturingTarget();
     const scheduler = createRenderScheduler(target, { frameScheduler, maxDirtyRegions: 3 });
 
-    scheduler.invalidatePatch({ type: "cell-value", row: 0, column: 0 });
-    scheduler.invalidatePatch({ type: "cell-value", row: 10, column: 10 });
-    scheduler.invalidatePatch({ type: "cell-value", row: 20, column: 20 });
-    scheduler.invalidatePatch({ type: "cell-value", row: 30, column: 30 });
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 0, column: 0 }]));
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 10, column: 10 }]));
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 20, column: 20 }]));
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 30, column: 30 }]));
     flush();
 
     expect(target.lastDirty).toEqual({ kind: "full" });
@@ -213,7 +214,7 @@ describe("RenderScheduler structural patches", () => {
     const target = createCapturingTarget();
     const scheduler = createRenderScheduler(target, { frameScheduler });
 
-    scheduler.invalidatePatch(patch);
+    scheduler.invalidateDirtySet(compileDirtySet([patch]));
     flush();
 
     expect(target.lastDirty).toEqual({ kind: "full" });
@@ -238,7 +239,7 @@ describe("RenderScheduler selection/content independence", () => {
     const target = createCapturingTarget();
     const scheduler = createRenderScheduler(target, { frameScheduler });
 
-    scheduler.invalidatePatch({ type: "cell-value", row: 0, column: 0 });
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 0, column: 0 }]));
     scheduler.invalidateSelection();
 
     expect(requestFrameCallCount()).toBe(1);
@@ -411,7 +412,7 @@ describe("RenderScheduler frame snapshot contract", () => {
     };
     const scheduler = createRenderScheduler(target, { frameScheduler, revisionGate, getScene });
 
-    scheduler.invalidatePatch({ type: "cell-value", row: 2, column: 3 });
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 2, column: 3 }]));
     scheduler.invalidateSelection();
     flush();
 
@@ -512,7 +513,7 @@ describe("RenderScheduler frame snapshot contract", () => {
       onFrameError: vi.fn()
     });
 
-    scheduler.invalidatePatch({ type: "cell-value", row: 4, column: 5 });
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 4, column: 5 }]));
     scheduler.invalidateSelection();
     flush();
     expect(frames).toEqual([]);
@@ -559,7 +560,7 @@ describe("RenderScheduler frame snapshot contract", () => {
       onFrameError
     });
 
-    scheduler.invalidatePatch({ type: "cell-value", row: 6, column: 7 });
+    scheduler.invalidateDirtySet(compileDirtySet([{ type: "cell-value", row: 6, column: 7 }]));
     scheduler.invalidateSelection();
     flush();
 

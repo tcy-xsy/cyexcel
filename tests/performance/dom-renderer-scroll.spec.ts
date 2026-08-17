@@ -46,7 +46,16 @@ test("DOM-renderer columns stay pooled over a long continuous scroll — no DOM/
   const lastQuarter = samples.slice(-quarterSize);
 
   const domNodeGrowth = average(lastQuarter.map((s) => s.domNodeCount)) - average(firstQuarter.map((s) => s.domNodeCount));
-  assertPerfMetric("domRendererScroll", "domNodeGrowth", Math.max(0, domNodeGrowth));
+  // A one-node tolerance floor, for the same reason heapGrowthBytes has one:
+  // this is a difference of averages over ~4 samples of an integer node count,
+  // so a single DOM cell that happens to be mounted when one sample is taken
+  // reads as 0.25 or 0.5 growth. With a baseline of 0 a purely multiplicative
+  // tolerance is 0, so that quantization fails the gate outright — measured on
+  // an unchanged tree at 0.5 in 2 of 3 runs. A real pool leak is unbounded
+  // growth over the run, not half a node, so a 1-node floor still catches it.
+  assertPerfMetric("domRendererScroll", "domNodeGrowth", Math.max(0, domNodeGrowth), {
+    toleranceFloor: 1
+  });
 
   const heapSamples = samples.filter((s) => s.heapBytes !== null).map((s) => s.heapBytes as number);
   if (heapSamples.length >= 4) {

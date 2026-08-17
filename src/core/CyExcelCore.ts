@@ -39,7 +39,13 @@ import {
   dispatchCellAction,
   type CommandManager
 } from "./commands";
-import { ArrayDataSource, TableStore, createChangeSet, type ArrayDataSourceColumn } from "./data";
+import {
+  ArrayDataSource,
+  TableStore,
+  compileDirtySet,
+  createChangeSet,
+  type ArrayDataSourceColumn
+} from "./data";
 import type { CellEditorFactory } from "./editors";
 import { EditorManager } from "./editors";
 import { CyExcelError, CyExcelErrorCode } from "./errors";
@@ -1703,9 +1709,12 @@ export class CyExcelCore {
             )
           : false;
 
-        for (const patch of patches) {
-          this.#runFinalizer("render-invalidation", () => this.#renderScheduler.invalidatePatch(patch));
-        }
+        // One compiled invalidation for the whole receipt rather than one per
+        // Patch: coalescing belongs to compileDirtySet(), and the renderer no
+        // longer needs to know the model's Patch vocabulary at all.
+        this.#runFinalizer("render-invalidation", () =>
+          this.#renderScheduler.invalidateDirtySet(compileDirtySet(changeSet.changes))
+        );
         if (!rowResizeScheduled) {
           // Presentation renderers are observers of this committed receipt.
           // Flush while finalization is guarded so renderer commands queue

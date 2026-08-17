@@ -581,3 +581,44 @@ test("with rowReorder unset (default off), dragging from a selection's edge is s
   const interiorRowBoundary = await sampleAlpha(page, 1, 20, 139, 20, 3);
   expect(interiorRowBoundary).toBe(0);
 });
+
+/**
+ * Found by mutation-testing the DirtySet rewiring: dropping the `rowHeader`
+ * flag from `compileDirtySet()` turned no browser test red, meaning nothing
+ * verified that a row-geometry change repaints the row-number band.
+ *
+ * Note the band shows *positional* numbers, so inserting or deleting a row
+ * leaves the digits themselves unchanged — the observable effect is the band
+ * boundaries moving, which is what a height change produces.
+ */
+test("changing a row's height repaints the row-number band", async ({ page }) => {
+  await gotoFixture(page);
+
+  const before = await readRowHeaderRegion(page, 0, 200);
+  await page.evaluate(() => {
+    (window as unknown as { __sheet: { setRowHeight(row: number, height: number): void } })
+      .__sheet.setRowHeight(3, 60);
+  });
+  await expect
+    .poll(async () => meanAbsoluteDiff(await readRowHeaderRegion(page, 0, 200), before))
+    .toBeGreaterThan(1);
+});
+
+test("inserting a row above a resized row repaints the row-number band", async ({ page }) => {
+  await gotoFixture(page);
+
+  await page.evaluate(() => {
+    (window as unknown as { __sheet: { setRowHeight(row: number, height: number): void } })
+      .__sheet.setRowHeight(5, 60);
+  });
+  await page.waitForTimeout(80);
+
+  const before = await readRowHeaderRegion(page, 0, 200);
+  await page.evaluate(() => {
+    (window as unknown as { __sheet: { insertRows(start: number, count?: number): void } })
+      .__sheet.insertRows(3, 1);
+  });
+  await expect
+    .poll(async () => meanAbsoluteDiff(await readRowHeaderRegion(page, 0, 200), before))
+    .toBeGreaterThan(1);
+});

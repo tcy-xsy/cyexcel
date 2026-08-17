@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { compileDirtySet, createChangeSet } from "../../../../src/core/data";
+import type { SemanticChange } from "../../../../src/core/data";
 
 describe("ChangeSet", () => {
   it("preserves duplicate structural changes in their original order", () => {
@@ -46,7 +47,12 @@ describe("compileDirtySet", () => {
       { type: "row-structure", operation: "insert", start: 2, count: 1 }
     ]);
 
-    expect(dirty).toEqual({ content: "full", skeleton: "row-axis", selection: true });
+    expect(dirty).toEqual({
+      content: "full",
+      skeleton: "row-axis",
+      selection: true,
+      presentation: { domCells: true, columnHeader: false, rowHeader: true, domHeaders: false }
+    });
   });
 
   it("keeps local cell changes as independently derived dirty regions", () => {
@@ -61,7 +67,8 @@ describe("compileDirtySet", () => {
         { range: { startRow: 3, startColumn: 4, endRow: 5, endColumn: 6 } }
       ],
       skeleton: "none",
-      selection: false
+      selection: false,
+      presentation: { domCells: true, columnHeader: false, rowHeader: false, domHeaders: false }
     });
   });
 
@@ -75,7 +82,37 @@ describe("compileDirtySet", () => {
     expect(dirty).toEqual({
       content: [{ range: { startRow: 2, startColumn: 0, endRow: 9, endColumn: 3 } }],
       skeleton: "row-axis",
-      selection: false
+      selection: false,
+      presentation: { domCells: true, columnHeader: false, rowHeader: true, domHeaders: false }
     });
+  });
+
+  it("reports no dirty content when nothing touched a cell", () => {
+    // "none" used to be unreachable: an empty region list was returned as `[]`,
+    // so the type advertised a case the function never produced.
+    expect(compileDirtySet([])).toEqual({
+      content: "none",
+      skeleton: "none",
+      selection: false,
+      presentation: { domCells: false, columnHeader: false, rowHeader: false, domHeaders: false }
+    });
+  });
+
+  it("escalates every band for a column-axis fact, matching the old per-patch invalidateAll", () => {
+    const columnAxisFacts: readonly SemanticChange[] = [
+      { type: "column-structure", operation: "insert", start: 0, count: 1 },
+      { type: "column-layout", column: 0 },
+      { type: "full-reset" }
+    ];
+    for (const change of columnAxisFacts) {
+      const dirty = compileDirtySet([change]);
+      expect(dirty.content).toBe("full");
+      expect(dirty.presentation).toEqual({
+        domCells: true,
+        columnHeader: true,
+        rowHeader: true,
+        domHeaders: true
+      });
+    }
   });
 });

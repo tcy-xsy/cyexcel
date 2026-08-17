@@ -16,11 +16,26 @@ export interface DirtyRegion {
   readonly range: CellRange;
 }
 
+/**
+ * Which overlay and pinned-band consumers a ChangeSet invalidates.
+ *
+ * Declared here rather than imported from render/'s `PresentationDirty`, which
+ * it is structurally identical to: data/ must not depend on the renderer. The
+ * renderer accepts this shape as-is.
+ */
+export interface DirtyPresentation {
+  readonly domCells: boolean;
+  readonly columnHeader: boolean;
+  readonly rowHeader: boolean;
+  readonly domHeaders: boolean;
+}
+
 /** Rendering-only invalidation derived from a ChangeSet. */
 export interface DirtySet {
   readonly content: "none" | "full" | readonly DirtyRegion[];
   readonly skeleton: "none" | "row-axis" | "column-axis" | "full";
   readonly selection: boolean;
+  readonly presentation: DirtyPresentation;
 }
 
 function snapshotChange(change: SemanticChange): SemanticChange {
@@ -61,11 +76,16 @@ export function compileDirtySet(changes: readonly SemanticChange[]): DirtySet {
   let content: DirtySet["content"] = "none";
   let skeleton: DirtySet["skeleton"] = "none";
   let selection = false;
+  let domCells = false;
+  let columnHeader = false;
+  let rowHeader = false;
+  let domHeaders = false;
 
   for (const change of changes) {
     switch (change.type) {
       case "cell-value":
       case "cell-style":
+        domCells = true;
         if (content !== "full") {
           regions.push({
             range: {
@@ -79,12 +99,15 @@ export function compileDirtySet(changes: readonly SemanticChange[]): DirtySet {
         }
         break;
       case "range-value":
+        domCells = true;
         if (content !== "full") {
           regions.push(Object.freeze({ range: change.range }));
           content = regions;
         }
         break;
       case "row-layout":
+        domCells = true;
+        rowHeader = true;
         if (content !== "full") {
           regions.push(Object.freeze({ range: change.range }));
           content = regions;
@@ -92,20 +115,27 @@ export function compileDirtySet(changes: readonly SemanticChange[]): DirtySet {
         skeleton = skeleton === "column-axis" ? "full" : "row-axis";
         break;
       case "column-layout":
+        // Column geometry moves every band at once, so this is the same
+        // wholesale invalidation the legacy per-patch path reached for.
+        domCells = columnHeader = rowHeader = domHeaders = true;
         content = "full";
         skeleton = skeleton === "row-axis" ? "full" : "column-axis";
         break;
       case "row-structure":
+        domCells = true;
+        rowHeader = true;
         content = "full";
         skeleton = skeleton === "column-axis" ? "full" : "row-axis";
         selection = true;
         break;
       case "column-structure":
+        domCells = columnHeader = rowHeader = domHeaders = true;
         content = "full";
         skeleton = skeleton === "row-axis" ? "full" : "column-axis";
         selection = true;
         break;
       case "full-reset":
+        domCells = columnHeader = rowHeader = domHeaders = true;
         content = "full";
         skeleton = "full";
         selection = true;
@@ -114,8 +144,12 @@ export function compileDirtySet(changes: readonly SemanticChange[]): DirtySet {
   }
 
   return Object.freeze({
-    content: content === "full" ? content : Object.freeze([...regions]),
+    // "none" was previously unreachable: an empty region list was returned as
+    // `[]`, so the type advertised a case the function never produced.
+    content:
+      content === "full" ? content : regions.length === 0 ? "none" : Object.freeze([...regions]),
     skeleton,
-    selection
+    selection,
+    presentation: Object.freeze({ domCells, columnHeader, rowHeader, domHeaders })
   });
 }

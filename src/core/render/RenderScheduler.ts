@@ -1,4 +1,5 @@
-import type { CellRange, Patch } from "../types";
+import type { CellRange } from "../types";
+import type { DirtySet } from "../data/changes";
 import type { ModelRevision, RevisionGate } from "../model";
 import type { SceneSnapshot } from "../scene";
 
@@ -100,37 +101,29 @@ export class RenderScheduler<TScene extends { readonly modelVersion: number } = 
     this.#onFrameError = options.onFrameError;
   }
 
-  invalidatePatch(patch: Patch): void {
-    switch (patch.type) {
-      case "cell-value":
-      case "cell-style":
-        this.invalidatePresentation({ domCells: true });
-        this.#addRegion({
-          startRow: patch.row,
-          startColumn: patch.column,
-          endRow: patch.row,
-          endColumn: patch.column
-        });
-        break;
-      case "range-value":
-        this.invalidatePresentation({ domCells: true });
-        this.#addRegion(patch.range);
-        break;
-      case "row-layout":
-        this.invalidatePresentation({ domCells: true, rowHeader: true });
-        this.#addRegion(patch.range);
-        break;
-      case "row-structure":
-        this.invalidatePresentation({ domCells: true, rowHeader: true });
-        this.#contentDirty = { kind: "full" };
-        this.#scheduleFrame();
-        break;
-      case "column-structure":
-      case "column-layout":
-      case "full-reset":
-        this.invalidateAll();
-        break;
+  /**
+   * Applies one compiled DirtySet — the single entry point from a committed
+   * ChangeSet into drawing work.
+   *
+   * Replaces the former per-patch `invalidatePatch()`: deriving dirty state
+   * inside the renderer, one Patch at a time, meant the same coalescing rules
+   * were re-implemented at every call site and that the renderer had to know
+   * the model's Patch vocabulary. `compileDirtySet()` owns that translation
+   * now, and this method only applies the result.
+   */
+  invalidateDirtySet(dirty: DirtySet): void {
+    if (dirty.content === "full") {
+      this.#contentDirty = { kind: "full" };
+    } else if (dirty.content !== "none") {
+      for (const region of dirty.content) {
+        this.#addRegion(region.range);
+      }
     }
+    this.invalidatePresentation(dirty.presentation);
+    if (dirty.selection) {
+      this.#selectionDirty = true;
+    }
+    this.#scheduleFrame();
   }
 
   invalidateAll(): void {
