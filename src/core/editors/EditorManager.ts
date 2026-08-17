@@ -1,12 +1,12 @@
-import type { LayoutEngine, ViewportState } from "../layout";
-import { toViewportRect } from "../layout";
+import type { CellRect } from "../layout";
+import type { SceneSnapshot } from "../scene";
 import type { CellEditor, CellEditorFactory } from "./CellEditor";
 import { createTextCellEditor } from "./TextCellEditor";
 
 export interface EditorManagerOptions {
   /** DOM node editors mount into; must already be connected to the document. */
   readonly container: HTMLElement;
-  readonly layout: LayoutEngine;
+  readonly getScene: () => SceneSnapshot;
   readonly getCellValue: (row: number, column: number) => unknown;
   readonly commitValue: (
     row: number,
@@ -34,6 +34,17 @@ interface ActiveEdit {
   readonly editor: CellEditor;
 }
 
+function intersectRect(rect: CellRect, clipRect: CellRect): CellRect | null {
+  const left = Math.max(rect.x, clipRect.x);
+  const top = Math.max(rect.y, clipRect.y);
+  const right = Math.min(rect.x + rect.width, clipRect.x + clipRect.width);
+  const bottom = Math.min(rect.y + rect.height, clipRect.y + clipRect.height);
+  if (right <= left || bottom <= top) {
+    return null;
+  }
+  return { x: left, y: top, width: right - left, height: bottom - top };
+}
+
 /**
  * Owns the single active DOM cell editor. Knows nothing about
  * TableStore/CommandManager — commitValue() is how the integration layer
@@ -41,7 +52,7 @@ interface ActiveEdit {
  */
 export class EditorManager {
   readonly #container: HTMLElement;
-  readonly #layout: LayoutEngine;
+  readonly #getScene: () => SceneSnapshot;
   readonly #getCellValue: (row: number, column: number) => unknown;
   readonly #commitValue: (
     row: number,
@@ -57,11 +68,10 @@ export class EditorManager {
 
   #active: ActiveEdit | null = null;
   #composing = false;
-  #viewport: ViewportState = { scrollTop: 0, scrollLeft: 0, width: 0, height: 0 };
 
   constructor(options: EditorManagerOptions) {
     this.#container = options.container;
-    this.#layout = options.layout;
+    this.#getScene = options.getScene;
     this.#getCellValue = options.getCellValue;
     this.#commitValue = options.commitValue;
     this.#editorFactory = options.editorFactory ?? createTextCellEditor;
@@ -81,8 +91,19 @@ export class EditorManager {
     return this.#active !== null;
   }
 
-  setViewport(viewport: ViewportState): void {
-    this.#viewport = viewport;
+  /** Reprojects the active cell through one newly published Scene snapshot. */
+  updateGeometry(scene: SceneSnapshot = this.#getScene()): void {
+    const active = this.#active;
+    if (!active) {
+      return;
+    }
+    const fragment = scene.getCellFragments({ row: active.row, column: active.column })[0];
+    const rect = fragment ? intersectRect(fragment.rect, fragment.pane.clipRect) : null;
+    if (!rect) {
+      this.cancelEdit();
+      return;
+    }
+    active.editor.updateGeometry(Object.freeze(rect));
   }
 
   startEdit(row: number, column: number, initialInput?: string): void {
@@ -90,8 +111,16 @@ export class EditorManager {
       return;
     }
 
+    const scene = this.#getScene();
+    const fragment = scene.getCellFragments({ row, column })[0];
+    if (!fragment) {
+      return;
+    }
+    const rect = intersectRect(fragment.rect, fragment.pane.clipRect);
+    if (!rect) {
+      return;
+    }
     const editor = this.#resolveEditor?.(row, column) ?? this.#editorFactory();
-    const rect = toViewportRect(this.#layout.getCellRect(row, column), this.#viewport);
     const initialValue = this.#getCellValue(row, column);
     const initialText = this.#serializeCellValue?.(row, column, initialValue);
 

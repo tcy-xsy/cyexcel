@@ -3,7 +3,11 @@ import type { Page } from "@playwright/test";
 
 interface FixtureWindow {
   __cyexcelCustomCellsReady?: boolean;
+  __canvasHitTestCalls?: Record<number, number>;
   __sheet?: {
+    readonly selection: {
+      readonly active: { readonly row: number; readonly column: number };
+    };
     getCell(row: number, column: number): unknown;
     dispose(): void;
   };
@@ -28,6 +32,13 @@ function getCell(page: Page, row: number, column: number): Promise<unknown> {
   return page.evaluate(
     ({ row: r, column: c }) => (window as unknown as FixtureWindow).__sheet?.getCell(r, c),
     { row, column }
+  );
+}
+
+function getCanvasHitTestCalls(page: Page, row: number): Promise<number> {
+  return page.evaluate(
+    (targetRow) => (window as unknown as FixtureWindow).__canvasHitTestCalls?.[targetRow] ?? 0,
+    row
   );
 }
 
@@ -105,6 +116,48 @@ test("clicking a hitTest-enabled canvas cell commits a Command", async ({ page }
   expect(await getCell(page, 0, 1)).toBe(1);
 });
 
+test("a declined canvas hitTest runs once and falls through to body selection", async ({ page }) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  // Counter row 1 deliberately declines. The lower-priority selection route
+  // must still select that exact cell, which Enter exposes via its editor.
+  await page.mouse.click(box.x + 140, box.y + 34);
+
+  expect(await getCanvasHitTestCalls(page, 1)).toBe(1);
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#app input")).toHaveValue("1");
+});
+
+test("a handled canvas hitTest runs once, commits, and keeps the existing selection", async ({ page }) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  // Counter row 2 returns an action. It owns the pointer input, so the body
+  // selection candidate must not also move the initial selection from A1.
+  await page.mouse.click(box.x + 140, box.y + 58);
+
+  expect(await getCanvasHitTestCalls(page, 2)).toBe(1);
+  expect(await getCell(page, 2, 1)).toBe(3);
+
+  await page.locator("#app canvas").first().focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#app input")).toHaveValue("Item 0");
+});
+
+test("body input refreshes surface origins after ancestor reflow without resize()", async ({ page }) => {
+  await gotoFixture(page);
+
+  await page.locator("#app").evaluate((element) => {
+    element.style.marginLeft = "80px";
+  });
+  const movedBox = await getContentCanvasBox(page);
+  await page.mouse.click(movedBox.x + 140, movedBox.y + 10);
+
+  expect(await getCanvasHitTestCalls(page, 0)).toBe(1);
+  expect(await getCell(page, 0, 1)).toBe(1);
+});
+
 test("right-clicking a hitTest-enabled canvas cell does not commit its click action", async ({ page }) => {
   await gotoFixture(page);
   const box = await getContentCanvasBox(page);
@@ -118,11 +171,50 @@ test("right-clicking a hitTest-enabled canvas cell does not commit its click act
 test("clicking the DOM toggle button commits through context.actions.commit", async ({ page }) => {
   await gotoFixture(page);
 
+  const before = await page.evaluate(
+    () => (window as unknown as FixtureWindow).__sheet?.selection
+  );
   expect(await getCell(page, 0, 2)).toBe(true);
   await page.locator("#app .toggle-button").first().click();
 
   expect(await getCell(page, 0, 2)).toBe(false);
   await expect(page.locator("#app .toggle-button").first()).toHaveText("off");
+  expect(await page.evaluate(
+    () => (window as unknown as FixtureWindow).__sheet?.selection
+  )).toEqual(before);
+});
+
+test("clicking passive DOM cell content falls through to canonical body selection", async ({ page }) => {
+  await gotoFixture(page);
+
+  await page.locator("#app .toggle-passive").nth(1).click();
+
+  expect(await page.evaluate(
+    () => (window as unknown as FixtureWindow).__sheet?.selection.active
+  )).toEqual({ row: 1, column: 2 });
+});
+
+test("a native-owned closed-shadow cell is terminal without exposing its internal input", async ({ page }) => {
+  await gotoFixture(page);
+
+  const before = await page.evaluate(
+    () => (window as unknown as FixtureWindow).__sheet?.selection.active
+  );
+  await page.locator("#app .closed-native-cell").nth(1).click();
+
+  expect(await page.evaluate(
+    () => (window as unknown as FixtureWindow).__sheet?.selection.active
+  )).toEqual(before);
+});
+
+test("a surface-owned closed-shadow cell routes through the canonical body surface", async ({ page }) => {
+  await gotoFixture(page);
+
+  await page.locator("#app .closed-surface-cell").nth(1).click();
+
+  expect(await page.evaluate(
+    () => (window as unknown as FixtureWindow).__sheet?.selection.active
+  )).toEqual({ row: 1, column: 5 });
 });
 
 test("editing a number-typed column via the keyboard stores and renders a real number, not a blank cell", async ({

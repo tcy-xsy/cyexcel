@@ -1,7 +1,13 @@
-export { HeaderManager, type HeaderManagerOptions } from "./HeaderManager";
+export {
+  HeaderManager,
+  type HeaderManagerOptions,
+  type HeaderManagerRoot
+} from "./HeaderManager";
 export { HeaderCanvasRenderer, type HeaderCanvasRendererOptions } from "./HeaderCanvasRenderer";
 export { RowHeaderCanvasRenderer, type RowHeaderCanvasRendererOptions } from "./RowHeaderCanvasRenderer";
 export { DomHeaderManager, type DomHeaderManagerOptions } from "./DomHeaderManager";
+export { hitTestHeaderGroup } from "./hitTest";
+export { columnIndexToLetter } from "./columnLetter";
 export type {
   HeaderState,
   HeaderRenderContext,
@@ -15,5 +21,4 @@ export type {
   HeaderGroupDefinition,
   RuntimeHeader,
   RuntimeHeaderGroup,
-  HeaderGroupFragment
 } from "./types";

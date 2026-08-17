@@ -1,7 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DomHeaderManager, HeaderManager, LayoutEngine } from "../../../../src/core";
-import type { DomHeaderContext, DomHeaderRenderer, DomHeaderRendererFactory } from "../../../../src/core";
+import type { DomHeaderContext, DomHeaderRenderer, DomHeaderRendererFactory } from "../../../../src/core/cells";
+import { DomHeaderManager, HeaderManager } from "../../../../src/core/headers";
+import { getDeclaredDomPointerInputTarget } from "../../../../src/core/interaction/domPointerOwnership";
+import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "../../../../src/core/layout";
+import type { ViewportState } from "../../../../src/core/layout";
+import { SceneSnapshot } from "../../../../src/core/scene";
 
 interface FakeElement {
   readonly style: Record<string, string>;
@@ -30,13 +34,14 @@ interface RecordingInstance extends DomHeaderRenderer {
   readonly contexts: DomHeaderContext[];
 }
 
-function createRecordingFactory(): {
+function createRecordingFactory(pointerOwnership: "native" | "surface" = "surface"): {
   readonly factory: DomHeaderRendererFactory;
   readonly instances: RecordingInstance[];
 } {
   const instances: RecordingInstance[] = [];
   const factory: DomHeaderRendererFactory = {
     kind: "dom",
+    pointerOwnership,
     create: () => {
       const calls: string[] = [];
       const contexts: DomHeaderContext[] = [];
@@ -72,14 +77,34 @@ function createLayout(columnCount: number, freeze?: { columns?: number }): Layou
   });
 }
 
-function createManager(options: { readonly layout: LayoutEngine; readonly headerManager: HeaderManager }) {
+function createScene(
+  layout: LayoutEngine,
+  viewport: ViewportState,
+  columnHeaderHeight = 24,
+  leafY = 0,
+  leafHeight = columnHeaderHeight - leafY
+): SceneSnapshot {
+  return new SceneSnapshot({
+    version: 1,
+    skeleton: SkeletonSnapshot.fromLayout(layout, 1),
+    viewport: new ViewportSnapshot({ version: 1, ...viewport }),
+    surfaceMetrics: {
+      columnHeaderHeight,
+      columnHeaderBands: [{ role: "leaf", y: leafY, height: leafHeight }],
+      rowHeaderWidth: 0
+    }
+  });
+}
+
+function createManager(options: {
+  readonly layout: LayoutEngine;
+  readonly headerManager: HeaderManager;
+}) {
   const container = createFakeElement();
   const hosts: FakeElement[] = [];
   const manager = new DomHeaderManager({
     container: container as unknown as HTMLElement,
-    layout: options.layout,
     headerManager: options.headerManager,
-    columnHeaderHeight: 24,
     createHost: () => {
       const host = createFakeElement();
       hosts.push(host);
@@ -88,6 +113,10 @@ function createManager(options: { readonly layout: LayoutEngine; readonly header
   });
   return { manager, container, hosts };
 }
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("DomHeaderManager — mounts within the visible/frozen column set (先写测试 #2)", () => {
   it("mounts DOM-renderer headers that are currently visible, and only those columns", () => {
@@ -98,12 +127,27 @@ describe("DomHeaderManager — mounts within the visible/frozen column set (先�
         { id: "interactive", header: { title: "Interactive", renderer: factory } }
       ]
     });
-    const { manager } = createManager({ layout: createLayout(2), headerManager });
+    const layout = createLayout(2);
+    const { manager } = createManager({ layout, headerManager });
 
-    manager.sync({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
+    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 100, height: 40 }));
 
     expect(instances.length).toBeGreaterThan(0);
     expect(instances.every((instance) => instance.calls[0] === "mount")).toBe(true);
+  });
+
+  it("binds surface ownership to the mounted column-header host", () => {
+    const { factory } = createRecordingFactory("surface");
+    const headerManager = new HeaderManager({
+      columns: [{ id: "surface", header: { title: "Surface", renderer: factory } }]
+    });
+    const layout = createLayout(1);
+    const { manager, hosts } = createManager({ layout, headerManager });
+
+    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 50, height: 20 }));
+
+    expect(getDeclaredDomPointerInputTarget(hosts[0] as unknown as EventTarget))
+      .toEqual({ kind: "surface", surface: "column-header" });
   });
 
   it("keeps frozen-column DOM headers mounted even when scrolled far past them", () => {
@@ -114,12 +158,62 @@ describe("DomHeaderManager — mounts within the visible/frozen column set (先�
         ...Array.from({ length: 20 }, (_unused, index) => ({ id: `c${index}`, header: `C${index}` }))
       ]
     });
-    const { manager } = createManager({ layout: createLayout(21, { columns: 1 }), headerManager });
+    const layout = createLayout(21, { columns: 1 });
+    const { manager } = createManager({ layout, headerManager });
 
-    manager.sync({ scrollTop: 0, scrollLeft: 800, width: 100, height: 40 });
+    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 800, width: 100, height: 40 }));
 
     expect(instances.length).toBeGreaterThan(0);
     expect(instances[0]?.calls).toContain("mount");
+  });
+
+  it("clips a partially scrolled DOM header to its canonical scrollable pane", () => {
+    const { factory } = createRecordingFactory();
+    const headerManager = new HeaderManager({
+      columns: [
+        { id: "frozen", header: "Frozen" },
+        { id: "scroll", header: { title: "Scroll", renderer: factory } }
+      ]
+    });
+    const layout = createLayout(2, { columns: 1 });
+    const { manager, hosts } = createManager({ layout, headerManager });
+
+    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 20, width: 100, height: 40 }));
+
+    expect(hosts[0]?.style.left).toBe("30px");
+    expect(hosts[0]?.style.width).toBe("50px");
+    expect(hosts[0]?.style.clipPath).toBe("inset(0px 0px 0px 20px)");
+  });
+
+  it("uses canonical column-header fragments without projecting body pane cells", () => {
+    const { factory } = createRecordingFactory();
+    const headerManager = new HeaderManager({
+      columns: [{ id: "interactive", header: { title: "Interactive", renderer: factory } }]
+    });
+    const layout = createLayout(1);
+    const { manager } = createManager({ layout, headerManager });
+    const getVisibleFragments = vi.spyOn(SceneSnapshot.prototype, "getVisibleColumnHeaderFragments");
+    const getBandFragments = vi.spyOn(SceneSnapshot.prototype, "getColumnHeaderBandFragments");
+    const getCellRectInPane = vi.spyOn(SceneSnapshot.prototype, "getCellRectInPane");
+    const scene = createScene(layout, {
+      scrollTop: 0,
+      scrollLeft: 0,
+      width: 100,
+      height: 40
+    });
+
+    manager.sync(scene);
+
+    expect(getVisibleFragments).toHaveBeenCalledWith(scene.getColumnHeaderLeafBand());
+    expect(getBandFragments).toHaveBeenCalled();
+    expect(getCellRectInPane).not.toHaveBeenCalled();
+    const [fragment] = scene.getColumnHeaderBandFragments(
+      scene.getColumnHeaderLeafBand(),
+      0,
+      0
+    );
+    expect(fragment?.surface).toBe("column-header");
+    expect(fragment?.pane.surface).toBe("column-header");
   });
 });
 
@@ -132,12 +226,13 @@ describe("DomHeaderManager — scrolling out (先写测试 #6: update or destroy
         header: { title: `C${index}`, renderer: factory }
       }))
     });
-    const { manager } = createManager({ layout: createLayout(20), headerManager });
+    const layout = createLayout(20);
+    const { manager } = createManager({ layout, headerManager });
 
-    manager.sync({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
+    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 100, height: 40 }));
     const afterFirstSync = instances.length;
 
-    manager.sync({ scrollTop: 0, scrollLeft: 800, width: 100, height: 40 });
+    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 800, width: 100, height: 40 }));
     const afterSecondSync = instances.length;
 
     expect(afterSecondSync).toBe(afterFirstSync);
@@ -150,9 +245,10 @@ describe("DomHeaderManager — scrolling out (先写测试 #6: update or destroy
     const headerManager = new HeaderManager({
       columns: [{ id: "a", header: { title: "A", renderer: factory } }]
     });
-    const { manager } = createManager({ layout: createLayout(1), headerManager });
+    const layout = createLayout(1);
+    const { manager } = createManager({ layout, headerManager });
 
-    manager.sync({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
+    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 100, height: 40 }));
     manager.dispose();
 
     expect(instances.length).toBeGreaterThan(0);
@@ -164,13 +260,82 @@ describe("DomHeaderManager — scrolling out (先写测试 #6: update or destroy
     const headerManager = new HeaderManager({
       columns: [{ id: "a", header: { title: "A", renderer: factory } }]
     });
-    const { manager, hosts } = createManager({ layout: createLayout(1), headerManager });
+    const layout = createLayout(1);
+    const { manager, hosts } = createManager({ layout, headerManager });
 
-    manager.sync({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
-    manager.sync({ scrollTop: 0, scrollLeft: 0, width: 0, height: 40 }); // nothing visible now
+    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 100, height: 40 }));
+    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 0, height: 40 })); // nothing visible now
 
     // The host was detached (pooled) once its column stopped being needed.
     expect(hosts[0]?.removed).toBe(true);
     expect(instances[0]?.calls).not.toContain("destroy"); // pooled, not destroyed
+  });
+});
+
+describe("DomHeaderManager — leaf geometry follows Scene publication", () => {
+  it("uses the Scene leaf y instead of deriving it from HeaderManager depth", () => {
+    const { factory, instances } = createRecordingFactory();
+    const headerManager = new HeaderManager({
+      columns: [{ id: "a", header: { title: "A", renderer: factory } }],
+      groups: [
+        {
+          id: "root",
+          title: "Root",
+          children: [{ id: "dept", title: "Dept", children: [{ id: "cat", title: "Cat", columns: [0] }] }]
+        }
+      ]
+    });
+    expect(headerManager.groupDepth).toBe(3);
+    const layout = createLayout(1);
+    const { manager } = createManager({ layout, headerManager });
+
+    manager.sync(createScene(
+      layout,
+      { scrollTop: 0, scrollLeft: 0, width: 100, height: 40 },
+      91,
+      67,
+      24
+    ));
+
+    expect(instances[0]?.contexts[0]?.rect.y).toBe(67);
+  });
+
+  it("does not infer an offset merely because HeaderManager has groups", () => {
+    const { factory, instances } = createRecordingFactory();
+    const headerManager = new HeaderManager({
+      columns: [{ id: "a", header: { title: "A", renderer: factory } }],
+      groups: [{ id: "g", title: "G", columns: [0] }]
+    });
+    const layout = createLayout(1);
+    const { manager } = createManager({ layout, headerManager });
+
+    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 100, height: 40 }));
+
+    expect(instances[0]?.contexts[0]?.rect.y).toBe(0);
+  });
+});
+
+describe("DomHeaderManager — failed mount cleanup", () => {
+  it("removes the host and destroys a partially created renderer", () => {
+    const calls: string[] = [];
+    const factory: DomHeaderRendererFactory = {
+      kind: "dom",
+      pointerOwnership: "surface",
+      create: () => ({
+        mount: () => { calls.push("mount"); throw new Error("mount failed"); },
+        update: () => {},
+        destroy: () => { calls.push("destroy"); }
+      })
+    };
+    const headerManager = new HeaderManager({
+      columns: [{ id: "broken", header: { title: "Broken", renderer: factory } }]
+    });
+    const layout = createLayout(1);
+    const { manager, hosts } = createManager({ layout, headerManager });
+
+    expect(() => manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 50, height: 20 })))
+      .toThrow("mount failed");
+    expect(hosts[0]?.removed).toBe(true);
+    expect(calls).toEqual(["mount", "destroy"]);
   });
 });

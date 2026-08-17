@@ -51,6 +51,16 @@ export interface ContextMenuRenderContext {
   readonly busyItemId: string | null;
   /** Where the menu was opened — the same point classifyContextMenuTarget() was given. */
   readonly anchorPoint: { readonly x: number; readonly y: number };
+  /**
+   * The visible area (viewport coordinates, same space `getBoundingClientRect()`
+   * returns) the menu should stay fully within — `null` when the host didn't
+   * provide `ContextMenuServiceOptions.getBounds`. `DefaultMenuRenderer` uses
+   * this to shift the menu left/up when it would otherwise overflow past this
+   * box and get silently clipped (and its overflowing portion made
+   * unclickable) by a scrolling ancestor's `overflow: auto` — see
+   * doc/progress.md's real user report.
+   */
+  readonly bounds: DOMRect | null;
   readonly actions: {
     readonly run: (itemId: string) => void;
     readonly close: () => void;

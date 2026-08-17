@@ -12,11 +12,22 @@ export type {
   HeaderDefinition
 } from "../cells";
 
-/** Leaf column indices a group spans; must be contiguous — Step 9 only supports two levels (leaves + one group layer), not nested groups. */
+/**
+ * A group is either a leaf (declares `columns` directly — the leaf-adjacent
+ * row, closest to the column headers) or a branch (declares `children` —
+ * its own column span is the union of its children's spans, one row further
+ * out). Never both, never neither. Step 9's flat single-level shape
+ * (`{id, title, columns}`) is exactly a depth-1 tree under this — every
+ * existing config still works unchanged. See `HeaderManager` for how depth
+ * is resolved (level 0 = leaf-adjacent, counting outward) and
+ * `doc/progress.md`'s Step 19 entry for why branches are allowed to reach
+ * different depths.
+ */
 export interface HeaderGroupDefinition {
   readonly id: string;
   readonly title: string;
-  readonly columns: readonly number[];
+  readonly columns?: readonly number[];
+  readonly children?: readonly HeaderGroupDefinition[];
 }
 
 /** Resolved once at HeaderManager construction and cached; never re-merged when painting. */
@@ -31,16 +42,4 @@ export interface RuntimeHeaderGroup {
   readonly title: string;
   readonly startColumn: number;
   readonly endColumn: number;
-}
-
-/**
- * One paintable slice of a group — a group whose column span straddles the
- * frozen/scrollable boundary produces two of these, both referencing the
- * same `group` (same `.id`), one with `frozenColumn: true`.
- */
-export interface HeaderGroupFragment {
-  readonly group: RuntimeHeaderGroup;
-  readonly startColumn: number;
-  readonly endColumn: number;
-  readonly frozenColumn: boolean;
 }

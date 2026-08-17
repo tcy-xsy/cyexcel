@@ -23,12 +23,14 @@ export interface ValidationResult {
 }
 
 /**
- * Matches doc/architecture.md §7's published shape. `mount`/`focus`/
- * `getValue`/`destroy` are called synchronously and exactly once each per
- * edit; `validate` is optional and, when present, is checked before commit.
+ * `mount` and `focus` run when editing starts; `updateGeometry` may run for
+ * each later Scene publication; `getValue`/`destroy` finish the edit.
+ * `validate` is optional and, when present, is checked before commit.
  */
 export interface CellEditor {
   mount(container: HTMLElement, context: CellEditorContext): void;
+  /** Repositions the mounted editor from a newly published Scene snapshot. */
+  updateGeometry(rect: CellRect): void;
   focus(): void;
   getValue(): unknown;
   validate?(): ValidationResult;

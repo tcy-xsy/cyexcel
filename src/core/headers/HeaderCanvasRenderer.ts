@@ -1,23 +1,21 @@
-import type { CellRect, IndexRange, LayoutEngine, ViewportState } from "../layout";
-import { toViewportRect } from "../layout";
+import type { CellRect } from "../layout";
 import type { Canvas2DLike } from "../render";
+import type { SceneColumnHeaderFragment, SceneSnapshot } from "../scene";
 import {
   FROZEN_SEPARATOR_THICKNESS,
+  GRID_LINE_COLOR,
   HEADER_BACKGROUND_COLOR,
   HEADER_BORDER_COLOR,
   HEADER_FONT,
   TEXT_COLOR
 } from "../render/theme";
 import type { HeaderManager } from "./HeaderManager";
-import type { HeaderGroupFragment, HeaderRenderContext, HeaderState } from "./types";
+import type { HeaderRenderContext, HeaderState, RuntimeHeaderGroup } from "./types";
 
 export interface HeaderCanvasRendererOptions {
   readonly ctx: Canvas2DLike;
-  readonly layout: LayoutEngine;
+  readonly getScene: () => SceneSnapshot;
   readonly headerManager: HeaderManager;
-  readonly columnHeaderHeight: number;
-  /** 0 (default) means no group row is drawn at all. */
-  readonly groupHeaderHeight?: number;
   readonly getHeaderState?: (column: number) => HeaderState;
 }
 
@@ -38,92 +36,80 @@ function defaultHeaderPainter(context: HeaderRenderContext): void {
   ctx.fillText(defaultHeaderText(title, state), rect.x + DEFAULT_PADDING, rect.y + rect.height / 2);
 }
 
-function rangesOverlap(start: number, end: number, range: IndexRange): boolean {
-  if (range.count === 0) {
-    return false;
-  }
-  const rangeEnd = range.start + range.count - 1;
-  return start <= rangeEnd && end >= range.start;
-}
-
 /**
  * Paints the (up to two-row) column header band: an optional group row on
  * top, the leaf column title row below it. Headers never move vertically
  * (the band is always fully pinned), only horizontally as columns scroll —
- * frozen columns stay put on that axis too, via the same
- * toViewportRect(..., { column: frozen }) pattern ContentLayerRenderer and
- * SelectionLayerRenderer use (doc/architecture.md §6.1). A group whose
- * column span straddles the frozen boundary is drawn as two separate
- * clipped fragments (HeaderManager.getGroupFragments()) that both show the
- * same title — Step 9's 4th pre-written test.
+ * frozen columns stay put on that axis too. Both membership and clipping
+ * come from Scene's canonical column-header panes, so a partially scrolled cell can
+ * never paint back across the frozen boundary. A group whose column span
+ * straddles pane boundaries is drawn as one fragment per pane.
  */
 export class HeaderCanvasRenderer {
   readonly #ctx: Canvas2DLike;
-  readonly #layout: LayoutEngine;
+  readonly #getScene: () => SceneSnapshot;
   readonly #headerManager: HeaderManager;
-  readonly #columnHeaderHeight: number;
-  readonly #groupHeaderHeight: number;
   readonly #getHeaderState: (column: number) => HeaderState;
-  #viewport: ViewportState = { scrollTop: 0, scrollLeft: 0, width: 0, height: 0 };
 
   constructor(options: HeaderCanvasRendererOptions) {
     this.#ctx = options.ctx;
-    this.#layout = options.layout;
+    this.#getScene = options.getScene;
     this.#headerManager = options.headerManager;
-    this.#columnHeaderHeight = options.columnHeaderHeight;
-    this.#groupHeaderHeight = options.groupHeaderHeight ?? 0;
     this.#getHeaderState = options.getHeaderState ?? (() => ({}));
   }
 
-  /** Total pixel height the header band occupies — group row (if any) + leaf title row. */
-  get totalHeight(): number {
-    return this.#columnHeaderHeight + this.#groupHeaderHeight;
-  }
+  paint(scene: SceneSnapshot = this.#getScene()): void {
+    const surface = scene.getSurface("column-header");
+    this.#ctx.clearRect(0, 0, surface.rootRect.width, surface.rootRect.height);
+    const leafBand = scene.getColumnHeaderLeafBand();
 
-  setViewport(viewport: ViewportState): void {
-    this.#viewport = viewport;
-  }
-
-  paint(): void {
-    const frozenColumns: IndexRange = { start: 0, count: this.#layout.frozenColumnCount };
-    const visibleColumns = this.#layout.getVisibleColumnRange(this.#viewport);
-
-    this.#paintLeafHeaders(frozenColumns, true);
-    this.#paintLeafHeaders(visibleColumns, false);
-
-    if (this.#groupHeaderHeight > 0) {
-      for (const fragment of this.#headerManager.getGroupFragments(this.#layout.frozenColumnCount)) {
-        if (fragment.frozenColumn || rangesOverlap(fragment.startColumn, fragment.endColumn, visibleColumns)) {
-          this.#paintGroupFragment(fragment);
+    for (const paneFragment of scene.getVisibleColumnHeaderFragments(leafBand)) {
+      for (let offset = 0; offset < paneFragment.columns.count; offset += 1) {
+        const column = paneFragment.columns.start + offset;
+        const fragment = scene
+          .getColumnHeaderBandFragments(leafBand, column, column)
+          .find((candidate) => candidate.pane === paneFragment.pane);
+        if (fragment) {
+          this.#paintLeafHeader(column, fragment);
         }
       }
     }
 
-    this.#paintBottomBorder();
+    for (const band of scene.getColumnHeaderBands()) {
+      if (band.role !== "group") {
+        continue;
+      }
+      for (const group of this.#headerManager.getGroups(band.level)) {
+        for (const fragment of scene.getColumnHeaderBandFragments(
+          band,
+          group.startColumn,
+          group.endColumn
+        )) {
+          this.#paintGroupFragment(group, fragment);
+        }
+      }
+    }
+
+    this.#paintBottomBorder(scene);
   }
 
   /** A border separating the header band from the body, drawn once per paint() call. */
-  #paintBottomBorder(): void {
+  #paintBottomBorder(scene: SceneSnapshot): void {
+    const surface = scene.getSurface("column-header");
     this.#ctx.fillStyle = HEADER_BORDER_COLOR;
     this.#ctx.fillRect(
       0,
-      this.totalHeight - FROZEN_SEPARATOR_THICKNESS / 2,
-      this.#viewport.width,
+      surface.rootRect.height - FROZEN_SEPARATOR_THICKNESS / 2,
+      surface.rootRect.width,
       FROZEN_SEPARATOR_THICKNESS
     );
   }
 
-  #paintLeafHeaders(range: IndexRange, frozen: boolean): void {
-    for (let column = range.start; column < range.start + range.count; column += 1) {
-      this.#paintLeafHeader(column, frozen);
-    }
-  }
-
-  #paintLeafHeader(column: number, frozen: boolean): void {
+  #paintLeafHeader(column: number, fragment: SceneColumnHeaderFragment): void {
     const header = this.#headerManager.getHeader(column);
-    const rect = this.#leafRect(column, frozen);
+    const rect = fragment.rect;
 
-    this.#withClip(rect, () => {
+    this.#withPaneClip(rect, fragment.clipRect, () => {
       this.#ctx.clearRect(rect.x, rect.y, rect.width, rect.height);
       this.#ctx.fillStyle = HEADER_BACKGROUND_COLOR;
       this.#ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
@@ -142,12 +128,22 @@ export class HeaderCanvasRenderer {
         // paints nothing here — DomHeaderManager owns that cell entirely.
         defaultHeaderPainter(context);
       }
+      // Set fresh (not inherited from whatever a custom renderer above left
+      // behind) — same reasoning as ContentLayerRenderer's own per-cell
+      // gridline stroke, and safe regardless because #withClip's
+      // save()/restore() already isolates this from every other cell.
+      this.#ctx.strokeStyle = GRID_LINE_COLOR;
+      this.#ctx.lineWidth = 1;
+      this.#ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
     });
   }
 
-  #paintGroupFragment(fragment: HeaderGroupFragment): void {
-    const rect = this.#groupRect(fragment);
-    this.#withClip(rect, () => {
+  #paintGroupFragment(
+    group: RuntimeHeaderGroup,
+    fragment: SceneColumnHeaderFragment
+  ): void {
+    const rect = fragment.rect;
+    this.#withPaneClip(rect, fragment.clipRect, () => {
       this.#ctx.clearRect(rect.x, rect.y, rect.width, rect.height);
       this.#ctx.fillStyle = HEADER_BACKGROUND_COLOR;
       this.#ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
@@ -155,34 +151,26 @@ export class HeaderCanvasRenderer {
       this.#ctx.font = HEADER_FONT;
       this.#ctx.textBaseline = "middle";
       this.#ctx.textAlign = "left";
-      this.#ctx.fillText(fragment.group.title, rect.x + DEFAULT_PADDING, rect.y + rect.height / 2);
+      this.#ctx.fillText(group.title, rect.x + DEFAULT_PADDING, rect.y + rect.height / 2);
+      this.#ctx.strokeStyle = GRID_LINE_COLOR;
+      this.#ctx.lineWidth = 1;
+      this.#ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
     });
   }
 
-  #withClip(rect: CellRect, paint: () => void): void {
+  #withPaneClip(rect: CellRect, clipRect: CellRect, paint: () => void): void {
+    const left = Math.max(rect.x, clipRect.x);
+    const top = Math.max(rect.y, clipRect.y);
+    const right = Math.min(rect.x + rect.width, clipRect.x + clipRect.width);
+    const bottom = Math.min(rect.y + rect.height, clipRect.y + clipRect.height);
+    if (right <= left || bottom <= top) {
+      return;
+    }
     this.#ctx.save();
     this.#ctx.beginPath();
-    this.#ctx.rect(rect.x, rect.y, rect.width, rect.height);
+    this.#ctx.rect(left, top, right - left, bottom - top);
     this.#ctx.clip();
     paint();
     this.#ctx.restore();
-  }
-
-  #leafRect(column: number, frozen: boolean): CellRect {
-    const absolute: CellRect = {
-      x: this.#layout.getColumnLeft(column),
-      y: this.#groupHeaderHeight,
-      width: this.#layout.getColumnWidth(column),
-      height: this.#columnHeaderHeight
-    };
-    return toViewportRect(absolute, this.#viewport, { row: true, column: frozen });
-  }
-
-  #groupRect(fragment: HeaderGroupFragment): CellRect {
-    const left = this.#layout.getColumnLeft(fragment.startColumn);
-    const right =
-      this.#layout.getColumnLeft(fragment.endColumn) + this.#layout.getColumnWidth(fragment.endColumn);
-    const absolute: CellRect = { x: left, y: 0, width: right - left, height: this.#groupHeaderHeight };
-    return toViewportRect(absolute, this.#viewport, { row: true, column: fragment.frozenColumn });
   }
 }

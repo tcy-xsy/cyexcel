@@ -1,13 +1,22 @@
 import type { ColumnDefinition } from "../cells";
 import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { IndexRange } from "../layout";
-import { splitByFrozenBoundary } from "../layout";
-import type { HeaderGroupDefinition, HeaderGroupFragment, RuntimeHeader, RuntimeHeaderGroup } from "./types";
+import { columnIndexToLetter } from "./columnLetter";
+import type { HeaderGroupDefinition, RuntimeHeader, RuntimeHeaderGroup } from "./types";
 
 export interface HeaderManagerOptions {
   readonly columns: readonly ColumnDefinition[];
-  /** Two-level grouping only — a group cannot contain another group. */
+  /** Arbitrary-depth nesting via `children` — see HeaderGroupDefinition's own doc comment. */
   readonly groups?: readonly HeaderGroupDefinition[];
+  /**
+   * When a column has no explicit `header`, show its spreadsheet-style
+   * letter (A, B, ..., Z, AA, ...) instead of falling back to its `id`.
+   * Default `false` — unset behavior (fall back to `id`) is unchanged. An
+   * explicit `header` always overrides the letter for that one column —
+   * letter and custom title are mutually exclusive per column, matching
+   * Univer's `customizeColumnHeader()` model (one row, not a stacked
+   * second row), not two simultaneous header rows.
+   */
+  readonly columnLetterFallback?: boolean;
 }
 
 function invalidGroup(group: HeaderGroupDefinition, reason: string): CyExcelError {
@@ -17,11 +26,16 @@ function invalidGroup(group: HeaderGroupDefinition, reason: string): CyExcelErro
   );
 }
 
-function resolveGroup(group: HeaderGroupDefinition, columnCount: number): RuntimeHeaderGroup {
-  if (group.columns.length === 0) {
+/** Validates and resolves a leaf node's own `columns` — the exact Step 9 logic, just decoupled from the recursive tree walk below. */
+function resolveLeafColumns(
+  group: HeaderGroupDefinition,
+  columns: readonly number[],
+  columnCount: number
+): { readonly startColumn: number; readonly endColumn: number } {
+  if (columns.length === 0) {
     throw invalidGroup(group, "columns must not be empty");
   }
-  const sorted = [...group.columns].sort((a, b) => a - b);
+  const sorted = [...columns].sort((a, b) => a - b);
   const startColumn = sorted[0] as number;
   const endColumn = sorted[sorted.length - 1] as number;
 
@@ -37,39 +51,133 @@ function resolveGroup(group: HeaderGroupDefinition, columnCount: number): Runtim
     throw invalidGroup(group, `columns must be within [0, ${columnCount - 1}]`);
   }
 
-  return { id: group.id, title: group.title, startColumn, endColumn };
+  return { startColumn, endColumn };
+}
+
+interface ResolvedNode {
+  readonly group: RuntimeHeaderGroup;
+  /** 0 = leaf-adjacent (declares `columns` directly); a branch is `1 + max(child levels)`. */
+  readonly level: number;
+}
+
+/** Immutable, fully validated header state that can be prepared off to the side. */
+export interface HeaderManagerRoot {
+  readonly headers: readonly RuntimeHeader[];
+  readonly groupsByLevel: readonly (readonly RuntimeHeaderGroup[])[];
 }
 
 /**
- * Resolves declared column `header`s and (optional) two-level groups once,
- * at construction — mirrors ColumnManager's cached-merge design (Step 8).
- * `getGroupFragments()` is the shared geometry both HeaderCanvasRenderer's
- * painting and this class's own tests use to verify Step 9's 4th
- * pre-written test ("分组跨冻结边界时拆成绘制片段但保留同一逻辑 ID").
+ * Recursively resolves one tree node, pushing the resulting RuntimeHeaderGroup
+ * into `groupsByLevel[level]` as a side effect (simplest way to accumulate
+ * across an arbitrary number of independent trees in the top-level array).
+ */
+function resolveNode(
+  node: HeaderGroupDefinition,
+  columnCount: number,
+  groupsByLevel: RuntimeHeaderGroup[][]
+): ResolvedNode {
+  const hasColumns = node.columns !== undefined;
+  const hasChildren = node.children !== undefined;
+  if (hasColumns && hasChildren) {
+    throw invalidGroup(node, "must not specify both columns and children");
+  }
+  if (!hasColumns && !hasChildren) {
+    throw invalidGroup(node, "must specify either columns or children");
+  }
+
+  if (hasChildren) {
+    const children = node.children as readonly HeaderGroupDefinition[];
+    if (children.length === 0) {
+      throw invalidGroup(node, "children must not be empty");
+    }
+    const resolvedChildren = children.map((child) => resolveNode(child, columnCount, groupsByLevel));
+    const sorted = [...resolvedChildren].sort((a, b) => a.group.startColumn - b.group.startColumn);
+    for (let index = 0; index < sorted.length; index += 1) {
+      const current = sorted[index] as ResolvedNode;
+      const previous = sorted[index - 1];
+      if (previous && current.group.startColumn !== previous.group.endColumn + 1) {
+        throw invalidGroup(node, "children must be contiguous, without gaps or overlaps");
+      }
+    }
+    const startColumn = (sorted[0] as ResolvedNode).group.startColumn;
+    const endColumn = (sorted[sorted.length - 1] as ResolvedNode).group.endColumn;
+    const level = 1 + Math.max(...resolvedChildren.map((child) => child.level));
+    const group: RuntimeHeaderGroup = { id: node.id, title: node.title, startColumn, endColumn };
+    (groupsByLevel[level] ??= []).push(group);
+    return { group, level };
+  }
+
+  const { startColumn, endColumn } = resolveLeafColumns(node, node.columns as readonly number[], columnCount);
+  const group: RuntimeHeaderGroup = { id: node.id, title: node.title, startColumn, endColumn };
+  (groupsByLevel[0] ??= []).push(group);
+  return { group, level: 0 };
+}
+
+/**
+ * Resolves declared column `header`s and (optional) arbitrary-depth groups
+ * once, at construction — mirrors ColumnManager's cached-merge design
+ * (Step 8). Pane splitting belongs to Scene/HeaderCanvasRenderer; this
+ * class only owns the logical group spans.
  */
 export class HeaderManager {
-  readonly #headers: readonly RuntimeHeader[];
-  readonly #groups: readonly RuntimeHeaderGroup[];
+  #root: HeaderManagerRoot;
+  /** Fixed at construction — there's no runtime API to change it, same as any other CyExcelCoreOptions field. */
+  readonly #columnLetterFallback: boolean;
 
   constructor(options: HeaderManagerOptions) {
-    this.#headers = options.columns.map((column, index) => {
-      const declared = column.header;
-      if (typeof declared === "string") {
-        return { column: index, title: declared };
-      }
-      const title = declared?.title ?? column.id;
-      return declared?.renderer !== undefined
-        ? { column: index, title, renderer: declared.renderer }
-        : { column: index, title };
-    });
+    this.#columnLetterFallback = options.columnLetterFallback ?? false;
+    this.#root = this.prepareRoot(options.columns, options.groups);
+  }
 
-    this.#groups = (options.groups ?? []).map((group) =>
-      resolveGroup(group, options.columns.length)
-    );
+  get root(): HeaderManagerRoot {
+    return this.#root;
+  }
+
+  /**
+   * Resolves and validates a complete root without touching the live manager.
+   * Callers may discard the result if any later participant fails.
+   */
+  prepareRoot(columns: readonly ColumnDefinition[], groups?: readonly HeaderGroupDefinition[]): HeaderManagerRoot {
+    const headers = HeaderManager.#resolveHeaders(columns, this.#columnLetterFallback);
+    const groupsByLevel = HeaderManager.#resolveGroups(columns, groups);
+    return Object.freeze({ headers, groupsByLevel });
+  }
+
+  /** Swaps a previously prepared root; no resolution, allocation, or hooks run here. */
+  replaceRoot(root: HeaderManagerRoot): void {
+    this.#root = root;
+  }
+
+  static #resolveHeaders(
+    columns: readonly ColumnDefinition[],
+    columnLetterFallback: boolean
+  ): readonly RuntimeHeader[] {
+    return Object.freeze(columns.map((column, index) => {
+      const declared = column.header;
+      const fallback = columnLetterFallback ? columnIndexToLetter(index) : column.id;
+      if (typeof declared === "string") {
+        return Object.freeze({ column: index, title: declared });
+      }
+      const title = declared?.title ?? fallback;
+      return declared?.renderer !== undefined
+        ? Object.freeze({ column: index, title, renderer: declared.renderer })
+        : Object.freeze({ column: index, title });
+    }));
+  }
+
+  static #resolveGroups(
+    columns: readonly ColumnDefinition[],
+    groups: readonly HeaderGroupDefinition[] | undefined
+  ): readonly (readonly RuntimeHeaderGroup[])[] {
+    const groupsByLevel: RuntimeHeaderGroup[][] = [];
+    for (const node of groups ?? []) {
+      resolveNode(node, columns.length, groupsByLevel);
+    }
+    return Object.freeze(groupsByLevel.map((groups) => Object.freeze(groups.map((group) => Object.freeze(group)))));
   }
 
   getHeader(column: number): RuntimeHeader {
-    const header = this.#headers[column];
+    const header = this.#root.headers[column];
     if (!header) {
       throw new CyExcelError(
         CyExcelErrorCode.InvalidCoordinate,
@@ -80,40 +188,17 @@ export class HeaderManager {
   }
 
   getHeaders(): readonly RuntimeHeader[] {
-    return this.#headers;
+    return this.#root.headers;
   }
 
-  getGroups(): readonly RuntimeHeaderGroup[] {
-    return this.#groups;
+  /** Number of group rows — 0 if `groups` was never configured, 1 for Step 9's single-level case, N for an N-deep tree (the deepest branch wins). */
+  get groupDepth(): number {
+    return this.#root.groupsByLevel.length;
   }
 
-  /** Splits every group's column span at the frozen boundary; a group entirely on one side yields exactly one fragment. */
-  getGroupFragments(frozenColumnCount: number): readonly HeaderGroupFragment[] {
-    const fragments: HeaderGroupFragment[] = [];
-    for (const group of this.#groups) {
-      const columnRange: IndexRange = {
-        start: group.startColumn,
-        count: group.endColumn - group.startColumn + 1
-      };
-      const split = splitByFrozenBoundary(columnRange, frozenColumnCount);
-
-      if (split.frozen.count > 0) {
-        fragments.push({
-          group,
-          startColumn: split.frozen.start,
-          endColumn: split.frozen.start + split.frozen.count - 1,
-          frozenColumn: true
-        });
-      }
-      if (split.scrollable.count > 0) {
-        fragments.push({
-          group,
-          startColumn: split.scrollable.start,
-          endColumn: split.scrollable.start + split.scrollable.count - 1,
-          frozenColumn: false
-        });
-      }
-    }
-    return fragments;
+  /** `level` counts outward from the leaves: 0 is the leaf-adjacent row (Step 9's only level and the default), `groupDepth - 1` is the outermost. Out-of-range levels return an empty array, not an error. */
+  getGroups(level = 0): readonly RuntimeHeaderGroup[] {
+    return this.#root.groupsByLevel[level] ?? [];
   }
+
 }

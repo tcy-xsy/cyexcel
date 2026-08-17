@@ -1,13 +1,17 @@
-import type { CellRect, IndexRange, LayoutEngine, ViewportState } from "../layout";
-import { getSelectionBottomRightRect, splitByFrozenBoundary, toViewportRect } from "../layout";
+import type { SceneSelectionHandleFragment, SceneSnapshot } from "../scene";
 import type { CellRange } from "../types";
 import type { SelectionSnapshot } from "../interaction";
 import type { Canvas2DLike } from "./Canvas2DLike";
-import { SELECTION_HANDLE_SIZE, SELECTION_STROKE_COLOR, SELECTION_STROKE_WIDTH } from "./theme";
+import {
+  SELECTION_HANDLE_SIZE,
+  SELECTION_INACTIVE_ALPHA,
+  SELECTION_STROKE_COLOR,
+  SELECTION_STROKE_WIDTH
+} from "./theme";
 
 export interface SelectionLayerRendererOptions {
   readonly ctx: Canvas2DLike;
-  readonly layout: LayoutEngine;
+  readonly getScene: () => SceneSnapshot;
   readonly getSelection: () => SelectionSnapshot;
   /**
    * Whether the box should actually be drawn this frame — defaults to
@@ -23,46 +27,32 @@ export interface SelectionLayerRendererOptions {
   /**
    * The range a fill-handle drag would extend the selection to, or null when
    * no fill drag is in progress. Painted as a dashed preview rect on top of
-   * the solid selection box. Not frozen-aware — fill dragging only extends
-   * down/right into the scrollable band (see FillHandleController), so the
-   * preview never needs the quadrant split the selection box itself does.
+   * the solid selection box. The preview uses the same pane fragments as the
+   * selection itself, so interaction direction does not leak into rendering
+   * geometry assumptions.
    */
   readonly getFillPreviewRange?: () => CellRange | null;
 }
 
-interface Quadrant {
-  readonly rows: IndexRange;
-  readonly columns: IndexRange;
-  readonly frozenRow: boolean;
-  readonly frozenColumn: boolean;
-}
-
-function nonEmptyQuadrants(quadrants: readonly Quadrant[]): Quadrant[] {
-  return quadrants.filter((quadrant) => quadrant.rows.count > 0 && quadrant.columns.count > 0);
-}
-
 /**
- * Draws the current selection's bounding box (SelectionModel.snapshot.range
- * already collapses cell/row/column/all selection kinds into one
- * CellRange — see SelectionModel — so this never branches on `kind`).
- * Frozen-aware via the same up-to-four-quadrant split ContentLayerRenderer
- * uses (doc/architecture.md §6.1): a selection straddling the frozen
- * boundary is drawn as up to 4 separate stroked rects, each translated per
- * its own frozen-row/frozen-column status.
+ * Draws every region in `SelectionSnapshot.ranges` (each already a plain
+ * `CellRange` — `SelectionModel` collapses cell/row/column/all selection
+ * kinds into one per region, so this never branches on `kind`) — see
+ * `#paintRangeBox()` for the per-region frozen-aware quadrant splitting and
+ * the non-active-region fade.
  */
 export class SelectionLayerRenderer {
   readonly #ctx: Canvas2DLike;
-  readonly #layout: LayoutEngine;
+  readonly #getScene: () => SceneSnapshot;
   readonly #getSelection: () => SelectionSnapshot;
   readonly #isVisible: () => boolean;
   readonly #getFillPreviewRange: () => CellRange | null;
   #width = 0;
   #height = 0;
-  #viewport: ViewportState = { scrollTop: 0, scrollLeft: 0, width: 0, height: 0 };
 
   constructor(options: SelectionLayerRendererOptions) {
     this.#ctx = options.ctx;
-    this.#layout = options.layout;
+    this.#getScene = options.getScene;
     this.#getSelection = options.getSelection;
     this.#isVisible = options.isVisible ?? (() => true);
     this.#getFillPreviewRange = options.getFillPreviewRange ?? (() => null);
@@ -73,77 +63,89 @@ export class SelectionLayerRenderer {
     this.#height = height;
   }
 
-  setViewport(viewport: ViewportState): void {
-    this.#viewport = viewport;
-  }
-
-  paintSelection(): void {
+  paintSelection(scene: SceneSnapshot = this.#getScene()): void {
     this.#ctx.clearRect(0, 0, this.#width, this.#height);
     if (!this.#isVisible()) {
       return;
     }
 
-    const { range } = this.#getSelection();
-    const rowIndexRange: IndexRange = { start: range.startRow, count: range.endRow - range.startRow + 1 };
-    const columnIndexRange: IndexRange = {
-      start: range.startColumn,
-      count: range.endColumn - range.startColumn + 1
-    };
-
-    const rowSplit = splitByFrozenBoundary(rowIndexRange, this.#layout.frozenRowCount);
-    const columnSplit = splitByFrozenBoundary(columnIndexRange, this.#layout.frozenColumnCount);
-
-    const quadrants = nonEmptyQuadrants([
-      { rows: rowSplit.frozen, columns: columnSplit.frozen, frozenRow: true, frozenColumn: true },
-      { rows: rowSplit.frozen, columns: columnSplit.scrollable, frozenRow: true, frozenColumn: false },
-      { rows: rowSplit.scrollable, columns: columnSplit.frozen, frozenRow: false, frozenColumn: true },
-      {
-        rows: rowSplit.scrollable,
-        columns: columnSplit.scrollable,
-        frozenRow: false,
-        frozenColumn: false
-      }
-    ]);
-
-    this.#ctx.strokeStyle = SELECTION_STROKE_COLOR;
-    this.#ctx.lineWidth = SELECTION_STROKE_WIDTH;
-    for (const quadrant of quadrants) {
-      const rect = this.#quadrantRect(quadrant);
-      this.#ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-    }
-
-    if (quadrants.length > 0) {
-      this.#paintFillHandle(getSelectionBottomRightRect(range, this.#layout, this.#viewport));
-    }
+    const { ranges } = this.#getSelection();
+    const activeIndex = ranges.length - 1;
+    ranges.forEach((range, index) => {
+      this.#paintRangeBox(scene, range, index === activeIndex);
+    });
 
     const previewRange = this.#getFillPreviewRange();
     if (previewRange) {
-      this.#paintFillPreview(previewRange);
+      this.#paintFillPreview(scene, previewRange);
+    }
+  }
+
+  /**
+   * Strokes one region's bounding box, frozen-aware via the same up-to-four-
+   * quadrant split ContentLayerRenderer uses (doc/architecture.md §6.1) — a
+   * region straddling the frozen boundary is drawn as up to 4 separate
+   * stroked rects, each translated per its own frozen-row/frozen-column
+   * status. Only the active region gets the fill handle; non-active regions
+   * (multi-region selection, Milestone 2 Step 16) are faded via
+   * `globalAlpha` rather than a second color, keeping with this project's
+   * restrained visual-chrome convention — and only bracketed around
+   * non-active regions specifically, so a single-region (pre-multi-region)
+   * selection never touches `globalAlpha` at all.
+   */
+  #paintRangeBox(scene: SceneSnapshot, range: CellRange, active: boolean): void {
+    const fragments = scene.getFragmentsForRange(range);
+
+    this.#ctx.strokeStyle = SELECTION_STROKE_COLOR;
+    this.#ctx.lineWidth = SELECTION_STROKE_WIDTH;
+    if (!active) {
+      this.#ctx.globalAlpha = SELECTION_INACTIVE_ALPHA;
+    }
+    for (const fragment of fragments) {
+      this.#ctx.save();
+      this.#ctx.beginPath();
+      this.#ctx.rect(
+        fragment.pane.clipRect.x,
+        fragment.pane.clipRect.y,
+        fragment.pane.clipRect.width,
+        fragment.pane.clipRect.height
+      );
+      this.#ctx.clip();
+      this.#ctx.strokeRect(fragment.rect.x, fragment.rect.y, fragment.rect.width, fragment.rect.height);
+      this.#ctx.restore();
+    }
+    if (!active) {
+      this.#ctx.globalAlpha = 1;
+    }
+
+    if (active && fragments.length > 0) {
+      const handle = scene.getSelectionHandleFragment(range, SELECTION_HANDLE_SIZE);
+      if (handle) {
+        this.#paintFillHandle(handle);
+      }
     }
   }
 
   /** Dashed preview of the range a fill-handle drag would extend into. */
-  #paintFillPreview(range: CellRange): void {
-    const rect = this.#boundingRect(range);
+  #paintFillPreview(scene: SceneSnapshot, range: CellRange): void {
+    const fragments = scene.getRangeFragments(range);
     this.#ctx.strokeStyle = SELECTION_STROKE_COLOR;
     this.#ctx.lineWidth = SELECTION_STROKE_WIDTH;
     this.#ctx.setLineDash([4, 3]);
-    this.#ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+    for (const fragment of fragments) {
+      this.#ctx.save();
+      this.#ctx.beginPath();
+      this.#ctx.rect(
+        fragment.pane.clipRect.x,
+        fragment.pane.clipRect.y,
+        fragment.pane.clipRect.width,
+        fragment.pane.clipRect.height
+      );
+      this.#ctx.clip();
+      this.#ctx.strokeRect(fragment.rect.x, fragment.rect.y, fragment.rect.width, fragment.rect.height);
+      this.#ctx.restore();
+    }
     this.#ctx.setLineDash([]);
-  }
-
-  #boundingRect(range: CellRange): CellRect {
-    const topLeft = toViewportRect(this.#layout.getCellRect(range.startRow, range.startColumn), this.#viewport);
-    const bottomRight = toViewportRect(
-      this.#layout.getCellRect(range.endRow, range.endColumn),
-      this.#viewport
-    );
-    return {
-      x: topLeft.x,
-      y: topLeft.y,
-      width: bottomRight.x + bottomRight.width - topLeft.x,
-      height: bottomRight.y + bottomRight.height - topLeft.y
-    };
   }
 
   /**
@@ -151,43 +153,19 @@ export class SelectionLayerRenderer {
    * selection, matching Excel's affordance — no drag-to-fill interaction is
    * wired to it (see doc/progress.md's "不做的事" for this patch).
    */
-  #paintFillHandle(rect: CellRect): void {
+  #paintFillHandle(fragment: SceneSelectionHandleFragment): void {
     this.#ctx.fillStyle = SELECTION_STROKE_COLOR;
-    this.#ctx.fillRect(
-      rect.x + rect.width - SELECTION_HANDLE_SIZE / 2,
-      rect.y + rect.height - SELECTION_HANDLE_SIZE / 2,
-      SELECTION_HANDLE_SIZE,
-      SELECTION_HANDLE_SIZE
+    this.#ctx.save();
+    this.#ctx.beginPath();
+    this.#ctx.rect(
+      fragment.clipRect.x,
+      fragment.clipRect.y,
+      fragment.clipRect.width,
+      fragment.clipRect.height
     );
+    this.#ctx.clip();
+    this.#ctx.fillRect(fragment.rect.x, fragment.rect.y, fragment.rect.width, fragment.rect.height);
+    this.#ctx.restore();
   }
 
-  #quadrantRect(quadrant: Quadrant): CellRect {
-    const lastRow = quadrant.rows.start + quadrant.rows.count - 1;
-    const lastColumn = quadrant.columns.start + quadrant.columns.count - 1;
-    const topLeft = this.#translatedCellRect(
-      quadrant.rows.start,
-      quadrant.columns.start,
-      quadrant.frozenRow,
-      quadrant.frozenColumn
-    );
-    const bottomRight = this.#translatedCellRect(
-      lastRow,
-      lastColumn,
-      quadrant.frozenRow,
-      quadrant.frozenColumn
-    );
-    return {
-      x: topLeft.x,
-      y: topLeft.y,
-      width: bottomRight.x + bottomRight.width - topLeft.x,
-      height: bottomRight.y + bottomRight.height - topLeft.y
-    };
-  }
-
-  #translatedCellRect(row: number, column: number, frozenRow: boolean, frozenColumn: boolean): CellRect {
-    return toViewportRect(this.#layout.getCellRect(row, column), this.#viewport, {
-      row: frozenRow,
-      column: frozenColumn
-    });
-  }
 }

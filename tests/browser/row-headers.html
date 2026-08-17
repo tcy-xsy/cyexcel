@@ -10,14 +10,24 @@
         margin: 0;
         padding: 0;
       }
+      #fixture-offset {
+        position: absolute;
+        left: 0;
+        top: 0;
+      }
       #app {
+        /* Keeps every header/corner/context-menu gesture off the viewport
+           origin so client-to-surface conversion is exercised end to end. */
+        position: absolute;
+        left: 37px;
+        top: 29px;
         width: 400px;
         height: 250px;
       }
     </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="fixture-offset"><div id="app"></div></div>
     <script type="module">
       import { CyExcelCore, createBasicContextMenuPlugin } from "/src/core/index.ts";
 
@@ -42,6 +52,13 @@
         plugins: [createBasicContextMenuPlugin()]
       });
 
+      let lastHeaderPointerId = null;
+      document.addEventListener("pointerdown", (event) => {
+        if (event.composedPath().some((target) => target instanceof HTMLCanvasElement && container.contains(target))) {
+          lastHeaderPointerId = event.pointerId;
+        }
+      }, true);
+
       sheet.contextMenu.registerProvider({ name: "row-header-actions", target: "row-header" }, (menuContext) => [
         { type: "action", id: "log-row-header", label: "Log Row Header", run: () => {
           window.__rowHeaderMenuRuns = window.__rowHeaderMenuRuns ?? [];
@@ -50,6 +67,12 @@
       ]);
 
       window.__sheet = sheet;
+      window.__headerCanvasHasCapture = (kind) => {
+        if (lastHeaderPointerId === null) return false;
+        const index = kind === "column" ? 2 : 3;
+        const canvas = document.querySelectorAll("#app canvas")[index];
+        return canvas?.hasPointerCapture(lastHeaderPointerId) ?? false;
+      };
       window.__cyexcelRowHeadersReady = true;
     </script>
   </body>

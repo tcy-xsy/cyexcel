@@ -1,8 +1,14 @@
 export { CellTypeRegistry } from "./CellTypeRegistry";
 export { registerBuiltinCellTypes } from "./builtins";
-export { ColumnManager, type ColumnManagerOptions, type ResolveColumnContext } from "./ColumnManager";
+export {
+  ColumnManager,
+  DEFAULT_COLUMN_WIDTH,
+  type ColumnManagerOptions,
+  type ResolveColumnContext,
+  type RuntimeColumnRoot
+} from "./ColumnManager";
 export { createColumnAwarePainter } from "./createColumnAwarePainter";
-export { dispatchCellAction, type CellActionDispatch } from "./dispatchCellAction";
+export { snapshotColumnDefinitions } from "./columnSnapshot";
 export { DOMCellManager, type DOMCellManagerOptions } from "./DOMCellManager";
 export type {
   CellType,

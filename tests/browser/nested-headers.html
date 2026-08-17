@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel nested headers fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        /* Narrower than the 480px total column width, so column 2 (the
+           first scrollable one) is visible without scrolling — every test
+           below samples within the initial viewport. */
+        width: 350px;
+        height: 300px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore, HeaderManager, hitTestHeaderGroup } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+      const columns = Array.from({ length: 6 }, (_unused, index) => ({
+        id: `c${index}`,
+        field: `c${index}`,
+        width: 80,
+        header: `C${index}`
+      }));
+
+      // Three levels, every one of them straddling the frozen/scrollable
+      // boundary (freeze.columns: 2) via "leafA1" — see doc/progress.md's
+      // Step 19 entry for the exact geometry this was designed around.
+      const headerGroups = [
+        {
+          id: "root",
+          title: "全部",
+          children: [
+            {
+              id: "grpA",
+              title: "组 A",
+              children: [
+                { id: "leafA1", title: "A1", columns: [0, 1, 2] },
+                { id: "leafA2", title: "A2", columns: [3, 4, 5] }
+              ]
+            }
+          ]
+        }
+      ];
+
+      const data = Array.from({ length: 30 }, (_unused, row) =>
+        Object.fromEntries(columns.map((column, index) => [column.field, `${row}-${index}`]))
+      );
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        data,
+        headerGroups,
+        rowHeight: 24,
+        headerHeight: 24,
+        freeze: { columns: 2 }
+      });
+
+      // A parallel HeaderManager with the identical logical groups — used
+      // with the real sheet's published Scene to exercise
+      // hitTestHeaderGroup() from a real browser/bundled build (Node unit
+      // tests already cover its Scene-owned geometry; this is a smoke test
+      // that the public export actually works end-to-end here, not a
+      // re-verification of logic already proven in Node).
+      const headerManager = new HeaderManager({ columns, groups: headerGroups });
+      window.__hitTest = (point) =>
+        hitTestHeaderGroup(point, sheet.scene, headerManager);
+
+      window.__sheet = sheet;
+      window.__cyexcelNestedHeadersReady = true;
+    </script>
+  </body>
+</html>

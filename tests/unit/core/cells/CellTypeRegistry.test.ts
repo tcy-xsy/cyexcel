@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { CellTypeRegistry, CyExcelError, CyExcelErrorCode } from "../../../../src/core";
+import { CellTypeRegistry } from "../../../../src/core/cells";
+import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
 
 describe("CellTypeRegistry.resolve — defaults", () => {
   it("falls back to a base format() when nothing registered", () => {

@@ -1,5 +1,6 @@
 import { CELL_FONT, CELL_PADDING, SELECTION_STROKE_COLOR, SELECTION_STROKE_WIDTH } from "../render/theme";
 import type { CellEditor, CellEditorContext, ValidationResult } from "./CellEditor";
+import { positionEditorElement } from "./positionEditorElement";
 
 export interface TextAreaCellEditorOptions {
   /**
@@ -28,10 +29,7 @@ export function createTextAreaCellEditor(options: TextAreaCellEditorOptions = {}
           ? ""
           : String(context.initialValue));
       element.style.position = "absolute";
-      element.style.left = `${context.rect.x}px`;
-      element.style.top = `${context.rect.y}px`;
-      element.style.width = `${context.rect.width}px`;
-      element.style.height = `${context.rect.height}px`;
+      positionEditorElement(element, context.rect);
       element.style.boxSizing = "border-box";
       element.style.margin = "0";
       element.style.padding = `0 ${CELL_PADDING}px`;
@@ -42,6 +40,11 @@ export function createTextAreaCellEditor(options: TextAreaCellEditorOptions = {}
       element.style.font = CELL_FONT;
       container.appendChild(element);
       textarea = element;
+    },
+    updateGeometry(rect: CellEditorContext["rect"]): void {
+      if (textarea) {
+        positionEditorElement(textarea, rect);
+      }
     },
     focus(): void {
       textarea?.focus();

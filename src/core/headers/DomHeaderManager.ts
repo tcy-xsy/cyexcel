@@ -1,15 +1,13 @@
-import type { CellRect, LayoutEngine, ViewportState } from "../layout";
-import { toViewportRect } from "../layout";
+import type { CellRect } from "../layout";
+import { declareDomPointerOwnership } from "../interaction/domPointerOwnership";
+import type { SceneColumnHeaderFragment, SceneSnapshot } from "../scene";
 import type { HeaderManager } from "./HeaderManager";
 import type { DomHeaderContext, DomHeaderRenderer, DomHeaderRendererFactory, HeaderState } from "./types";
 
 export interface DomHeaderManagerOptions {
   /** Overlay element DOM-rendered headers mount into; must already be connected to the document. */
   readonly container: HTMLElement;
-  readonly layout: LayoutEngine;
   readonly headerManager: HeaderManager;
-  readonly columnHeaderHeight: number;
-  readonly groupHeaderHeight?: number;
   readonly getHeaderState?: (column: number) => HeaderState;
   /** Injected for Node testability (same precedent as DOMCellManager.createHost). Defaults to a real `<div>`. */
   readonly createHost?: () => HTMLElement;
@@ -38,10 +36,7 @@ interface PooledInstance {
  */
 export class DomHeaderManager {
   readonly #container: HTMLElement;
-  readonly #layout: LayoutEngine;
   readonly #headerManager: HeaderManager;
-  readonly #columnHeaderHeight: number;
-  readonly #groupHeaderHeight: number;
   readonly #getHeaderState: (column: number) => HeaderState;
   readonly #createHost: () => HTMLElement;
 
@@ -50,24 +45,21 @@ export class DomHeaderManager {
 
   constructor(options: DomHeaderManagerOptions) {
     this.#container = options.container;
-    this.#layout = options.layout;
     this.#headerManager = options.headerManager;
-    this.#columnHeaderHeight = options.columnHeaderHeight;
-    this.#groupHeaderHeight = options.groupHeaderHeight ?? 0;
     this.#getHeaderState = options.getHeaderState ?? (() => ({}));
     this.#createHost = options.createHost ?? (() => document.createElement("div"));
   }
 
-  sync(viewport: ViewportState): void {
-    const needed = this.#neededColumns(viewport);
+  sync(scene: SceneSnapshot): void {
+    const needed = this.#neededColumns(scene);
 
     for (const column of [...this.#mounted.keys()]) {
       if (!needed.has(column)) {
         this.#release(column);
       }
     }
-    for (const column of needed) {
-      this.#ensureMounted(column, viewport);
+    for (const [column, fragment] of needed) {
+      this.#ensureMounted(column, fragment);
     }
   }
 
@@ -86,25 +78,32 @@ export class DomHeaderManager {
     this.#pool.clear();
   }
 
-  #neededColumns(viewport: ViewportState): Set<number> {
-    const columns = new Set<number>();
-    for (let column = 0; column < this.#layout.frozenColumnCount; column += 1) {
-      columns.add(column);
+  #neededColumns(scene: SceneSnapshot): Map<number, SceneColumnHeaderFragment> {
+    const columns = new Map<number, SceneColumnHeaderFragment>();
+    const band = scene.getColumnHeaderLeafBand();
+    for (const paneFragment of scene.getVisibleColumnHeaderFragments(band)) {
+      for (let offset = 0; offset < paneFragment.columns.count; offset += 1) {
+        const column = paneFragment.columns.start + offset;
+        if (
+          !columns.has(column) &&
+          this.#headerManager.getHeader(column).renderer?.kind === "dom"
+        ) {
+          const fragment = scene
+            .getColumnHeaderBandFragments(band, column, column)
+            .find((candidate) => candidate.pane === paneFragment.pane);
+          if (fragment) {
+            columns.set(column, fragment);
+          }
+        }
+      }
     }
-    const visibleColumns = this.#layout.getVisibleColumnRange(viewport);
-    for (let i = 0; i < visibleColumns.count; i += 1) {
-      columns.add(visibleColumns.start + i);
-    }
-
-    return new Set(
-      [...columns].filter((column) => this.#headerManager.getHeader(column).renderer?.kind === "dom")
-    );
+    return columns;
   }
 
-  #ensureMounted(column: number, viewport: ViewportState): void {
+  #ensureMounted(column: number, fragment: SceneColumnHeaderFragment): void {
     const header = this.#headerManager.getHeader(column);
     const factory = header.renderer as DomHeaderRendererFactory;
-    const rect = this.#leafRect(column, viewport);
+    const rect = fragment.rect;
     const context: DomHeaderContext = {
       column,
       title: header.title,
@@ -114,25 +113,48 @@ export class DomHeaderManager {
 
     const existing = this.#mounted.get(column);
     if (existing) {
-      this.#positionHost(existing.host, rect);
+      this.#positionHost(existing.host, rect, fragment.clipRect);
       existing.instance.update(context);
       return;
     }
 
     const pooled = this.#pool.get(factory)?.pop();
     if (pooled) {
-      this.#positionHost(pooled.host, rect);
+      declareDomPointerOwnership(pooled.host, factory.pointerOwnership, "column-header");
+      this.#positionHost(pooled.host, rect, fragment.clipRect);
       this.#container.append(pooled.host);
-      pooled.instance.update(context);
+      try {
+        pooled.instance.update(context);
+      } catch (error) {
+        pooled.host.remove();
+        try {
+          pooled.instance.destroy();
+        } catch {
+          // Preserve the update failure; the broken pooled instance is discarded.
+        }
+        throw error;
+      }
       this.#mounted.set(column, { column, factory, host: pooled.host, instance: pooled.instance });
       return;
     }
 
     const host = this.#createHost();
-    this.#positionHost(host, rect);
+    declareDomPointerOwnership(host, factory.pointerOwnership, "column-header");
+    this.#positionHost(host, rect, fragment.clipRect);
     this.#container.append(host);
-    const instance = factory.create();
-    instance.mount(host, context);
+    let instance: DomHeaderRenderer | undefined;
+    try {
+      instance = factory.create();
+      instance.mount(host, context);
+    } catch (error) {
+      host.remove();
+      try {
+        instance?.destroy();
+      } catch {
+        // Preserve the create/mount failure; the partial instance is discarded.
+      }
+      throw error;
+    }
     this.#mounted.set(column, { column, factory, host, instance });
   }
 
@@ -148,24 +170,25 @@ export class DomHeaderManager {
     this.#pool.set(header.factory, pooled);
   }
 
-  #positionHost(host: HTMLElement, rect: CellRect): void {
+  #positionHost(host: HTMLElement, rect: CellRect, clipRect: CellRect): void {
     host.style.position = "absolute";
     host.style.left = `${rect.x}px`;
     host.style.top = `${rect.y}px`;
     host.style.width = `${rect.width}px`;
     host.style.height = `${rect.height}px`;
+    const topInset = Math.max(0, clipRect.y - rect.y);
+    const leftInset = Math.max(0, clipRect.x - rect.x);
+    const rightInset = Math.max(
+      0,
+      rect.x + rect.width - (clipRect.x + clipRect.width)
+    );
+    const bottomInset = Math.max(
+      0,
+      rect.y + rect.height - (clipRect.y + clipRect.height)
+    );
+    host.style.clipPath = topInset > 0 || rightInset > 0 || bottomInset > 0 || leftInset > 0
+      ? `inset(${topInset}px ${rightInset}px ${bottomInset}px ${leftInset}px)`
+      : "";
   }
 
-  #leafRect(column: number, viewport: ViewportState): CellRect {
-    const absolute: CellRect = {
-      x: this.#layout.getColumnLeft(column),
-      y: this.#groupHeaderHeight,
-      width: this.#layout.getColumnWidth(column),
-      height: this.#columnHeaderHeight
-    };
-    return toViewportRect(absolute, viewport, {
-      row: true,
-      column: column < this.#layout.frozenColumnCount
-    });
-  }
 }

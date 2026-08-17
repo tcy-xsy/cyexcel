@@ -2,7 +2,7 @@ import { HookManager, RESOLVE_COLUMN_HOOK, type HookRegistry } from "../hooks";
 import type { CellTypeRegistry } from "./CellTypeRegistry";
 import type { ColumnDefinition, RuntimeColumn } from "./types";
 
-const DEFAULT_WIDTH = 120;
+export const DEFAULT_COLUMN_WIDTH = 120;
 const DEFAULT_TYPE = "text";
 const RESOLVED_VERSION = 1;
 
@@ -27,13 +27,10 @@ export interface ColumnManagerOptions {
    * `resolveColumn`.
    */
   readonly hooks?: HookManager;
-  /**
-   * Sugar for `hooks.tap("resolveColumn", ...)`, kept for backward
-   * compatibility with Step 8's original shape — run once per column right
-   * after the type-chain merge.
-   */
-  readonly resolveColumn?: (column: RuntimeColumn) => RuntimeColumn;
 }
+
+/** Fully resolved column state prepared before it becomes the live manager root. */
+export type RuntimeColumnRoot = readonly RuntimeColumn[];
 
 /**
  * Resolves declared ColumnDefinitions into cached RuntimeColumns once, at
@@ -45,21 +42,50 @@ export interface ColumnManagerOptions {
  * painting never re-merges.
  */
 export class ColumnManager {
-  readonly #columns: readonly RuntimeColumn[];
+  #columns: readonly RuntimeColumn[];
+  readonly #registry: CellTypeRegistry;
+  readonly #hooks: HookManager;
 
   constructor(options: ColumnManagerOptions) {
-    const hooks = options.hooks ?? new HookManager({ registry: STANDALONE_HOOK_REGISTRY });
+    this.#registry = options.registry;
+    this.#hooks = options.hooks ?? new HookManager({ registry: STANDALONE_HOOK_REGISTRY });
 
-    if (options.resolveColumn) {
-      const resolveColumn = options.resolveColumn;
-      hooks.tap("resolveColumn", { name: "legacy-resolveColumn-option" }, (column: RuntimeColumn) =>
-        resolveColumn(column)
-      );
-    }
+    this.#columns = this.prepareRoot(options.columns);
+  }
 
-    this.#columns = options.columns.map((definition, index) =>
-      ColumnManager.#resolveOne(definition, index, options.registry, hooks)
+  /**
+   * Resolves a complete replacement root without changing the columns visible
+   * through getColumn()/getColumns(). If resolution throws, the current root
+   * is untouched and the partially built local array becomes unreachable.
+   */
+  prepareRoot(columns: readonly ColumnDefinition[]): RuntimeColumnRoot {
+    return ColumnManager.#resolveAll(columns, this.#registry, this.#hooks);
+  }
+
+  /** Installs an already-resolved root. This narrow commit step never runs hooks. */
+  replaceRoot(root: RuntimeColumnRoot): void {
+    this.#columns = root;
+  }
+
+  static #resolveAll(
+    columns: readonly ColumnDefinition[],
+    registry: CellTypeRegistry,
+    hooks: HookManager
+  ): readonly RuntimeColumn[] {
+    return Object.freeze(
+      columns.map((definition, index) =>
+        ColumnManager.#freezeRuntimeColumn(ColumnManager.#resolveOne(definition, index, registry, hooks))
+      )
     );
+  }
+
+  static #freezeRuntimeColumn(column: RuntimeColumn): RuntimeColumn {
+    const options = column.options?.map((option) => Object.freeze({ ...option }));
+    return Object.freeze({
+      ...column,
+      clipboard: Object.freeze({ ...column.clipboard }),
+      ...(options !== undefined ? { options: Object.freeze(options) } : {})
+    });
   }
 
   getColumn(index: number): RuntimeColumn {
@@ -91,7 +117,7 @@ export class ColumnManager {
       ...cellType,
       id: definition.id,
       field: definition.field ?? definition.id,
-      width: definition.width ?? DEFAULT_WIDTH,
+      width: definition.width ?? DEFAULT_COLUMN_WIDTH,
       typeName,
       ...(definition.renderer !== undefined ? { renderer: definition.renderer } : {}),
       ...(definition.options !== undefined ? { options: definition.options } : {}),
@@ -100,6 +126,7 @@ export class ColumnManager {
         copy: definition.clipboard?.copy ?? true,
         paste: definition.clipboard?.paste ?? true
       },
+      wrap: definition.wrap ?? false,
       version: RESOLVED_VERSION
     };
 

@@ -1,5 +1,6 @@
 import { SELECTION_STROKE_COLOR, SELECTION_STROKE_WIDTH } from "../render/theme";
 import type { CellEditor, CellEditorContext } from "./CellEditor";
+import { positionEditorElement } from "./positionEditorElement";
 
 /**
  * Optional built-in editor for boolean-shaped values — a native
@@ -16,10 +17,7 @@ export function createBooleanCellEditor(): CellEditor {
     mount(container: HTMLElement, context: CellEditorContext): void {
       const wrapperElement = document.createElement("div");
       wrapperElement.style.position = "absolute";
-      wrapperElement.style.left = `${context.rect.x}px`;
-      wrapperElement.style.top = `${context.rect.y}px`;
-      wrapperElement.style.width = `${context.rect.width}px`;
-      wrapperElement.style.height = `${context.rect.height}px`;
+      positionEditorElement(wrapperElement, context.rect);
       wrapperElement.style.boxSizing = "border-box";
       wrapperElement.style.display = "flex";
       wrapperElement.style.alignItems = "center";
@@ -36,6 +34,11 @@ export function createBooleanCellEditor(): CellEditor {
       container.appendChild(wrapperElement);
       wrapper = wrapperElement;
       checkbox = checkboxElement;
+    },
+    updateGeometry(rect): void {
+      if (wrapper) {
+        positionEditorElement(wrapper, rect);
+      }
     },
     focus(): void {
       checkbox?.focus();

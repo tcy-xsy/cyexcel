@@ -9,12 +9,14 @@ export interface Canvas2DLike {
   clearRect(x: number, y: number, width: number, height: number): void;
   strokeRect(x: number, y: number, width: number, height: number): void;
   fillText(text: string, x: number, y: number): void;
+  measureText(text: string): { readonly width: number };
   save(): void;
   restore(): void;
   beginPath(): void;
   rect(x: number, y: number, width: number, height: number): void;
   clip(): void;
   scale(x: number, y: number): void;
+  setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;
   setLineDash(segments: readonly number[]): void;
   fillStyle: string;
   strokeStyle: string;
@@ -22,4 +24,5 @@ export interface Canvas2DLike {
   textBaseline: string;
   textAlign: string;
   lineWidth: number;
+  globalAlpha: number;
 }

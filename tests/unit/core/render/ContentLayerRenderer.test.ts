@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  ContentLayerRenderer,
-  CyExcelError,
-  CyExcelErrorCode,
-  LayoutEngine
-} from "../../../../src/core";
+  LayoutEngine,
+  SkeletonSnapshot,
+  ViewportSnapshot
+} from "../../../../src/core/layout";
+import type { ViewportState } from "../../../../src/core/layout";
+import { ContentLayerRenderer } from "../../../../src/core/render";
+import { SceneSnapshot } from "../../../../src/core/scene";
+import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
 import { RecordingCanvasContext } from "../../../helpers/RecordingCanvasContext";
 
 function createLayout(rowCount: number, columnCount: number): LayoutEngine {
@@ -17,11 +20,59 @@ function createLayout(rowCount: number, columnCount: number): LayoutEngine {
   });
 }
 
+function createScene(layout: LayoutEngine, viewport: ViewportState): SceneSnapshot {
+  return new SceneSnapshot({
+    version: 1,
+    skeleton: SkeletonSnapshot.fromLayout(layout, 1),
+    viewport: new ViewportSnapshot({ version: 1, ...viewport })
+  });
+}
+
+function createContentRenderer(
+  options: Omit<ConstructorParameters<typeof ContentLayerRenderer>[0], "getScene"> & {
+    readonly layout: LayoutEngine;
+    readonly viewport?: ViewportState;
+  }
+): ContentLayerRenderer & { readonly setViewport: (viewport: ViewportState) => void } {
+  const { layout, viewport = { scrollTop: 0, scrollLeft: 0, width: 0, height: 0 }, ...rendererOptions } = options;
+  let scene = createScene(layout, viewport);
+  const renderer = new ContentLayerRenderer({
+    ...rendererOptions,
+    getScene: () => scene
+  });
+  return Object.assign(renderer, {
+    setViewport(nextViewport: ViewportState) {
+      scene = createScene(layout, nextViewport);
+    }
+  });
+}
+
 describe("ContentLayerRenderer.paintContent — dirty regions", () => {
+  it("uses an explicitly captured frame Scene without rereading the live Scene source", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(1, 1);
+    const frameScene = createScene(layout, {
+      scrollTop: 0,
+      scrollLeft: 0,
+      width: 50,
+      height: 20
+    });
+    const renderer = new ContentLayerRenderer({
+      ctx,
+      getScene: () => {
+        throw new Error("live Scene must not be read during a captured render frame");
+      },
+      getCellValue: () => "frame"
+    });
+
+    expect(() => renderer.paintContent({ kind: "full" }, frameScene)).not.toThrow();
+    expect(ctx.calls.filter((call) => call.method === "fillText")[0]?.args[0]).toBe("frame");
+  });
+
   it("only paints the cell in a single-cell dirty region", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(10, 10);
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: (row, column) => `${row}:${column}`
@@ -42,7 +93,7 @@ describe("ContentLayerRenderer.paintContent — dirty regions", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(1, 2);
     const values: Record<number, unknown> = { 0: undefined, 1: null };
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: (_row, column) => values[column]
@@ -60,7 +111,7 @@ describe("ContentLayerRenderer.paintContent — dirty regions", () => {
   it("skips dirty regions that fall entirely outside the visible viewport", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(100, 100);
-    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    const renderer = createContentRenderer({ ctx, layout, getCellValue: () => "x" });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
 
     renderer.paintContent({
@@ -76,7 +127,7 @@ describe("ContentLayerRenderer.paintContent — full repaint stays clipped to th
   it("paints only the visible cells of a 1,000,000-row table, not the whole table", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(1_000_000, 50);
-    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    const renderer = createContentRenderer({ ctx, layout, getCellValue: () => "x" });
     const viewport = { scrollTop: 500_000, scrollLeft: 0, width: 400, height: 200 };
     renderer.setViewport(viewport);
 
@@ -96,7 +147,7 @@ describe("ContentLayerRenderer.paintContent — scroll offset translation", () =
   it("draws visible cells at their viewport-relative position, not their absolute content position", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(100, 10); // rowHeight 20, columnWidths 50
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: (row, column) => `${row}:${column}`
@@ -122,7 +173,7 @@ describe("ContentLayerRenderer.paintContent — scroll offset translation", () =
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(100, 10);
     const seenRects: Array<{ x: number; y: number }> = [];
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: () => "x",
@@ -155,7 +206,7 @@ describe("ContentLayerRenderer — frozen rows/columns (Step 9)", () => {
   it("paints all four quadrants on a full repaint: frozen corner, frozen row band, frozen column band, scrollable body", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createFrozenLayout();
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: (row, column) => `${row}:${column}`
@@ -180,7 +231,7 @@ describe("ContentLayerRenderer — frozen rows/columns (Step 9)", () => {
   it("keeps a frozen row's y fixed and a frozen column's x fixed regardless of scroll", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createFrozenLayout();
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: () => "x"
@@ -198,7 +249,7 @@ describe("ContentLayerRenderer — frozen rows/columns (Step 9)", () => {
   it("region dirty invalidation repaints a frozen cell (previously unreachable)", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createFrozenLayout();
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: (row, column) => `${row}:${column}`
@@ -217,7 +268,7 @@ describe("ContentLayerRenderer — frozen rows/columns (Step 9)", () => {
   it("clips each quadrant's drawing with save/clip/restore", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createFrozenLayout();
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: () => "x"
@@ -242,7 +293,7 @@ describe("ContentLayerRenderer — frozen rows/columns (Step 9)", () => {
   it("degenerates to a single unclipped-by-freeze region when nothing is frozen (no regression)", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(10, 10); // no freeze option — matches every pre-Step-9 test's setup
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: (row, column) => `${row}:${column}`
@@ -263,7 +314,7 @@ describe("ContentLayerRenderer — canvas state isolation between cells", () => 
   it("wraps each cell's painter call in its own save/restore, independent of the quadrant-level clip", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(1, 3);
-    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    const renderer = createContentRenderer({ ctx, layout, getCellValue: () => "x" });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 150, height: 20 });
 
     renderer.paintContent({ kind: "full" });
@@ -279,7 +330,7 @@ describe("ContentLayerRenderer — canvas state isolation between cells", () => 
   it("does not let one cell's painter-modified ctx state leak into the next cell's default painting", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(1, 2);
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: (_row, column) => (column === 0 ? "custom" : "plain"),
@@ -325,7 +376,7 @@ describe("ContentLayerRenderer error isolation", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(3, 1);
     const errors: Array<{ error: unknown; cell: { row: number; column: number } }> = [];
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: (row) => `row-${row}`,
@@ -355,7 +406,7 @@ describe("ContentLayerRenderer synchronous renderer contract", () => {
   it("throws immediately when a painter returns a thenable and checkSyncRenderers is true", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(1, 1);
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: () => "x",
@@ -375,7 +426,7 @@ describe("ContentLayerRenderer synchronous renderer contract", () => {
   it("does not check for thenables when checkSyncRenderers is false", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(1, 1);
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: () => "x",
@@ -389,10 +440,35 @@ describe("ContentLayerRenderer synchronous renderer contract", () => {
 });
 
 describe("ContentLayerRenderer — gridlines", () => {
+  it("does not paint zero-width hidden columns", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = new LayoutEngine({
+      rowCount: 1,
+      columnCount: 2,
+      rowHeight: 20,
+      columnWidths: [0, 50]
+    });
+    const renderer = createContentRenderer({
+      ctx,
+      layout,
+      getCellValue: (_row, column) => `column-${column}`
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    expect(ctx.calls.filter((call) => call.method === "fillText").map((call) => call.args[0])).toEqual([
+      "column-1"
+    ]);
+    expect(ctx.calls.filter((call) => call.method === "strokeRect")).toEqual([
+      { method: "strokeRect", args: [0, 0, 50, 20] }
+    ]);
+  });
+
   it("strokes a gridline around each painted cell by default", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(1, 2);
-    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    const renderer = createContentRenderer({ ctx, layout, getCellValue: () => "x" });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 20 });
 
     renderer.paintContent({ kind: "full" });
@@ -407,7 +483,7 @@ describe("ContentLayerRenderer — gridlines", () => {
   it("does not stroke gridlines when showGridLines is false", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(1, 2);
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: () => "x",
@@ -423,7 +499,7 @@ describe("ContentLayerRenderer — gridlines", () => {
   it("still strokes a gridline around a cell whose custom painter throws (default-painter fallback path)", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(1, 1);
-    const renderer = new ContentLayerRenderer({
+    const renderer = createContentRenderer({
       ctx,
       layout,
       getCellValue: () => "x",
@@ -444,7 +520,7 @@ describe("ContentLayerRenderer — frozen row/column separators", () => {
   it("draws no separators when nothing is frozen", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(5, 5);
-    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    const renderer = createContentRenderer({ ctx, layout, getCellValue: () => "x" });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 100 });
 
     renderer.paintContent({ kind: "full" });
@@ -463,7 +539,7 @@ describe("ContentLayerRenderer — frozen row/column separators", () => {
       columnWidths: Array.from({ length: 10 }, () => 50),
       freeze: { rows: 2, columns: 3 }
     });
-    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    const renderer = createContentRenderer({ ctx, layout, getCellValue: () => "x" });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 200, height: 150 });
 
     renderer.paintContent({ kind: "full" });
@@ -485,7 +561,7 @@ describe("ContentLayerRenderer — frozen row/column separators", () => {
       columnWidths: Array.from({ length: 10 }, () => 50),
       freeze: { rows: 1, columns: 0 }
     });
-    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    const renderer = createContentRenderer({ ctx, layout, getCellValue: () => "x" });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 200, height: 150 });
 
     renderer.paintContent({
@@ -502,7 +578,7 @@ describe("ContentLayerRenderer no-op cases", () => {
   it("does nothing when nothing is visible", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(10, 10);
-    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    const renderer = createContentRenderer({ ctx, layout, getCellValue: () => "x" });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 0, height: 0 });
 
     renderer.paintContent({ kind: "full" });
@@ -513,7 +589,7 @@ describe("ContentLayerRenderer no-op cases", () => {
   it("does nothing when dirty.kind is none", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(10, 10);
-    const renderer = new ContentLayerRenderer({ ctx, layout, getCellValue: () => "x" });
+    const renderer = createContentRenderer({ ctx, layout, getCellValue: () => "x" });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 100 });
 
     renderer.paintContent({ kind: "none" });

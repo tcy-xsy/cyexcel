@@ -1,11 +1,10 @@
-import type { CellRect, LayoutEngine, ViewportState } from "../layout";
-import { toViewportRect } from "../layout";
+import type { SceneCellFragment, SceneSnapshot } from "../scene";
+import { declareDomPointerOwnership } from "../interaction/domPointerOwnership";
 import type { DomCellContext, DomCellRenderer, DomCellRendererFactory, RuntimeColumn } from "./types";
 
 export interface DOMCellManagerOptions {
   /** Overlay element DOM-rendered cells mount into; must already be connected to the document. */
   readonly container: HTMLElement;
-  readonly layout: LayoutEngine;
   readonly getColumn: (column: number) => RuntimeColumn;
   readonly getCellValue: (row: number, column: number) => unknown;
   readonly commitValue: (row: number, column: number, value: unknown) => void;
@@ -19,11 +18,24 @@ interface MountedCell {
   readonly factory: DomCellRendererFactory;
   readonly host: HTMLElement;
   readonly instance: DomCellRenderer;
+  readonly binding: CommitBinding;
 }
 
 interface PooledInstance {
   readonly host: HTMLElement;
   readonly instance: DomCellRenderer;
+}
+
+interface NeededCell {
+  readonly row: number;
+  readonly column: number;
+  readonly fragment: SceneCellFragment;
+}
+
+interface CommitBinding {
+  readonly row: number;
+  readonly column: number;
+  active: boolean;
 }
 
 function cellKey(row: number, column: number): string {
@@ -42,7 +54,6 @@ function cellKey(row: number, column: number): string {
  */
 export class DOMCellManager {
   readonly #container: HTMLElement;
-  readonly #layout: LayoutEngine;
   readonly #getColumn: (column: number) => RuntimeColumn;
   readonly #getCellValue: (row: number, column: number) => unknown;
   readonly #commitValue: (row: number, column: number, value: unknown) => void;
@@ -53,7 +64,6 @@ export class DOMCellManager {
 
   constructor(options: DOMCellManagerOptions) {
     this.#container = options.container;
-    this.#layout = options.layout;
     this.#getColumn = options.getColumn;
     this.#getCellValue = options.getCellValue;
     this.#commitValue = options.commitValue;
@@ -61,8 +71,8 @@ export class DOMCellManager {
   }
 
   /** Recomputes which cells need a mounted DOM renderer and reconciles against what's currently mounted. */
-  sync(viewport: ViewportState): void {
-    const needed = this.#neededCells(viewport);
+  sync(scene: SceneSnapshot): void {
+    const needed = this.#neededCells(scene);
 
     for (const key of [...this.#mounted.keys()]) {
       if (!needed.has(key)) {
@@ -70,13 +80,14 @@ export class DOMCellManager {
       }
     }
 
-    for (const [key, [row, column]] of needed) {
-      this.#ensureMounted(key, row, column, viewport);
+    for (const [key, cell] of needed) {
+      this.#ensureMounted(key, cell);
     }
   }
 
   dispose(): void {
     for (const cell of this.#mounted.values()) {
+      cell.binding.active = false;
       cell.instance.destroy();
       cell.host.remove();
     }
@@ -90,70 +101,85 @@ export class DOMCellManager {
     this.#pool.clear();
   }
 
-  #neededCells(viewport: ViewportState): Map<string, readonly [number, number]> {
-    const visibleRows = this.#layout.getVisibleRowRange(viewport);
-    const visibleColumns = this.#layout.getVisibleColumnRange(viewport);
-
-    const rows = new Set<number>();
-    for (let row = 0; row < this.#layout.frozenRowCount; row += 1) {
-      rows.add(row);
-    }
-    for (let i = 0; i < visibleRows.count; i += 1) {
-      rows.add(visibleRows.start + i);
-    }
-
-    const columns = new Set<number>();
-    for (let column = 0; column < this.#layout.frozenColumnCount; column += 1) {
-      columns.add(column);
-    }
-    for (let i = 0; i < visibleColumns.count; i += 1) {
-      columns.add(visibleColumns.start + i);
-    }
-    const domColumns = [...columns].filter((column) => this.#getColumn(column).renderer?.kind === "dom");
-
-    const needed = new Map<string, readonly [number, number]>();
-    for (const row of rows) {
-      for (const column of domColumns) {
-        needed.set(cellKey(row, column), [row, column]);
+  #neededCells(scene: SceneSnapshot): Map<string, NeededCell> {
+    const needed = new Map<string, NeededCell>();
+    for (const fragment of scene.getVisibleFragments()) {
+      for (let column = fragment.columns.start; column < fragment.columns.start + fragment.columns.count; column += 1) {
+        if (this.#getColumn(column).renderer?.kind !== "dom") {
+          continue;
+        }
+        for (let row = fragment.rows.start; row < fragment.rows.start + fragment.rows.count; row += 1) {
+          const cellFragment = scene.getCellFragments({ row, column })[0];
+          if (cellFragment) {
+            needed.set(cellKey(row, column), { row, column, fragment: cellFragment });
+          }
+        }
       }
     }
     return needed;
   }
 
-  #ensureMounted(key: string, row: number, column: number, viewport: ViewportState): void {
+  #ensureMounted(key: string, cell: NeededCell): void {
+    const { row, column, fragment } = cell;
     const runtimeColumn = this.#getColumn(column);
     const factory = runtimeColumn.renderer as DomCellRendererFactory;
-    const rect = this.#cellRect(row, column, viewport);
-    const context: DomCellContext = {
-      row,
-      column: runtimeColumn,
-      value: this.#getCellValue(row, column),
-      rect,
-      actions: { commit: (value) => this.#commitValue(row, column, value) }
-    };
-
+    const { rect } = fragment;
     const existing = this.#mounted.get(key);
     if (existing) {
-      this.#positionHost(existing.host, rect);
-      existing.instance.update(context);
+      this.#positionHost(existing.host, fragment);
+      existing.instance.update(this.#createContext(runtimeColumn, rect, existing.binding));
       return;
     }
 
+    const binding: CommitBinding = { row, column, active: true };
+    const context = this.#createContext(runtimeColumn, rect, binding);
     const pooled = this.#pool.get(factory)?.pop();
     if (pooled) {
-      this.#positionHost(pooled.host, rect);
+      declareDomPointerOwnership(pooled.host, factory.pointerOwnership, "body");
+      this.#positionHost(pooled.host, fragment);
       this.#container.append(pooled.host);
-      pooled.instance.update(context);
-      this.#mounted.set(key, { row, column, factory, host: pooled.host, instance: pooled.instance });
+      try {
+        pooled.instance.update(context);
+      } catch (error) {
+        binding.active = false;
+        pooled.host.remove();
+        try {
+          pooled.instance.destroy();
+        } catch {
+          // Preserve the update failure; the broken pooled instance is discarded.
+        }
+        throw error;
+      }
+      this.#mounted.set(key, {
+        row,
+        column,
+        factory,
+        host: pooled.host,
+        instance: pooled.instance,
+        binding
+      });
       return;
     }
 
     const host = this.#createHost();
-    this.#positionHost(host, rect);
+    declareDomPointerOwnership(host, factory.pointerOwnership, "body");
+    this.#positionHost(host, fragment);
     this.#container.append(host);
-    const instance = factory.create();
-    instance.mount(host, context);
-    this.#mounted.set(key, { row, column, factory, host, instance });
+    let instance: DomCellRenderer | undefined;
+    try {
+      instance = factory.create();
+      instance.mount(host, context);
+    } catch (error) {
+      binding.active = false;
+      host.remove();
+      try {
+        instance?.destroy();
+      } catch {
+        // Preserve the create/mount failure; the partial instance is discarded.
+      }
+      throw error;
+    }
+    this.#mounted.set(key, { row, column, factory, host, instance, binding });
   }
 
   #release(key: string): void {
@@ -162,24 +188,52 @@ export class DOMCellManager {
       return;
     }
     this.#mounted.delete(key);
+    cell.binding.active = false;
     cell.host.remove();
     const pooled = this.#pool.get(cell.factory) ?? [];
     pooled.push({ host: cell.host, instance: cell.instance });
     this.#pool.set(cell.factory, pooled);
   }
 
-  #positionHost(host: HTMLElement, rect: CellRect): void {
+  #createContext(
+    runtimeColumn: RuntimeColumn,
+    rect: SceneCellFragment["rect"],
+    binding: CommitBinding
+  ): DomCellContext {
+    return {
+      row: binding.row,
+      column: runtimeColumn,
+      value: this.#getCellValue(binding.row, binding.column),
+      rect,
+      actions: Object.freeze({
+        commit: (value: unknown) => {
+          if (binding.active) {
+            this.#commitValue(binding.row, binding.column, value);
+          }
+        }
+      })
+    };
+  }
+
+  #positionHost(host: HTMLElement, fragment: SceneCellFragment): void {
+    const { rect, pane } = fragment;
     host.style.position = "absolute";
     host.style.left = `${rect.x}px`;
     host.style.top = `${rect.y}px`;
     host.style.width = `${rect.width}px`;
     host.style.height = `${rect.height}px`;
-  }
-
-  #cellRect(row: number, column: number, viewport: ViewportState): CellRect {
-    return toViewportRect(this.#layout.getCellRect(row, column), viewport, {
-      row: row < this.#layout.frozenRowCount,
-      column: column < this.#layout.frozenColumnCount
-    });
+    const topInset = Math.max(0, pane.clipRect.y - rect.y);
+    const rightInset = Math.max(
+      0,
+      rect.x + rect.width - (pane.clipRect.x + pane.clipRect.width)
+    );
+    const bottomInset = Math.max(
+      0,
+      rect.y + rect.height - (pane.clipRect.y + pane.clipRect.height)
+    );
+    const leftInset = Math.max(0, pane.clipRect.x - rect.x);
+    host.style.clipPath = topInset > 0 || rightInset > 0 || bottomInset > 0 || leftInset > 0
+      ? `inset(${topInset}px ${rightInset}px ${bottomInset}px ${leftInset}px)`
+      : "";
   }
 }

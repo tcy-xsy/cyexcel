@@ -1,5 +1,6 @@
 import { CELL_FONT, SELECTION_STROKE_COLOR, SELECTION_STROKE_WIDTH } from "../render/theme";
 import type { CellEditor, CellEditorContext } from "./CellEditor";
+import { positionEditorElement } from "./positionEditorElement";
 
 export interface SelectCellEditorOption {
   readonly value: string;
@@ -22,10 +23,7 @@ export function createSelectCellEditor(options: readonly SelectCellEditorOption[
     mount(container: HTMLElement, context: CellEditorContext): void {
       const element = document.createElement("select");
       element.style.position = "absolute";
-      element.style.left = `${context.rect.x}px`;
-      element.style.top = `${context.rect.y}px`;
-      element.style.width = `${context.rect.width}px`;
-      element.style.height = `${context.rect.height}px`;
+      positionEditorElement(element, context.rect);
       element.style.boxSizing = "border-box";
       element.style.border = `${SELECTION_STROKE_WIDTH}px solid ${SELECTION_STROKE_COLOR}`;
       element.style.outline = "none";
@@ -57,6 +55,11 @@ export function createSelectCellEditor(options: readonly SelectCellEditorOption[
 
       container.appendChild(element);
       select = element;
+    },
+    updateGeometry(rect): void {
+      if (select) {
+        positionEditorElement(select, rect);
+      }
     },
     focus(): void {
       select?.focus();

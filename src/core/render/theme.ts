@@ -10,6 +10,11 @@ export const GRID_LINE_COLOR = "#e2e5ea";
 export const TEXT_COLOR = "#111827";
 export const CELL_PADDING = 4;
 export const CELL_FONT = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+/** Vertical space one wrapped line occupies — used only by wrap-enabled columns' multi-line paint/measurement; a single-line cell still centers on its own rect.height and never reads this. */
+// 16px line box + 4px top/bottom padding exactly matches the default 24px
+// row height, so opting a column into wrap does not make ordinary one-line
+// rows grow before any content actually needs a second line.
+export const CELL_LINE_HEIGHT = 16;
 export const HEADER_FONT = `600 ${CELL_FONT}`;
 export const HEADER_BACKGROUND_COLOR = "#f3f4f6";
 export const HEADER_HOVER_BACKGROUND_COLOR = "#e5e7eb";
@@ -19,3 +24,8 @@ export const FROZEN_SEPARATOR_THICKNESS = 2;
 export const SELECTION_STROKE_COLOR = "#3b82f6";
 export const SELECTION_STROKE_WIDTH = 1.5;
 export const SELECTION_HANDLE_SIZE = 6;
+/** Non-active regions in a multi-region selection (Ctrl/Cmd+click) — same stroke color, just faded, keeping with this project's "thin and light, not bold" chrome convention. */
+export const SELECTION_INACTIVE_ALPHA = 0.5;
+/** The row drag-to-reorder insertion indicator — reuses the selection blue rather than introducing a new hue, just thicker so it reads as a distinct "drop here" line rather than a selection edge. */
+export const ROW_REORDER_INDICATOR_COLOR = SELECTION_STROKE_COLOR;
+export const ROW_REORDER_INDICATOR_THICKNESS = 3;

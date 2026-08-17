@@ -1,4 +1,4 @@
-export { classifyContextMenuTarget, type HeaderLayoutLike } from "./hitTest";
+export { classifyContextMenuTarget } from "./hitTest";
 export { ContextMenuService, type ContextMenuServiceOptions } from "./ContextMenuService";
 export { DefaultMenuRenderer } from "./DefaultMenuRenderer";
 export { createBasicContextMenuPlugin } from "./basicMenuPlugin";

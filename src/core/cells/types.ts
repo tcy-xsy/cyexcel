@@ -1,4 +1,5 @@
 import type { CellEditor } from "../editors";
+import type { DomPointerOwnership } from "../interaction/domPointerOwnership";
 import type { CellRect } from "../layout";
 import type { Canvas2DLike } from "../render";
 
@@ -88,6 +89,8 @@ export interface DomCellRenderer<T = unknown> {
 
 export interface DomCellRendererFactory<T = unknown> {
   readonly kind: "dom";
+  /** Terminal ownership for events retargeted to the mounted host, including closed-shadow events. */
+  readonly pointerOwnership: DomPointerOwnership;
   create(): DomCellRenderer<T>;
 }
 
@@ -127,10 +130,9 @@ export interface HeaderHitTestContext extends HeaderRenderContext {
 }
 
 /**
- * Minimal placeholder outcome vocabulary — Step 9 doesn't wire either
- * action to a real Command (no sort/filter subsystem exists yet), so
- * `hitTest()` implementations can return these but nothing in
- * `HeaderCanvasRenderer` dispatches them anywhere yet.
+ * Canvas header interaction outcomes. CyExcelCore emits a `header-action`
+ * event after the input receipt closes; hosts can translate it into their
+ * own sort/filter command without coupling the renderer to model mutation.
  */
 export type HeaderAction = { readonly type: "toggle-sort" } | { readonly type: "toggle-filter" };
 
@@ -155,6 +157,8 @@ export interface DomHeaderRenderer {
 
 export interface DomHeaderRendererFactory {
   readonly kind: "dom";
+  /** Terminal ownership for events retargeted to the mounted host, including closed-shadow events. */
+  readonly pointerOwnership: DomPointerOwnership;
   create(): DomHeaderRenderer;
 }
 
@@ -215,6 +219,16 @@ export interface ColumnDefinition<T = unknown> {
   readonly createEditor?: (context: CellFormatContext) => CellEditor;
   /** See ColumnClipboardPolicy. Defaults to `{ copy: true, paste: true }`. */
   readonly clipboard?: ColumnClipboardPolicy;
+  /**
+   * Wraps text onto multiple lines instead of the default single-line
+   * `fillText()` — only takes effect for the built-in formatted-text paint
+   * path (`createColumnAwarePainter`'s `drawFormattedText()`); a column
+   * with a custom `renderer` owns its own painting entirely and this has no
+   * effect on it. Default `false` — unset behavior (single line) is
+   * unchanged, same "unset is a no-op" precedent as every other optional
+   * column field here.
+   */
+  readonly wrap?: boolean;
 }
 
 /**
@@ -228,6 +242,7 @@ export interface RuntimeColumn<T = unknown> extends CellType<T> {
   readonly typeName: string;
   readonly renderer?: CanvasCellRenderer<T> | DomCellRendererFactory<T>;
   readonly clipboard: Required<ColumnClipboardPolicy>;
+  readonly wrap: boolean;
   /** Bumped only if columns are ever re-resolved; Step 8 resolves once at construction. */
   readonly version: number;
 }

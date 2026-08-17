@@ -49,6 +49,7 @@ export class DefaultMenuRenderer implements ContextMenuRenderer {
     container.appendChild(root);
     this.#root = root;
     this.#build();
+    this.#clampToBounds(context.bounds);
   }
 
   update(context: ContextMenuRenderContext): void {
@@ -67,6 +68,38 @@ export class DefaultMenuRenderer implements ContextMenuRenderer {
     this.#context = null;
     this.#highlightedId = null;
     this.#itemElements.clear();
+  }
+
+  /**
+   * Shifts the just-mounted (now real-layout, measurable) root left/up by
+   * just enough to stay fully within `bounds`, if it was given one — a
+   * plain anchor-point placement with no awareness of available space
+   * would otherwise overflow past whatever ancestor is doing the actual
+   * clipping (typically the scroller's `overflow: auto`), and the
+   * overflowing portion isn't just invisible, it's also unclickable (a
+   * real user report: "在右侧插入列" was silently doing nothing — the
+   * click landed past the clip boundary, on nothing). Only ever shifts
+   * toward the anchor point's own side, never past `bounds`'s opposite
+   * edge — a menu wider/taller than `bounds` itself still clips at
+   * `bounds.left`/`bounds.top` rather than being pushed further off
+   * in the other direction.
+   */
+  #clampToBounds(bounds: DOMRect | null): void {
+    if (!bounds || !this.#root) {
+      return;
+    }
+    const rect = this.#root.getBoundingClientRect();
+    let deltaX = Math.min(0, bounds.right - rect.right);
+    deltaX = Math.max(deltaX, bounds.left - rect.left);
+    let deltaY = Math.min(0, bounds.bottom - rect.bottom);
+    deltaY = Math.max(deltaY, bounds.top - rect.top);
+    if (deltaX === 0 && deltaY === 0) {
+      return;
+    }
+    const currentLeft = Number.parseFloat(this.#root.style.left) || 0;
+    const currentTop = Number.parseFloat(this.#root.style.top) || 0;
+    this.#root.style.left = `${currentLeft + deltaX}px`;
+    this.#root.style.top = `${currentTop + deltaY}px`;
   }
 
   #handleKeyDown = (event: KeyboardEvent): void => {

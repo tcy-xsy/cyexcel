@@ -3,11 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   CellTypeRegistry,
   ColumnManager,
-  HookManager,
-  PRODUCTION_HOOK_REGISTRY,
   registerBuiltinCellTypes
-} from "../../../../src/core";
-import type { RuntimeColumn } from "../../../../src/core";
+} from "../../../../src/core/cells";
+import type { RuntimeColumn } from "../../../../src/core/cells";
+import { HookManager, PRODUCTION_HOOK_REGISTRY } from "../../../../src/core/hooks";
 
 function registryWithMoney(): CellTypeRegistry {
   const registry = new CellTypeRegistry();
@@ -39,6 +38,16 @@ describe("ColumnManager — structural defaults and column overrides", () => {
 
     expect(column.field).toBe("productSku");
     expect(column.width).toBe(200);
+  });
+
+  it("defaults wrap to false and preserves an explicit true value", () => {
+    const manager = new ColumnManager({
+      columns: [{ id: "plain" }, { id: "wrapped", wrap: true }],
+      registry: registryWithMoney()
+    });
+
+    expect(manager.getColumn(0).wrap).toBe(false);
+    expect(manager.getColumn(1).wrap).toBe(true);
   });
 
   it("defaults clipboard.copy and clipboard.paste to true when the column doesn't specify them", () => {
@@ -135,10 +144,16 @@ describe("ColumnManager — createEditor", () => {
 
 describe("ColumnManager — resolveColumn hook", () => {
   it("runs last and can override anything the type chain or column definition produced", () => {
+    const hooks = new HookManager({ registry: PRODUCTION_HOOK_REGISTRY });
+    hooks.tap("resolveColumn", { name: "override-column" }, (column: RuntimeColumn) => ({
+      ...column,
+      width: 999,
+      format: () => "overridden"
+    }));
     const manager = new ColumnManager({
       columns: [{ id: "price", type: "money", width: 90 }],
       registry: registryWithMoney(),
-      resolveColumn: (column) => ({ ...column, width: 999, format: () => "overridden" })
+      hooks
     });
 
     const column = manager.getColumn(0);
@@ -149,7 +164,7 @@ describe("ColumnManager — resolveColumn hook", () => {
 });
 
 describe("ColumnManager — shared HookManager", () => {
-  it("hooks.tap('resolveColumn', ...) is equivalent to the resolveColumn option", () => {
+  it("runs a registered resolveColumn waterfall", () => {
     const hooks = new HookManager({ registry: PRODUCTION_HOOK_REGISTRY });
     hooks.tap("resolveColumn", { name: "force-width" }, (column: RuntimeColumn) => ({
       ...column,
@@ -213,13 +228,15 @@ describe("ColumnManager — shared HookManager", () => {
 describe("ColumnManager — resolves once and caches", () => {
   it("only calls resolveColumn once per column at construction, not on every getColumn() call", () => {
     let calls = 0;
+    const hooks = new HookManager({ registry: PRODUCTION_HOOK_REGISTRY });
+    hooks.tap("resolveColumn", { name: "count-resolutions" }, (column: RuntimeColumn) => {
+      calls += 1;
+      return column;
+    });
     const manager = new ColumnManager({
       columns: [{ id: "a" }, { id: "b" }],
       registry: registryWithMoney(),
-      resolveColumn: (column) => {
-        calls += 1;
-        return column;
-      }
+      hooks
     });
 
     manager.getColumn(0);
@@ -261,4 +278,131 @@ describe("ColumnManager — out-of-range access", () => {
 
     expect(() => manager.getColumn(1)).toThrow(RangeError);
   });
+});
+
+describe("ColumnManager root replacement", () => {
+  it("publishes a resolved root from a new column list", () => {
+    const manager = new ColumnManager({
+      columns: [{ id: "a" }, { id: "b" }],
+      registry: registryWithMoney()
+    });
+    expect(manager.columnCount).toBe(2);
+
+    manager.replaceRoot(manager.prepareRoot([{ id: "a" }, { id: "b" }, { id: "c" }]));
+
+    expect(manager.columnCount).toBe(3);
+    expect(manager.getColumns().map((column) => column.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("re-runs the resolveColumn hook for every column in the new list", () => {
+    const hooks = new HookManager({ registry: PRODUCTION_HOOK_REGISTRY });
+    hooks.tap("resolveColumn", { name: "force-width" }, (column: RuntimeColumn) => ({
+      ...column,
+      width: 999
+    }));
+    const manager = new ColumnManager({ columns: [{ id: "a" }], registry: registryWithMoney(), hooks });
+
+    manager.replaceRoot(manager.prepareRoot([{ id: "a" }, { id: "b" }]));
+
+    expect(manager.getColumn(1).width).toBe(999);
+  });
+
+  it("getColumn()/getColumns() reflect the replacement root immediately", () => {
+    const manager = new ColumnManager({
+      columns: [{ id: "a", width: 100 }],
+      registry: registryWithMoney()
+    });
+
+    manager.replaceRoot(manager.prepareRoot([{ id: "a", width: 500 }]));
+
+    expect(manager.getColumn(0).width).toBe(500);
+  });
+});
+
+describe("ColumnManager prepared roots", () => {
+  it("prepareRoot resolves a complete immutable root without changing live columns", () => {
+    const manager = new ColumnManager({
+      columns: [{ id: "live", width: 100 }],
+      registry: registryWithMoney()
+    });
+
+    const root = manager.prepareRoot([{ id: "next-a" }, { id: "next-b", width: 240 }]);
+
+    expect(manager.getColumns().map((column) => column.id)).toEqual(["live"]);
+    expect(root.map((column) => column.id)).toEqual(["next-a", "next-b"]);
+    expect(Object.isFrozen(root)).toBe(true);
+    expect(root.every(Object.isFrozen)).toBe(true);
+    expect(root.every((column) => Object.isFrozen(column.clipboard))).toBe(true);
+  });
+
+  it("contains an isolated resolveColumn hook failure inside the prepared root", () => {
+    const hooks = new HookManager({ registry: PRODUCTION_HOOK_REGISTRY });
+    const resolved: string[] = [];
+    hooks.tap("resolveColumn", { name: "fail-second" }, (column: RuntimeColumn) => {
+      resolved.push(column.id);
+      if (column.id === "bad") {
+        throw new Error("column resolution failed");
+      }
+      return { ...column, width: 999 };
+    });
+    const manager = new ColumnManager({
+      columns: [{ id: "live", width: 100 }],
+      registry: registryWithMoney(),
+      hooks
+    });
+    resolved.length = 0;
+
+    const root = manager.prepareRoot([{ id: "prepared" }, { id: "bad" }, { id: "after" }]);
+
+    expect(resolved).toEqual(["prepared", "bad", "after"]);
+    expect(root.map((column) => column.id)).toEqual(["prepared", "bad", "after"]);
+    expect(root[0]?.width).toBe(999);
+    expect(root[1]?.width).toBe(120);
+    expect(manager.columnCount).toBe(1);
+    expect(manager.getColumn(0).id).toBe("live");
+    expect(manager.getColumn(0).width).toBe(999);
+  });
+
+  it("does not leak partially resolved columns when later resolution throws", () => {
+    const manager = new ColumnManager({
+      columns: [{ id: "live", width: 100 }],
+      registry: registryWithMoney()
+    });
+    const liveRoot = manager.getColumns();
+
+    expect(() =>
+      manager.prepareRoot([
+        { id: "resolved", type: "money" },
+        { id: "bad", type: "missing-cell-type" },
+        { id: "unreached" }
+      ])
+    ).toThrow('Unknown cell type "missing-cell-type"');
+
+    expect(manager.getColumns()).toBe(liveRoot);
+    expect(manager.columnCount).toBe(1);
+    expect(manager.getColumn(0).id).toBe("live");
+  });
+
+  it("replaceRoot swaps only the root and never re-runs resolveColumn hooks", () => {
+    let hookCalls = 0;
+    const hooks = new HookManager({ registry: PRODUCTION_HOOK_REGISTRY });
+    hooks.tap("resolveColumn", { name: "count-root-resolutions" }, (column: RuntimeColumn) => {
+      hookCalls += 1;
+      return { ...column, width: column.width + hookCalls };
+    });
+    const manager = new ColumnManager({
+      columns: [{ id: "live" }],
+      registry: registryWithMoney(),
+      hooks
+    });
+    const root = manager.prepareRoot([{ id: "next-a" }, { id: "next-b" }]);
+    const callsAfterPrepare = hookCalls;
+
+    manager.replaceRoot(root);
+
+    expect(hookCalls).toBe(callsAfterPrepare);
+    expect(manager.getColumns()).toBe(root);
+    expect(manager.getColumns().map((column) => column.id)).toEqual(["next-a", "next-b"]);
+  });
+
 });

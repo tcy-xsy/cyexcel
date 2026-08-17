@@ -1,7 +1,6 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { CellRect, IndexRange, LayoutEngine, ViewportState } from "../layout";
-import { splitByFrozenBoundary, toViewportRect } from "../layout";
-import type { CellRange } from "../types";
+import type { CellRect } from "../layout";
+import type { SceneCellFragment, SceneSnapshot } from "../scene";
 import type { Canvas2DLike } from "./Canvas2DLike";
 import type { DirtyState } from "./RenderScheduler";
 import {
@@ -31,7 +30,7 @@ export type CellPainter = (context: CellPaintContext) => unknown;
 
 export interface ContentLayerRendererOptions {
   readonly ctx: Canvas2DLike;
-  readonly layout: LayoutEngine;
+  readonly getScene: () => SceneSnapshot;
   readonly getCellValue: (row: number, column: number) => unknown;
   readonly painter?: CellPainter;
   readonly onError?: (error: unknown, cell: { row: number; column: number }) => void;
@@ -62,12 +61,6 @@ function isThenable(value: unknown): boolean {
   );
 }
 
-function intersectIndexRange(a: IndexRange, b: IndexRange): IndexRange {
-  const start = Math.max(a.start, b.start);
-  const end = Math.min(a.start + a.count, b.start + b.count);
-  return { start, count: Math.max(0, end - start) };
-}
-
 /**
  * One of up to four rectangular row×column combinations a paint pass needs
  * to handle separately — frozen rows/columns are always shown regardless
@@ -76,26 +69,15 @@ function intersectIndexRange(a: IndexRange, b: IndexRange): IndexRange {
  * §6.1 for why this is modeled as up to four independent regions rather
  * than one merged range.
  */
-interface Quadrant {
-  readonly rows: IndexRange;
-  readonly columns: IndexRange;
-  readonly frozenRow: boolean;
-  readonly frozenColumn: boolean;
-}
-
-function nonEmptyQuadrants(quadrants: readonly Quadrant[]): Quadrant[] {
-  return quadrants.filter((quadrant) => quadrant.rows.count > 0 && quadrant.columns.count > 0);
-}
-
 /**
  * Paints cell values onto a Canvas2DLike surface, clipped to whatever is
- * currently visible per LayoutEngine + the last setViewport() call. Never
+ * currently visible per SceneSnapshot. Never
  * depends on DataSource/TableStore directly — only a getCellValue callback
  * — so it can be unit-tested without constructing a real data layer.
  */
 export class ContentLayerRenderer {
   readonly #ctx: Canvas2DLike;
-  readonly #layout: LayoutEngine;
+  readonly #getScene: () => SceneSnapshot;
   readonly #getCellValue: (row: number, column: number) => unknown;
   readonly #painter: CellPainter;
   readonly #onError:
@@ -103,11 +85,10 @@ export class ContentLayerRenderer {
     | undefined;
   readonly #checkSyncRenderers: boolean;
   readonly #showGridLines: boolean;
-  #viewport: ViewportState = { scrollTop: 0, scrollLeft: 0, width: 0, height: 0 };
 
   constructor(options: ContentLayerRendererOptions) {
     this.#ctx = options.ctx;
-    this.#layout = options.layout;
+    this.#getScene = options.getScene;
     this.#getCellValue = options.getCellValue;
     this.#painter = options.painter ?? defaultPainter;
     this.#onError = options.onError;
@@ -115,28 +96,34 @@ export class ContentLayerRenderer {
     this.#showGridLines = options.showGridLines ?? true;
   }
 
-  setViewport(viewport: ViewportState): void {
-    this.#viewport = viewport;
-  }
-
-  paintContent(dirty: DirtyState): void {
+  paintContent(dirty: DirtyState, scene: SceneSnapshot = this.#getScene()): void {
     if (dirty.kind === "none") {
       return;
     }
-
     if (dirty.kind === "full") {
-      for (const quadrant of this.#currentQuadrants()) {
-        this.#paintQuadrant(quadrant);
+      // Quadrant painting only clears each individual cell's own rect, at
+      // its *current* position — fine as long as content only ever grows
+      // or keeps the same footprint, but a structural change that shrinks
+      // total content width/height (Step 17: hideColumn()/deleteColumns())
+      // leaves whatever was painted at the old, now-uncovered trailing
+      // edge on screen forever otherwise. A full repaint is exactly the
+      // case where clearing the whole viewport first is both correct and
+      // cheap (it's about to repaint every visible cell anyway).
+      if (scene.width > 0 && scene.height > 0) {
+        this.#ctx.clearRect(0, 0, scene.width, scene.height);
+      }
+      for (const fragment of scene.getVisibleFragments()) {
+        this.#paintFragment(scene, fragment);
       }
     } else {
       for (const range of dirty.ranges) {
-        for (const quadrant of this.#quadrantsForRange(range)) {
-          this.#paintQuadrant(quadrant);
+        for (const fragment of scene.getVisibleFragmentsForRange(range)) {
+          this.#paintFragment(scene, fragment);
         }
       }
     }
 
-    this.#paintFrozenSeparators();
+    this.#paintFrozenSeparators(scene);
   }
 
   /**
@@ -146,127 +133,58 @@ export class ContentLayerRenderer {
    * every paint pass (not just "full") because a regions repaint can clear
    * pixels right up to that boundary without necessarily repainting it.
    */
-  #paintFrozenSeparators(): void {
-    const frozenRowCount = this.#layout.frozenRowCount;
-    const frozenColumnCount = this.#layout.frozenColumnCount;
+  #paintFrozenSeparators(scene: SceneSnapshot): void {
+    const frozenCorner = scene.getPanes("body").find((pane) => pane.id === "frozen-corner");
+    if (!frozenCorner) {
+      return;
+    }
 
-    if (frozenRowCount > 0) {
-      const y = frozenRowCount * this.#layout.rowHeight;
+    if (frozenCorner.rows.count > 0 && frozenCorner.clipRect.height > 0) {
+      const y = frozenCorner.clipRect.y + frozenCorner.clipRect.height;
       this.#ctx.fillStyle = FROZEN_SEPARATOR_COLOR;
       this.#ctx.fillRect(
         0,
         y - FROZEN_SEPARATOR_THICKNESS / 2,
-        this.#viewport.width,
+        scene.width,
         FROZEN_SEPARATOR_THICKNESS
       );
     }
 
-    if (frozenColumnCount > 0) {
-      const lastFrozenColumn = frozenColumnCount - 1;
-      const x =
-        this.#layout.getColumnLeft(lastFrozenColumn) + this.#layout.getColumnWidth(lastFrozenColumn);
+    if (frozenCorner.columns.count > 0 && frozenCorner.clipRect.width > 0) {
+      const x = frozenCorner.clipRect.x + frozenCorner.clipRect.width;
       this.#ctx.fillStyle = FROZEN_SEPARATOR_COLOR;
       this.#ctx.fillRect(
         x - FROZEN_SEPARATOR_THICKNESS / 2,
         0,
         FROZEN_SEPARATOR_THICKNESS,
-        this.#viewport.height
+        scene.height
       );
     }
   }
 
-  /** The up-to-four regions currently on screen: frozen corner, frozen row band, frozen column band, scrollable body. */
-  #currentQuadrants(): Quadrant[] {
-    const frozenRows: IndexRange = { start: 0, count: this.#layout.frozenRowCount };
-    const scrollableRows = this.#layout.getVisibleRowRange(this.#viewport);
-    const frozenColumns: IndexRange = { start: 0, count: this.#layout.frozenColumnCount };
-    const scrollableColumns = this.#layout.getVisibleColumnRange(this.#viewport);
-
-    return nonEmptyQuadrants([
-      { rows: frozenRows, columns: frozenColumns, frozenRow: true, frozenColumn: true },
-      { rows: frozenRows, columns: scrollableColumns, frozenRow: true, frozenColumn: false },
-      { rows: scrollableRows, columns: frozenColumns, frozenRow: false, frozenColumn: true },
-      { rows: scrollableRows, columns: scrollableColumns, frozenRow: false, frozenColumn: false }
-    ]);
-  }
-
-  /**
-   * Same four regions, but clipped to one arbitrary dirty CellRange (e.g. a
-   * single setCell patch) instead of "everything on screen" — the frozen
-   * part of the range is always paintable (frozen cells are always shown),
-   * the scrollable part still needs intersecting with what's currently
-   * visible.
-   */
-  #quadrantsForRange(range: CellRange): Quadrant[] {
-    const rowIndexRange: IndexRange = { start: range.startRow, count: range.endRow - range.startRow + 1 };
-    const columnIndexRange: IndexRange = {
-      start: range.startColumn,
-      count: range.endColumn - range.startColumn + 1
-    };
-
-    const rowSplit = splitByFrozenBoundary(rowIndexRange, this.#layout.frozenRowCount);
-    const columnSplit = splitByFrozenBoundary(columnIndexRange, this.#layout.frozenColumnCount);
-
-    const scrollableRows = intersectIndexRange(
-      rowSplit.scrollable,
-      this.#layout.getVisibleRowRange(this.#viewport)
-    );
-    const scrollableColumns = intersectIndexRange(
-      columnSplit.scrollable,
-      this.#layout.getVisibleColumnRange(this.#viewport)
-    );
-
-    return nonEmptyQuadrants([
-      { rows: rowSplit.frozen, columns: columnSplit.frozen, frozenRow: true, frozenColumn: true },
-      { rows: rowSplit.frozen, columns: scrollableColumns, frozenRow: true, frozenColumn: false },
-      { rows: scrollableRows, columns: columnSplit.frozen, frozenRow: false, frozenColumn: true },
-      { rows: scrollableRows, columns: scrollableColumns, frozenRow: false, frozenColumn: false }
-    ]);
-  }
-
-  #paintQuadrant(quadrant: Quadrant): void {
-    const clipRect = this.#quadrantClipRect(quadrant);
+  #paintFragment(scene: SceneSnapshot, fragment: SceneCellFragment): void {
+    const clipRect = fragment.pane.clipRect;
     this.#ctx.save();
     this.#ctx.beginPath();
     this.#ctx.rect(clipRect.x, clipRect.y, clipRect.width, clipRect.height);
     this.#ctx.clip();
 
-    const lastRow = quadrant.rows.start + quadrant.rows.count - 1;
-    const lastColumn = quadrant.columns.start + quadrant.columns.count - 1;
-    for (let row = quadrant.rows.start; row <= lastRow; row += 1) {
-      for (let column = quadrant.columns.start; column <= lastColumn; column += 1) {
-        this.#paintCell(row, column, quadrant.frozenRow, quadrant.frozenColumn);
+    const lastRow = fragment.rows.start + fragment.rows.count - 1;
+    const lastColumn = fragment.columns.start + fragment.columns.count - 1;
+    for (let row = fragment.rows.start; row <= lastRow; row += 1) {
+      for (let column = fragment.columns.start; column <= lastColumn; column += 1) {
+        this.#paintCell(scene, row, column, fragment);
       }
     }
 
     this.#ctx.restore();
   }
 
-  #quadrantClipRect(quadrant: Quadrant): CellRect {
-    const lastRow = quadrant.rows.start + quadrant.rows.count - 1;
-    const lastColumn = quadrant.columns.start + quadrant.columns.count - 1;
-    const topLeft = this.#translatedCellRect(
-      quadrant.rows.start,
-      quadrant.columns.start,
-      quadrant.frozenRow,
-      quadrant.frozenColumn
-    );
-    const bottomRight = this.#translatedCellRect(
-      lastRow,
-      lastColumn,
-      quadrant.frozenRow,
-      quadrant.frozenColumn
-    );
-    return {
-      x: topLeft.x,
-      y: topLeft.y,
-      width: bottomRight.x + bottomRight.width - topLeft.x,
-      height: bottomRight.y + bottomRight.height - topLeft.y
-    };
-  }
-
-  #paintCell(row: number, column: number, frozenRow: boolean, frozenColumn: boolean): void {
-    const rect = this.#translatedCellRect(row, column, frozenRow, frozenColumn);
+  #paintCell(scene: SceneSnapshot, row: number, column: number, fragment: SceneCellFragment): void {
+    const rect = scene.getCellRectInPane({ row, column }, fragment.pane);
+    if (rect.width <= 0 || rect.height <= 0) {
+      return;
+    }
     this.#ctx.clearRect(rect.x, rect.y, rect.width, rect.height);
 
     const value = this.#getCellValue(row, column);
@@ -320,10 +238,4 @@ export class ContentLayerRenderer {
     this.#ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
   }
 
-  #translatedCellRect(row: number, column: number, frozenRow: boolean, frozenColumn: boolean): CellRect {
-    return toViewportRect(this.#layout.getCellRect(row, column), this.#viewport, {
-      row: frozenRow,
-      column: frozenColumn
-    });
-  }
 }

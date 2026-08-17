@@ -1,5 +1,6 @@
 import { CELL_FONT, CELL_PADDING, SELECTION_STROKE_COLOR, SELECTION_STROKE_WIDTH } from "../render/theme";
 import type { CellEditor, CellEditorContext } from "./CellEditor";
+import { positionEditorElement } from "./positionEditorElement";
 
 function toDateInputValue(value: unknown): string {
   return value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString().slice(0, 10) : "";
@@ -20,10 +21,7 @@ export function createDateCellEditor(): CellEditor {
       element.type = "date";
       element.value = toDateInputValue(context.initialValue);
       element.style.position = "absolute";
-      element.style.left = `${context.rect.x}px`;
-      element.style.top = `${context.rect.y}px`;
-      element.style.width = `${context.rect.width}px`;
-      element.style.height = `${context.rect.height}px`;
+      positionEditorElement(element, context.rect);
       element.style.boxSizing = "border-box";
       element.style.margin = "0";
       element.style.padding = `0 ${CELL_PADDING}px`;
@@ -33,6 +31,11 @@ export function createDateCellEditor(): CellEditor {
       element.style.font = CELL_FONT;
       container.appendChild(element);
       input = element;
+    },
+    updateGeometry(rect): void {
+      if (input) {
+        positionEditorElement(input, rect);
+      }
     },
     focus(): void {
       input?.focus();

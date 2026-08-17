@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { configureCanvasForDpr } from "../../../../src/core";
-import type { ResizableCanvas } from "../../../../src/core";
+import { configureCanvasForDpr } from "../../../../src/core/render";
+import type { ResizableCanvas } from "../../../../src/core/render";
 
 function createFakeCanvas(): ResizableCanvas {
   return { width: 0, height: 0, style: { width: "", height: "" } };

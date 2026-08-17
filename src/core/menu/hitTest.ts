@@ -1,50 +1,64 @@
 import type { SelectionSnapshot } from "../interaction";
-import type { LayoutEngine, ViewportState } from "../layout";
+import type { SceneSnapshot } from "../scene";
 import type { ContextMenuContext } from "./types";
 
-/** Same shape as interaction's HeaderLayout — kept structural here so this module doesn't need to import from "../interaction" just for a two-field type. */
-export interface HeaderLayoutLike {
-  readonly rowHeaderWidth: number;
-  readonly columnHeaderHeight: number;
+function containsPoint(
+  rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+  point: { readonly x: number; readonly y: number }
+): boolean {
+  return point.x >= rect.x && point.y >= rect.y &&
+    point.x < rect.x + rect.width && point.y < rect.y + rect.height;
 }
 
 /**
- * Classifies a point (already relative to the content canvas's own origin,
+ * Classifies a point (already relative to the scroller/content surface origin,
  * same convention PointerController uses) into the five
- * doc/customization-and-hooks.md §3.6 targets. Reuses
- * `LayoutEngine.getCellAtPoint()`'s existing "past the data extent returns
- * null" semantics for "blank" instead of re-deriving that boundary here.
+ * doc/customization-and-hooks.md §3.6 targets. Reuses SceneSnapshot's
+ * "past the data extent returns null" hit-test semantics for "blank".
  */
 export function classifyContextMenuTarget(
   point: { readonly x: number; readonly y: number },
-  viewport: ViewportState,
-  headerLayout: HeaderLayoutLike,
-  layout: LayoutEngine,
+  scene: SceneSnapshot,
   selection: SelectionSnapshot
 ): ContextMenuContext {
-  const inRowHeader = point.x < headerLayout.rowHeaderWidth;
-  const inColumnHeader = point.y < headerLayout.columnHeaderHeight;
+  const corner = scene.getSurface("corner").rootRect;
+  const rowHeader = scene.getSurface("row-header").rootRect;
+  const columnHeader = scene.getSurface("column-header").rootRect;
+  const body = scene.getSurface("body").rootRect;
 
-  if (inRowHeader && inColumnHeader) {
+  if (containsPoint(corner, point)) {
     return { target: "corner", selection, point };
   }
 
-  if (inRowHeader) {
-    // x forced to 0 (always a valid column) — only the resolved row matters here.
-    const cell = layout.getCellAtPoint({ x: 0, y: point.y - headerLayout.columnHeaderHeight }, viewport);
-    return { target: "row-header", selection, point, ...(cell ? { row: cell.row } : {}) };
+  if (containsPoint(rowHeader, point)) {
+    const hit = scene.hitTestRowHeader({
+      x: point.x - rowHeader.x,
+      y: point.y - rowHeader.y
+    });
+    return { target: "row-header", selection, point, ...(hit ? { row: hit.row } : {}) };
   }
 
-  if (inColumnHeader) {
-    // y forced to 0 (always a valid row) — only the resolved column matters here.
-    const cell = layout.getCellAtPoint({ x: point.x - headerLayout.rowHeaderWidth, y: 0 }, viewport);
-    return { target: "column-header", selection, point, ...(cell ? { column: cell.column } : {}) };
+  if (containsPoint(columnHeader, point)) {
+    const hit = scene.hitTestColumnHeader({
+      x: point.x - columnHeader.x,
+      y: point.y - columnHeader.y
+    });
+    return { target: "column-header", selection, point, ...(hit ? { column: hit.column } : {}) };
   }
 
-  const gridPoint = { x: point.x - headerLayout.rowHeaderWidth, y: point.y - headerLayout.columnHeaderHeight };
-  const cell = layout.getCellAtPoint(gridPoint, viewport);
-  if (!cell) {
+  if (!containsPoint(body, point)) {
     return { target: "blank", selection, point };
   }
-  return { target: "cell", selection, point, row: cell.row, column: cell.column };
+  const gridPoint = { x: point.x - body.x, y: point.y - body.y };
+  const hit = scene.hitTestCellGeometry(gridPoint);
+  if (!hit) {
+    return { target: "blank", selection, point };
+  }
+  return {
+    target: "cell",
+    selection,
+    point,
+    row: hit.cell.row,
+    column: hit.cell.column
+  };
 }

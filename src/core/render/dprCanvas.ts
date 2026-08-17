@@ -1,4 +1,4 @@
-import { toPhysicalPixelSize } from "../layout";
+const DEFAULT_MAX_DPR = 3;
 
 export interface ResizableCanvas {
   width: number;
@@ -7,6 +7,17 @@ export interface ResizableCanvas {
     width: string;
     height: string;
   };
+}
+
+/** The exact ratio used for both backing-store size and the context transform. */
+export function getEffectiveDpr(devicePixelRatio: number, maxDpr: number = DEFAULT_MAX_DPR): number {
+  if (!Number.isFinite(devicePixelRatio) || devicePixelRatio <= 0) {
+    return 1;
+  }
+  if (!Number.isFinite(maxDpr) || maxDpr <= 0) {
+    throw new RangeError(`maxDpr must be a positive finite number: ${maxDpr}`);
+  }
+  return Math.min(devicePixelRatio, maxDpr);
 }
 
 /**
@@ -24,8 +35,9 @@ export function configureCanvasForDpr(
   dpr: number,
   maxDpr?: number
 ): void {
-  canvas.width = toPhysicalPixelSize(logicalWidth, dpr, maxDpr);
-  canvas.height = toPhysicalPixelSize(logicalHeight, dpr, maxDpr);
+  const effectiveDpr = getEffectiveDpr(dpr, maxDpr);
+  canvas.width = Math.round(logicalWidth * effectiveDpr);
+  canvas.height = Math.round(logicalHeight * effectiveDpr);
   canvas.style.width = `${logicalWidth}px`;
   canvas.style.height = `${logicalHeight}px`;
 }

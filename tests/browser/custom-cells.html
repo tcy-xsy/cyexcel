@@ -11,14 +11,21 @@
         padding: 0;
       }
       #app {
-        width: 500px;
+        width: 650px;
         height: 300px;
       }
       .toggle-button {
-        width: 100%;
+        width: 50%;
         height: 100%;
         border: 0;
         cursor: pointer;
+      }
+      .toggle-passive {
+        display: inline-flex;
+        width: 50%;
+        height: 100%;
+        align-items: center;
+        justify-content: center;
       }
     </style>
   </head>
@@ -45,38 +52,95 @@
           ctx.textAlign = "left";
           ctx.fillText(`n=${value}`, rect.x + 4, rect.y + rect.height / 2);
         },
-        hitTest({ value }) {
+        hitTest({ row, value }) {
+          window.__canvasHitTestCalls[row] = (window.__canvasHitTestCalls[row] ?? 0) + 1;
+          if (row === 1) {
+            return undefined;
+          }
           return { type: "set-value", value: Number(value) + 1 };
         }
       };
 
       const toggleRendererFactory = {
         kind: "dom",
+        pointerOwnership: "surface",
         create() {
           let button;
+          let passive;
           let currentValue;
+          let commit;
           return {
             mount(host, context) {
               button = document.createElement("button");
               button.type = "button";
               button.className = "toggle-button";
               currentValue = context.value;
+              commit = context.actions.commit;
               button.textContent = currentValue ? "on" : "off";
               button.addEventListener("click", () => {
-                context.actions.commit(!currentValue);
+                commit(!currentValue);
               });
-              host.append(button);
+              passive = document.createElement("span");
+              passive.className = "toggle-passive";
+              passive.textContent = "select";
+              host.append(button, passive);
             },
             update(context) {
               currentValue = context.value;
+              commit = context.actions.commit;
               button.textContent = currentValue ? "on" : "off";
             },
             destroy() {
               button.remove();
+              passive.remove();
             }
           };
         }
       };
+
+      function createClosedShadowRenderer(pointerOwnership, className, tagName) {
+        return {
+          kind: "dom",
+          pointerOwnership,
+          create() {
+            let element;
+            let hostElement;
+            return {
+              mount(host) {
+                hostElement = host;
+                host.classList.add(className);
+                const shadow = host.attachShadow({ mode: "closed" });
+                const style = document.createElement("style");
+                style.textContent = ":host { display: block; } .target { box-sizing: border-box; display: flex; width: 100%; height: 100%; align-items: center; }";
+                element = document.createElement(tagName);
+                element.className = "target";
+                if (element instanceof HTMLInputElement) {
+                  element.value = "closed native";
+                } else {
+                  element.textContent = "closed surface";
+                }
+                shadow.append(style, element);
+              },
+              update() {},
+              destroy() {
+                hostElement.classList.remove(className);
+                element.remove();
+              }
+            };
+          }
+        };
+      }
+
+      const closedNativeRendererFactory = createClosedShadowRenderer(
+        "native",
+        "closed-native-cell",
+        "input"
+      );
+      const closedSurfaceRendererFactory = createClosedShadowRenderer(
+        "surface",
+        "closed-surface-cell",
+        "span"
+      );
 
       const columns = [
         { id: "name", field: "name", width: 120 },
@@ -85,15 +149,21 @@
         // Built-in "number" CellType, no custom renderer — exercises
         // CellType.parse() on commit (see doc/progress.md's "编辑数字/money
         // 列后单元格变空" patch).
-        { id: "price", field: "price", width: 100, type: "number" }
+        { id: "price", field: "price", width: 100, type: "number" },
+        { id: "closedNative", field: "closedNative", width: 100, renderer: closedNativeRendererFactory },
+        { id: "closedSurface", field: "closedSurface", width: 100, renderer: closedSurfaceRendererFactory }
       ];
 
       const data = Array.from({ length: 200 }, (_unused, index) => ({
         name: `Item ${index}`,
         counter: index,
         toggle: index % 2 === 0,
-        price: index * 10
+        price: index * 10,
+        closedNative: "native",
+        closedSurface: "surface"
       }));
+
+      window.__canvasHitTestCalls = {};
 
       const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
 

@@ -28,12 +28,14 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore } from "/src/core/index.ts";
+      import { CyExcelCore, createBasicContextMenuPlugin } from "/src/core/index.ts";
 
       const container = document.getElementById("app");
+      let headerDomPointerId = null;
 
       const statusHeaderFactory = {
         kind: "dom",
+        pointerOwnership: "native",
         create() {
           let select;
           return {
@@ -45,6 +47,9 @@
                 option.textContent = label;
                 select.append(option);
               }
+              select.addEventListener("pointerdown", (event) => {
+                headerDomPointerId = event.pointerId;
+              });
               host.append(select);
             },
             update() {},
@@ -55,12 +60,69 @@
         }
       };
 
+      const closedNativeHeaderFactory = {
+        kind: "dom",
+        pointerOwnership: "native",
+        create() {
+          let input;
+          let hostElement;
+          return {
+            mount(host) {
+              hostElement = host;
+              host.classList.add("closed-native-header");
+              const shadow = host.attachShadow({ mode: "closed" });
+              const style = document.createElement("style");
+              style.textContent = "input { box-sizing: border-box; width: 100%; height: 100%; }";
+              input = document.createElement("input");
+              input.value = "closed header";
+              shadow.append(style, input);
+            },
+            update() {},
+            destroy() {
+              hostElement.classList.remove("closed-native-header");
+              input.remove();
+            }
+          };
+        }
+      };
+
+      let headerHitMode = "handled";
+      let headerHitTestCalls = 0;
+      const headerActions = [];
+      const headerErrors = [];
+      const priceHeaderRenderer = {
+        kind: "canvas",
+        paint({ ctx, rect, title }) {
+          ctx.fillStyle = "#111827";
+          ctx.textBaseline = "middle";
+          ctx.fillText(title, rect.x + 8, rect.y + rect.height / 2);
+        },
+        hitTest() {
+          headerHitTestCalls += 1;
+          if (headerHitMode === "decline") {
+            return undefined;
+          }
+          if (headerHitMode === "throw") {
+            throw new Error("forced header hit-test failure");
+          }
+          return { type: "toggle-sort" };
+        }
+      };
+
       const columns = [
         { id: "sku", field: "sku", width: 100, header: "SKU" },
         { id: "name", field: "name", width: 140, header: "Name" },
-        { id: "price", field: "price", width: 90, header: "Price", minWidth: 60, maxWidth: 200 },
+        {
+          id: "price",
+          field: "price",
+          width: 90,
+          header: { title: "Price", renderer: priceHeaderRenderer },
+          minWidth: 60,
+          maxWidth: 200
+        },
         { id: "qty", field: "qty", width: 80, header: "Qty" },
-        { id: "status", field: "status", width: 100, header: { title: "Status", renderer: statusHeaderFactory } }
+        { id: "status", field: "status", width: 100, header: { title: "Status", renderer: statusHeaderFactory } },
+        { id: "closed", field: "closed", width: 100, header: { title: "Closed", renderer: closedNativeHeaderFactory } }
       ];
 
       const headerGroups = [
@@ -73,7 +135,8 @@
         name: `Item ${index}`,
         price: index * 10,
         qty: index,
-        status: index % 2 === 0 ? "Active" : "Archived"
+        status: index % 2 === 0 ? "Active" : "Archived",
+        closed: "closed"
       }));
 
       const sheet = new CyExcelCore(container, {
@@ -82,10 +145,36 @@
         headerGroups,
         rowHeight: 24,
         headerHeight: 28,
-        freeze: { rows: 1, columns: 1 }
+        freeze: { rows: 1, columns: 1 },
+        plugins: [createBasicContextMenuPlugin()]
+      });
+
+      sheet.events.on("header-action", ({ action, column, header, structureVersion }) => {
+        headerActions.push({
+          action,
+          column,
+          header: { column: header.column, title: header.title },
+          structureVersion
+        });
+      });
+      sheet.events.on("error", ({ error, eventName }) => {
+        if (eventName.startsWith("interaction:canvas-header-hit-test:")) {
+          headerErrors.push({ eventName, message: String(error?.message ?? error) });
+        }
       });
 
       window.__sheet = sheet;
+      window.__setHeaderHitMode = (mode) => {
+        headerHitMode = mode;
+      };
+      window.__headerHitTestCalls = () => headerHitTestCalls;
+      window.__headerActions = headerActions;
+      window.__headerErrors = headerErrors;
+      window.__headerDomHasPointerCapture = () =>
+        headerDomPointerId !== null &&
+        Array.from(document.querySelectorAll("#app canvas")).some((canvas) =>
+          canvas.hasPointerCapture(headerDomPointerId)
+        );
       window.__cyexcelHeadersReady = true;
     </script>
   </body>

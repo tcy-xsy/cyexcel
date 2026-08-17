@@ -11,6 +11,9 @@
       import {
         ContentLayerRenderer,
         LayoutEngine,
+        SceneSnapshot,
+        SkeletonSnapshot,
+        ViewportSnapshot,
         configureCanvasForDpr
       } from "/src/core/index.ts";
 
@@ -29,19 +32,24 @@
         rowHeight: 20,
         columnWidths: [60, 60, 60, 60, 60]
       });
+      const scene = new SceneSnapshot({
+        version: 1,
+        skeleton: SkeletonSnapshot.fromLayout(layout, 0),
+        viewport: new ViewportSnapshot({
+          version: 1,
+          scrollTop: 0,
+          scrollLeft: 0,
+          width: logicalWidth,
+          height: logicalHeight
+        })
+      });
 
       const renderer = new ContentLayerRenderer({
         ctx,
-        layout,
+        getScene: () => scene,
         getCellValue: (row, column) => `R${row}C${column}`
       });
-      renderer.setViewport({
-        scrollTop: 0,
-        scrollLeft: 0,
-        width: logicalWidth,
-        height: logicalHeight
-      });
-      renderer.paintContent({ kind: "full" });
+      renderer.paintContent({ kind: "full" }, scene);
 
       window.__cyexcelRenderReady = true;
     </script>

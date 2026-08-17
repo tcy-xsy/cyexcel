@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ContextMenuService, HookManager, PRODUCTION_HOOK_REGISTRY } from "../../../../src/core";
+import { HookManager, PRODUCTION_HOOK_REGISTRY } from "../../../../src/core/hooks";
+import { ContextMenuService } from "../../../../src/core/menu";
 import type {
   ContextMenuContext,
   ContextMenuItem,
   ContextMenuRenderContext,
   ContextMenuRenderer,
   ContextMenuRendererFactory
-} from "../../../../src/core";
+} from "../../../../src/core/menu";
 
 function fakeContext(overrides: Partial<ContextMenuContext> = {}): ContextMenuContext {
   return {
@@ -18,7 +19,8 @@ function fakeContext(overrides: Partial<ContextMenuContext> = {}): ContextMenuCo
       kind: "cell",
       active: { row: 0, column: 0 },
       anchor: { row: 0, column: 0 },
-      range: { startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 }
+      range: { startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 },
+      ranges: [{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 }]
     },
     point: { x: 10, y: 10 },
     ...overrides
@@ -326,6 +328,85 @@ describe("ContextMenuService — async actions", () => {
     expect(service.isOpen()).toBe(false);
   });
 
+  it("catches a synchronous throw from run() instead of propagating it — closes the menu and reports to console.error", () => {
+    const { factory, renderers } = createFakeRendererFactory();
+    const service = new ContextMenuService({ container: fakeContainer(), rendererFactory: factory });
+    const thrown = new Error("headerGroups blocks this");
+    service.registerProvider({ name: "p" }, () => [
+      {
+        type: "action",
+        id: "a",
+        label: "A",
+        run: () => {
+          throw thrown;
+        }
+      }
+    ]);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    service.open(fakeContext());
+    expect(() => renderers[0]?.mountCalls[0]?.actions.run("a")).not.toThrow();
+
+    expect(service.isOpen()).toBe(false);
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("a"), thrown);
+
+    consoleError.mockRestore();
+  });
+
+  it("forwards a synchronous throw to onActionError, in addition to console.error", () => {
+    const { factory, renderers } = createFakeRendererFactory();
+    const thrown = new Error("headerGroups blocks this");
+    const onActionError = vi.fn();
+    const service = new ContextMenuService({ container: fakeContainer(), rendererFactory: factory, onActionError });
+    service.registerProvider({ name: "p" }, () => [
+      {
+        type: "action",
+        id: "a",
+        label: "A",
+        run: () => {
+          throw thrown;
+        }
+      }
+    ]);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    service.open(fakeContext());
+    renderers[0]?.mountCalls[0]?.actions.run("a");
+
+    expect(onActionError).toHaveBeenCalledWith("a", thrown);
+
+    consoleError.mockRestore();
+  });
+
+  it("forwards a rejected action's error to onActionError and clears the busy state", async () => {
+    const { factory, renderers } = createFakeRendererFactory();
+    const onActionError = vi.fn();
+    const service = new ContextMenuService({ container: fakeContainer(), rendererFactory: factory, onActionError });
+    const rejection = new Error("action failed");
+    let rejectRun: (error: Error) => void = () => {};
+    service.registerProvider({ name: "p" }, () => [
+      {
+        type: "action",
+        id: "a",
+        label: "A",
+        run: () => new Promise<void>((_resolve, reject) => (rejectRun = reject))
+      }
+    ]);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    service.open(fakeContext());
+    renderers[0]?.mountCalls[0]?.actions.run("a");
+    rejectRun(rejection);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(onActionError).toHaveBeenCalledWith("a", rejection);
+    expect(service.isOpen()).toBe(true);
+    expect(renderers[0]?.updateCalls.at(-1)?.busyItemId).toBeNull();
+
+    consoleError.mockRestore();
+  });
+
   it("ignores a disabled action", () => {
     const { factory, renderers } = createFakeRendererFactory();
     const service = new ContextMenuService({ container: fakeContainer(), rendererFactory: factory });
@@ -354,5 +435,32 @@ describe("ContextMenuService — beforeContextMenuOpen Hook", () => {
 
     expect(opened).toBe(false);
     expect(renderers).toHaveLength(0);
+  });
+});
+
+describe("ContextMenuService — getBounds passthrough (menu clipping fix)", () => {
+  it("includes the getBounds() result in the render context as `bounds`", () => {
+    const { factory, renderers } = createFakeRendererFactory();
+    const bounds = { left: 0, top: 0, right: 400, bottom: 300 } as DOMRect;
+    const service = new ContextMenuService({
+      container: fakeContainer(),
+      rendererFactory: factory,
+      getBounds: () => bounds
+    });
+    service.registerProvider({ name: "p" }, () => [{ type: "action", id: "a", label: "A", run: () => {} }]);
+
+    service.open(fakeContext());
+
+    expect(renderers[0]?.mountCalls[0]?.bounds).toBe(bounds);
+  });
+
+  it("bounds is null when getBounds is not provided — existing callers are unaffected", () => {
+    const { factory, renderers } = createFakeRendererFactory();
+    const service = new ContextMenuService({ container: fakeContainer(), rendererFactory: factory });
+    service.registerProvider({ name: "p" }, () => [{ type: "action", id: "a", label: "A", run: () => {} }]);
+
+    service.open(fakeContext());
+
+    expect(renderers[0]?.mountCalls[0]?.bounds).toBeNull();
   });
 });

@@ -69,6 +69,63 @@ export function createBasicContextMenuPlugin(): CyExcelPlugin {
           ];
         }
 
+        // Mirrors the row-header branch above, one axis over — same
+        // public insertColumns()/deleteColumns()/hideColumn() path every
+        // other caller uses. Unlike a new row (every cell defaults to
+        // `undefined`), a new column needs an `id` to exist at all; there's
+        // no "the user's own data" to derive one from here, so a
+        // timestamp-based id is generated, same convention already used for
+        // `ClipboardService`'s exported-file naming.
+        if (menuContext.target === "column-header" && menuContext.column !== undefined) {
+          const column = menuContext.column;
+          // insertColumns()/deleteColumns()/hideColumn() all throw while
+          // headerGroups is configured (grouped headers reference raw
+          // column indices a structural change would invalidate) — disabled
+          // here instead of left to throw, so the menu shows *why* the
+          // action can't run instead of silently closing with only a
+          // console.error (see doc/progress.md's Step 19 playground entry).
+          const blocked = context.hasHeaderGroups();
+          const disabledLabel = blocked ? "（已禁用：存在分组表头）" : "";
+          return [
+            {
+              type: "action",
+              id: "cyexcel:insert-column-left",
+              label: `在左侧插入列${disabledLabel}`,
+              disabled: blocked,
+              run: () => {
+                context.insertColumns(column, [{ id: `column-${Date.now()}` }]);
+              }
+            },
+            {
+              type: "action",
+              id: "cyexcel:insert-column-right",
+              label: `在右侧插入列${disabledLabel}`,
+              disabled: blocked,
+              run: () => {
+                context.insertColumns(column + 1, [{ id: `column-${Date.now()}` }]);
+              }
+            },
+            {
+              type: "action",
+              id: "cyexcel:delete-column",
+              label: `删除列${disabledLabel}`,
+              disabled: blocked,
+              run: () => {
+                context.deleteColumns(column);
+              }
+            },
+            {
+              type: "action",
+              id: "cyexcel:hide-column",
+              label: `隐藏列${disabledLabel}`,
+              disabled: blocked,
+              run: () => {
+                context.hideColumn(column);
+              }
+            }
+          ];
+        }
+
         return [];
       });
     }

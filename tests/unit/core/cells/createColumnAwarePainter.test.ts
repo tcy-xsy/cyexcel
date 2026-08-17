@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { ContentLayerRenderer, LayoutEngine, createColumnAwarePainter } from "../../../../src/core";
-import type { CanvasCellRenderer, RuntimeColumn } from "../../../../src/core";
+import { createColumnAwarePainter } from "../../../../src/core/cells";
+import type { CanvasCellRenderer, RuntimeColumn } from "../../../../src/core/cells";
+import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "../../../../src/core/layout";
+import { ContentLayerRenderer } from "../../../../src/core/render";
+import { SceneSnapshot } from "../../../../src/core/scene";
 import { RecordingCanvasContext } from "../../../helpers/RecordingCanvasContext";
 
 function textColumn(overrides: Partial<RuntimeColumn> = {}): RuntimeColumn {
@@ -12,6 +15,7 @@ function textColumn(overrides: Partial<RuntimeColumn> = {}): RuntimeColumn {
     typeName: "text",
     format: (value) => (value === undefined || value === null ? "" : String(value)),
     clipboard: { copy: true, paste: true },
+    wrap: false,
     version: 1,
     ...overrides
   };
@@ -19,11 +23,19 @@ function textColumn(overrides: Partial<RuntimeColumn> = {}): RuntimeColumn {
 
 const rect = { x: 10, y: 20, width: 100, height: 24 };
 
+function createScene(layout: LayoutEngine): SceneSnapshot {
+  return new SceneSnapshot({
+    version: 1,
+    skeleton: SkeletonSnapshot.fromLayout(layout, 1),
+    viewport: new ViewportSnapshot({ version: 1, scrollTop: 0, scrollLeft: 0, width: 100, height: 20 })
+  });
+}
+
 describe("createColumnAwarePainter — no custom renderer", () => {
   it("draws the column's format() output as text", () => {
     const ctx = new RecordingCanvasContext();
     const column = textColumn({ format: () => "formatted-value" });
-    const painter = createColumnAwarePainter([column]);
+    const painter = createColumnAwarePainter(() => [column]);
 
     painter({ ctx, rect, row: 0, column: 0, value: "raw" });
 
@@ -35,7 +47,7 @@ describe("createColumnAwarePainter — no custom renderer", () => {
   it("sets ctx.font explicitly before drawing, instead of relying on whatever font the canvas state happens to already be in", () => {
     const ctx = new RecordingCanvasContext();
     const column = textColumn({ format: () => "x" });
-    const painter = createColumnAwarePainter([column]);
+    const painter = createColumnAwarePainter(() => [column]);
 
     painter({ ctx, rect, row: 0, column: 0, value: "raw" });
 
@@ -45,12 +57,41 @@ describe("createColumnAwarePainter — no custom renderer", () => {
     const fillTextIndex = ctx.calls.findIndex((call) => call.method === "fillText");
     expect(fontIndex).toBeLessThan(fillTextIndex);
   });
+
+  it("wraps long text into top-aligned lines and stops at the cell bottom", () => {
+    const ctx = new RecordingCanvasContext();
+    const column = textColumn({ wrap: true, format: () => "abcd efgh" });
+    const painter = createColumnAwarePainter(() => [column]);
+
+    painter({ ctx, rect: { ...rect, width: 36, height: 44 }, row: 0, column: 0, value: "raw" });
+
+    const fillTextCalls = ctx.calls.filter((call) => call.method === "fillText");
+    expect(fillTextCalls.map((call) => call.args)).toEqual([
+      ["abcd", 14, 32],
+      ["efgh", 14, 48]
+    ]);
+  });
+});
+
+describe("createColumnAwarePainter — reads the columns list live, not a one-time snapshot", () => {
+  it("picks up a column root published after the painter was created", () => {
+    const ctx = new RecordingCanvasContext();
+    let columns: readonly RuntimeColumn[] = [textColumn({ format: () => "before" })];
+    const painter = createColumnAwarePainter(() => columns);
+
+    painter({ ctx, rect, row: 0, column: 0, value: "x" });
+    columns = [textColumn({ format: () => "after" })];
+    painter({ ctx, rect, row: 0, column: 0, value: "x" });
+
+    const fillTextCalls = ctx.calls.filter((call) => call.method === "fillText");
+    expect(fillTextCalls.map((call) => call.args[0])).toEqual(["before", "after"]);
+  });
 });
 
 describe("createColumnAwarePainter — out-of-range column", () => {
   it("draws nothing when the context's column index has no resolved RuntimeColumn", () => {
     const ctx = new RecordingCanvasContext();
-    const painter = createColumnAwarePainter([textColumn()]);
+    const painter = createColumnAwarePainter(() => [textColumn()]);
 
     expect(() => painter({ ctx, rect, row: 0, column: 5, value: "x" })).not.toThrow();
     expect(ctx.calls).toHaveLength(0);
@@ -68,7 +109,7 @@ describe("createColumnAwarePainter — canvas renderer", () => {
       }
     };
     const column = textColumn({ renderer });
-    const painter = createColumnAwarePainter([column]);
+    const painter = createColumnAwarePainter(() => [column]);
 
     painter({ ctx, rect, row: 3, column: 0, value: "raw" });
 
@@ -88,7 +129,7 @@ describe("createColumnAwarePainter — canvas renderer", () => {
       }
     };
     const column = textColumn({ renderer });
-    const painter = createColumnAwarePainter([column]);
+    const painter = createColumnAwarePainter(() => [column]);
 
     painter({ ctx, rect, row: 1, column: 0, value: 42 });
 
@@ -102,9 +143,13 @@ describe("createColumnAwarePainter — dom renderer", () => {
   it("draws nothing on the canvas — the DOM overlay owns the cell entirely", () => {
     const ctx = new RecordingCanvasContext();
     const column = textColumn({
-      renderer: { kind: "dom", create: () => ({ mount() {}, update() {}, destroy() {} }) }
+      renderer: {
+        kind: "dom",
+        pointerOwnership: "surface",
+        create: () => ({ mount() {}, update() {}, destroy() {} })
+      }
     });
-    const painter = createColumnAwarePainter([column]);
+    const painter = createColumnAwarePainter(() => [column]);
 
     painter({ ctx, rect, row: 0, column: 0, value: "x" });
 
@@ -134,12 +179,11 @@ describe("createColumnAwarePainter — error isolation through ContentLayerRende
     const errors: unknown[] = [];
     const renderer = new ContentLayerRenderer({
       ctx,
-      layout,
+      getScene: () => createScene(layout),
       getCellValue: () => "x",
-      painter: createColumnAwarePainter(columns),
+      painter: createColumnAwarePainter(() => columns),
       onError: (error) => errors.push(error)
     });
-    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 20 });
 
     renderer.paintContent({ kind: "full" });
 

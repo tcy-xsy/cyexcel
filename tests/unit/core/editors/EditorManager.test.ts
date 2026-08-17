@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { EditorManager, LayoutEngine } from "../../../../src/core";
-import type { CellEditor, CellEditorContext, ValidationResult } from "../../../../src/core";
+import { EditorManager } from "../../../../src/core/editors";
+import type { CellEditor, CellEditorContext, ValidationResult } from "../../../../src/core/editors";
+import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "../../../../src/core/layout";
+import type { ViewportState } from "../../../../src/core/layout";
+import { SceneSnapshot } from "../../../../src/core/scene";
 
 interface FakeContainer {
   readonly element: HTMLElement;
@@ -42,6 +45,17 @@ function createLayout(): LayoutEngine {
   });
 }
 
+
+const VIEWPORT: ViewportState = { scrollTop: 0, scrollLeft: 0, width: 300, height: 200 };
+
+function createScene(layout: LayoutEngine, viewport: ViewportState = VIEWPORT): SceneSnapshot {
+  return new SceneSnapshot({
+    version: 1,
+    skeleton: SkeletonSnapshot.fromLayout(layout, 1),
+    viewport: new ViewportSnapshot({ version: 1, ...viewport })
+  });
+}
+
 function createRecordingEditor(
   overrides: {
     readonly value?: unknown;
@@ -51,15 +65,21 @@ function createRecordingEditor(
   readonly editor: CellEditor;
   readonly calls: string[];
   getLastContext: () => CellEditorContext | undefined;
+  getLastGeometry: () => CellEditorContext["rect"] | undefined;
 } {
   const calls: string[] = [];
   let lastContext: CellEditorContext | undefined;
+  let lastGeometry: CellEditorContext["rect"] | undefined;
   const value = overrides.value ?? "typed-value";
 
   const base = {
     mount(_container: HTMLElement, context: CellEditorContext): void {
       calls.push("mount");
       lastContext = context;
+    },
+    updateGeometry(rect: CellEditorContext["rect"]): void {
+      calls.push("updateGeometry");
+      lastGeometry = rect;
     },
     focus(): void {
       calls.push("focus");
@@ -83,7 +103,12 @@ function createRecordingEditor(
       }
     : base;
 
-  return { editor, calls, getLastContext: () => lastContext };
+  return {
+    editor,
+    calls,
+    getLastContext: () => lastContext,
+    getLastGeometry: () => lastGeometry
+  };
 }
 
 function createManager(
@@ -94,14 +119,23 @@ function createManager(
   const layout = createLayout();
   const recording = createRecordingEditor(editorOverrides);
   const container = createFakeContainer(containerOverrides?.containsNext ?? false);
+  let scene = createScene(layout);
   const manager = new EditorManager({
     container: container.element,
-    layout,
+    getScene: () => scene,
     getCellValue: () => "current-value",
     commitValue,
     editorFactory: () => recording.editor
   });
-  return { manager, layout, dispatch: container.dispatch, ...recording };
+  return {
+    manager,
+    layout,
+    dispatch: container.dispatch,
+    setViewport: (viewport: ViewportState) => {
+      scene = createScene(layout, viewport);
+    },
+    ...recording
+  };
 }
 
 describe("EditorManager.startEdit", () => {
@@ -123,9 +157,9 @@ describe("EditorManager.startEdit", () => {
   });
 
   it("positions the editor relative to the current scroll offset, not the absolute content position", () => {
-    const { manager, layout, getLastContext } = createManager();
+    const { manager, layout, getLastContext, setViewport } = createManager();
 
-    manager.setViewport({ scrollTop: 40, scrollLeft: 10, width: 200, height: 100 });
+    setViewport({ scrollTop: 40, scrollLeft: 10, width: 200, height: 100 });
     manager.startEdit(3, 2);
 
     const absolute = layout.getCellRect(3, 2);
@@ -135,6 +169,76 @@ describe("EditorManager.startEdit", () => {
       width: absolute.width,
       height: absolute.height
     });
+  });
+
+  it("limits a partially scrolled cell editor to the canonical body pane", () => {
+    const layout = new LayoutEngine({
+      rowCount: 10,
+      columnCount: 2,
+      rowHeight: 20,
+      columnWidths: [50, 50],
+      freeze: { rows: 1, columns: 1 }
+    });
+    const recording = createRecordingEditor();
+    const container = createFakeContainer();
+    const manager = new EditorManager({
+      container: container.element,
+      getScene: () => createScene(layout, {
+        scrollTop: 10,
+        scrollLeft: 20,
+        width: 100,
+        height: 40
+      }),
+      getCellValue: () => "current-value",
+      commitValue: () => {},
+      editorFactory: () => recording.editor
+    });
+
+    manager.startEdit(1, 1);
+
+    expect(recording.getLastContext()?.rect).toEqual({
+      x: 50,
+      y: 20,
+      width: 30,
+      height: 10
+    });
+  });
+
+  it("repositions the active editor from a newly published Scene", () => {
+    const { manager, layout, getLastGeometry, setViewport } = createManager();
+    manager.startEdit(3, 2);
+
+    setViewport({ scrollTop: 40, scrollLeft: 10, width: 200, height: 100 });
+    manager.updateGeometry();
+
+    const absolute = layout.getCellRect(3, 2);
+    expect(getLastGeometry()).toEqual({
+      x: absolute.x - 10,
+      y: absolute.y - 40,
+      width: absolute.width,
+      height: absolute.height
+    });
+  });
+
+  it("cancels when the edited cell is absent from the new Scene panes", () => {
+    const { manager, calls, setViewport } = createManager();
+    manager.startEdit(3, 2);
+
+    setViewport({ scrollTop: 0, scrollLeft: 0, width: 20, height: 20 });
+    manager.updateGeometry();
+
+    expect(manager.isEditing()).toBe(false);
+    expect(calls).toContain("destroy");
+  });
+
+  it("does not create an editor for a cell outside every pane clip", () => {
+    const { manager, calls, setViewport } = createManager();
+    setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
+
+    manager.startEdit(9, 4);
+
+    expect(manager.isEditing()).toBe(false);
+    expect(calls).toEqual([]);
   });
 
   it("ignores a second startEdit call while already editing", () => {
@@ -332,7 +436,7 @@ describe("EditorManager construction", () => {
       () =>
         new EditorManager({
           container: container.element,
-          layout,
+          getScene: () => createScene(layout),
           getCellValue: () => "x",
           commitValue: () => {}
         })
@@ -352,7 +456,7 @@ describe("EditorManager concurrent cancel during a pending commit", () => {
     const container = createFakeContainer();
     const manager = new EditorManager({
       container: container.element,
-      layout,
+      getScene: () => createScene(layout),
       getCellValue: () => "current-value",
       commitValue: () => commitPromise,
       editorFactory: () => recording.editor,
@@ -429,7 +533,7 @@ describe("EditorManager.resolveEditor — per-column editor resolution", () => {
 
     const manager = new EditorManager({
       container: container.element,
-      layout,
+      getScene: () => createScene(layout),
       getCellValue: () => "current-value",
       commitValue: () => {},
       editorFactory: () => defaultRecording.editor,
@@ -450,7 +554,7 @@ describe("EditorManager.resolveEditor — per-column editor resolution", () => {
 
     const manager = new EditorManager({
       container: container.element,
-      layout,
+      getScene: () => createScene(layout),
       getCellValue: () => "current-value",
       commitValue: () => {},
       editorFactory: () => defaultRecording.editor,
@@ -485,7 +589,7 @@ describe("EditorManager.serializeCellValue — initial edit text", () => {
 
     const manager = new EditorManager({
       container: container.element,
-      layout,
+      getScene: () => createScene(layout),
       getCellValue: () => ({ nested: true }),
       commitValue: () => {},
       editorFactory: () => recording.editor,

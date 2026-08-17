@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CellTypeRegistry, registerBuiltinCellTypes } from "../../../../src/core";
+import { CellTypeRegistry, registerBuiltinCellTypes } from "../../../../src/core/cells";
 
 function registry(): CellTypeRegistry {
   const registry = new CellTypeRegistry();
