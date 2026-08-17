@@ -79,7 +79,8 @@ export default tseslint.config(
       "src/core/headers/**/*.ts",
       "src/core/menu/**/*.ts",
       "src/core/scene/**/*.ts",
-      "src/core/clipboard/**/*.ts"
+      "src/core/clipboard/**/*.ts",
+      "src/core/measurement/**/*.ts"
     ],
     rules: {
       "no-restricted-imports": [

@@ -100,17 +100,17 @@ import {
   type SurfaceId,
   type SurfaceSetSnapshot
 } from "./scene";
+import { WrapMeasurementService } from "./measurement";
 import { ShortcutRegistry, type ShortcutHandler } from "./shortcuts";
 import {
   ContentLayerRenderer,
   CanvasSurface,
   RenderScheduler,
   SelectionLayerRenderer,
-  computeWrappedCellHeight,
   readDevicePixelRatio,
   type Canvas2DLike
 } from "./render";
-import { CELL_FONT, CELL_PADDING } from "./render/theme";
+import { CELL_FONT } from "./render/theme";
 import type {
   CellRange,
   Command,
@@ -533,10 +533,8 @@ export class CyExcelCore {
   readonly #selectionCanvas: HTMLCanvasElement;
   readonly #inputSurfaceOwners = new WeakMap<EventTarget, SurfaceId>();
   readonly #surfaceHost: SurfaceHost;
-  /** Never appended to any DOM tree — exists purely so wrap-height measurement (#computeRequiredRowHeight()) has a real `measureText()` to call without touching #contentCanvas's own drawing state. */
-  readonly #measureCtx: Canvas2DLike;
-  /** Rows measured for the current data/column structure epoch. */
-  readonly #measuredWrapRows = new Set<number>();
+  /** Owns wrap-height measurement and the measured-row cache for the current data/column structure epoch. Core keeps only the commit half. */
+  readonly #measurement: WrapMeasurementService;
 
   #columns: readonly CyExcelColumnConfig[];
   readonly #headerGroups: readonly HeaderGroupDefinition[];
@@ -820,8 +818,17 @@ export class CyExcelCore {
     this.#rowHeaderCanvasSurface = new CanvasSurface(this.#rowHeaderCanvas, rowHeaderCtx);
     this.#contentCanvasSurface = new CanvasSurface(this.#contentCanvas, contentCtx);
     this.#selectionCanvasSurface = new CanvasSurface(this.#selectionCanvas, selectionCtx);
-    this.#measureCtx = document.createElement("canvas").getContext("2d") as Canvas2DLike;
-    this.#measureCtx.font = CELL_FONT;
+    // Never appended to any DOM tree — exists purely so wrap-height
+    // measurement has a real `measureText()` to call without touching
+    // #contentCanvas's own drawing state.
+    const measureCtx = document.createElement("canvas").getContext("2d") as Canvas2DLike;
+    measureCtx.font = CELL_FONT;
+    this.#measurement = new WrapMeasurementService({
+      measureContext: measureCtx,
+      getColumns: () => this.#columnManager.getColumns(),
+      getCell: (row, column) => this.#store.getCell(row, column),
+      onError: (error, eventName) => this.#events.emit("error", { error, eventName })
+    });
 
     this.#contentRenderer = new ContentLayerRenderer({
       ctx: contentCtx,
@@ -1286,55 +1293,16 @@ export class CyExcelCore {
     });
   }
 
-  /** Whether any column opted into `wrap: true` and uses the default (non-custom-renderer) paint path — the single cheap check every content-driven auto-height call site does first, so a table that never uses `wrap` pays nothing beyond this one `.some()` scan, never a per-row or per-edit measurement. */
-  #hasWrapColumns(): boolean {
-    return this.#columnManager.getColumns().some((column) => column.wrap && column.renderer === undefined);
-  }
-
-  /**
-   * The tallest height any wrap-enabled column's content needs for `row`,
-   * or just the default row height if none do. Never smaller than the
-   * default. Auto-owned rows can grow or shrink to this exact measurement;
-   * manual rows are filtered before this formatter work starts.
-   * `column.renderer !== undefined`
-   * columns are skipped — a custom canvas renderer paints itself, and a DOM
-   * renderer is owned entirely by `DOMCellManager`; `wrap` only has meaning
-   * for the built-in `drawFormattedText()` path (`createColumnAwarePainter`
-   * only wraps when there's no custom `renderer` at all).
-   */
-  #computeRequiredRowHeight(row: number, scene: SceneSnapshot): number {
-    const columns = this.#columnManager.getColumns();
-    let required = this.#layout.rowHeight;
-    for (let index = 0; index < columns.length; index += 1) {
-      const column = columns[index];
-      if (!column || !column.wrap || column.renderer !== undefined) {
-        continue;
-      }
-      const value = this.#store.getCell(row, index);
-      const text = column.format(value, { row, column });
-      const columnWidth = scene.getColumnWidth(index);
-      if (columnWidth <= CELL_PADDING * 2) {
-        continue;
-      }
-      const maxWidth = columnWidth - CELL_PADDING * 2;
-      const height = computeWrappedCellHeight(this.#measureCtx, text, maxWidth);
-      if (height > required) {
-        required = height;
-      }
-    }
-    return required;
-  }
-
-  /** Measures whatever rows are about to be painted (already-visible + overscan, per `getVisibleRowRange()`) that haven't been measured before — called from `#syncViewport()`, before painting. A no-op scan when the table has no wrap columns at all, and a no-op per-row once a row has been measured once (until an actual edit re-triggers it via `#invalidatePatches()`'s cell-value/range-value handling). */
+  /** Measures whatever rows are about to be painted (already-visible + overscan, per the Scene's own body panes) that haven't been measured before — called from `#syncViewport()`, before painting. A no-op scan when the table has no wrap columns at all, and a no-op per-row once a row has been measured once (until an actual edit re-triggers it via `#invalidatePatches()`'s cell-value/range-value handling). */
   #measureVisibleWrapRows(
     scene: SceneSnapshot,
     remainingFollowUpPasses: number
   ): boolean {
-    if (!this.#hasWrapColumns()) {
+    if (!this.#measurement.hasWrapColumns()) {
       return false;
     }
     return this.#measureAndResizeRows(
-      new Set(this.#visibleUnmeasuredWrapRows(scene)),
+      new Set(this.#measurement.visibleUnmeasuredRows(scene)),
       scene,
       remainingFollowUpPasses
     );
@@ -1611,15 +1579,11 @@ export class CyExcelCore {
         } else if (patch.type === "column-layout") {
           hasColumnLayout = true;
         } else if (patch.type === "cell-value") {
-          this.#measuredWrapRows.delete(patch.row);
+          this.#measurement.forgetRow(patch.row);
         } else if (patch.type === "range-value") {
-          for (const row of this.#measuredWrapRows) {
-            if (row >= patch.range.startRow && row <= patch.range.endRow) {
-              this.#measuredWrapRows.delete(row);
-            }
-          }
+          this.#measurement.forgetRowRange(patch.range.startRow, patch.range.endRow);
         } else if (patch.type === "full-reset") {
-          this.#measuredWrapRows.clear();
+          this.#measurement.forgetAll();
         }
       }
 
@@ -1645,7 +1609,7 @@ export class CyExcelCore {
         this.#runFinalizer("spacer", () => this.#updateSpacerSize());
       }
       if (hasRowStructure || hasColumnStructure || hasColumnLayout) {
-        this.#measuredWrapRows.clear();
+        this.#measurement.forgetAll();
       }
       if (
         hasRowStructure ||
@@ -1666,19 +1630,20 @@ export class CyExcelCore {
       if (sceneReady && receiptScene) {
         this.#reprojectEditor(receiptScene);
 
-        const hasWrapColumns = this.#hasWrapColumns();
+        const hasWrapColumns = this.#measurement.hasWrapColumns();
         const visibleUnmeasuredRows = hasWrapColumns
-          ? this.#visibleUnmeasuredWrapRows(receiptScene)
+          ? this.#measurement.visibleUnmeasuredRows(receiptScene)
           : [];
         const rowsToMeasure = new Set(visibleUnmeasuredRows);
         if (!hasWrapColumns && hasColumnStructure) {
-          for (const [row, provenance] of this.#layout.root.rowHeightProvenance) {
-            if (
-              provenance === "auto" &&
-              receiptScene.getRowHeight(row) !== this.#layout.rowHeight
-            ) {
-              rowsToMeasure.add(row);
-            }
+          // Deleting the last wrap column has to shrink auto-owned rows back;
+          // they are already "measured", so the visible scan never finds them.
+          for (const row of this.#measurement.rowsNeedingDefaultReset(
+            receiptScene,
+            this.#layout.root.rowHeightProvenance,
+            this.#layout.rowHeight
+          )) {
+            rowsToMeasure.add(row);
           }
         }
         const rowResizeScheduled = measurementPassesRemaining > 0 && rowsToMeasure.size > 0
@@ -1723,20 +1688,7 @@ export class CyExcelCore {
     }
   }
 
-  #visibleUnmeasuredWrapRows(scene: SceneSnapshot): readonly number[] {
-    const rows = new Set<number>();
-    for (const pane of scene.getPanes("body")) {
-      for (let index = 0; index < pane.rows.count; index += 1) {
-        const row = pane.rows.start + index;
-        if (!this.#measuredWrapRows.has(row)) {
-          rows.add(row);
-        }
-      }
-    }
-    return [...rows];
-  }
-
-  /** Measures auto-owned rows, then queues one skip-history Command for the batch. */
+  /** Measures auto-owned rows via the measurement service, then queues one skip-history Command for the batch. Core owns only the commit half: which command, which history policy, and what happens when the basis moved underneath a formatter. */
   #measureAndResizeRows(
     rows: ReadonlySet<number>,
     basisScene: SceneSnapshot,
@@ -1744,41 +1696,17 @@ export class CyExcelCore {
   ): boolean {
     const basisModelVersion = this.#store.version;
     const basisLayoutRoot = this.#layout.root;
-    if (
-      basisScene.modelVersion !== basisModelVersion ||
-      basisScene.layoutVersion !== basisLayoutRoot.version
-    ) {
-      throw new Error(
-        `Wrap measurement Scene basis ${basisScene.modelVersion}/${basisScene.layoutVersion} ` +
-        `does not match model/layout ${basisModelVersion}/${basisLayoutRoot.version}`
-      );
-    }
-
-    const updates: Array<{ readonly row: number; readonly height: number }> = [];
-    const measuredWithoutResize: number[] = [];
-    for (const row of rows) {
-      if ((basisLayoutRoot.rowHeightProvenance.get(row) ?? "default") === "manual") {
-        measuredWithoutResize.push(row);
-        continue;
-      }
-      try {
-        const required = this.#computeRequiredRowHeight(row, basisScene);
-        if (required !== basisScene.getRowHeight(row)) {
-          updates.push(Object.freeze({ row, height: required }));
-        } else {
-          measuredWithoutResize.push(row);
-        }
-      } catch (error) {
-        this.#events.emit("error", { error, eventName: "finalize:wrap-measurement" });
-      }
-    }
-    for (const row of measuredWithoutResize) {
-      this.#measuredWrapRows.add(row);
-    }
-    if (updates.length === 0) {
+    const plan = this.#measurement.planUpdates(rows, {
+      scene: basisScene,
+      modelVersion: basisModelVersion,
+      layoutVersion: basisLayoutRoot.version,
+      defaultRowHeight: this.#layout.rowHeight,
+      rowHeightProvenance: basisLayoutRoot.rowHeightProvenance
+    });
+    if (plan.updates.length === 0) {
       return false;
     }
-    const frozenUpdates = Object.freeze(updates);
+    const frozenUpdates = plan.updates;
     this.#enqueueOrRunMutation(() => {
       // A formatter is user code and may have queued an earlier mutation
       // while measurement was running. Never apply geometry measured from
@@ -1787,9 +1715,7 @@ export class CyExcelCore {
         this.#store.version !== basisModelVersion ||
         this.#layout.root !== basisLayoutRoot
       ) {
-        for (const { row } of frozenUpdates) {
-          this.#measuredWrapRows.delete(row);
-        }
+        this.#measurement.forget(frozenUpdates.map(({ row }) => row));
         this.#scheduleAutoHeightContinuation();
         return;
       }
@@ -1811,9 +1737,7 @@ export class CyExcelCore {
         return;
       }
 
-      for (const { row } of frozenUpdates) {
-        this.#measuredWrapRows.add(row);
-      }
+      this.#measurement.markMeasured(frozenUpdates.map(({ row }) => row));
       this.#invalidatePatches(patches, remainingFollowUpPasses);
       const rowLayoutPatches = Object.freeze(
         patches.filter((patch): patch is Extract<Patch, { type: "row-layout" }> =>
@@ -1846,13 +1770,14 @@ export class CyExcelCore {
   /**
    * Layout and Selection roots were already published by the structure
    * integration participant. This method only runs observer side effects.
-   * Also clears `#measuredWrapRows` wholesale — an insert/delete/move
-   * shifts which row every index refers to, so every entry in that set is
-   * a stale "row N was measured" claim about a row that may no longer be
-   * at N; clearing it is simpler and safer than trying to remap each entry
-   * the way `SelectionModel`/`LayoutEngine` do for their own per-row state,
-   * and just means the next `#syncViewport()` re-measures whatever's
-   * visible (cheap — bounded by viewport size, not row count).
+   * Also drops the whole measurement epoch via
+   * `WrapMeasurementService.forgetAll()` — an insert/delete/move shifts which
+   * row every index refers to, so every cached entry is a stale "row N was
+   * measured" claim about a row that may no longer be at N; clearing is
+   * simpler and safer than trying to remap each entry the way
+   * `SelectionModel`/`LayoutEngine` do for their own per-row state, and just
+   * means the next `#syncViewport()` re-measures whatever's visible (cheap —
+   * bounded by viewport size, not row count).
    */
   /**
    * The spacer's size is what determines the scroller's native

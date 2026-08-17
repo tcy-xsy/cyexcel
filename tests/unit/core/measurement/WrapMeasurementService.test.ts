@@ -1,0 +1,301 @@
+import { describe, expect, it, vi } from "vitest";
+
+import type { CanvasCellRenderer, RuntimeColumn } from "../../../../src/core/cells";
+import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "../../../../src/core/layout";
+import { WrapMeasurementService } from "../../../../src/core/measurement";
+import { SceneSnapshot } from "../../../../src/core/scene";
+import { RecordingCanvasContext } from "../../../helpers/RecordingCanvasContext";
+
+// RecordingCanvasContext measures a deterministic 7px per character, and the
+// theme wraps at CELL_LINE_HEIGHT 16 + CELL_PADDING 4 on each side. So a
+// 100px column fits floor((100 - 8) / 7) = 13 characters per line, and an
+// n-line cell needs n * 16 + 8 px.
+const DEFAULT_ROW_HEIGHT = 24;
+const lineHeightFor = (lines: number): number => lines * 16 + 8;
+
+/** A column that paints itself, so `wrap` must be ignored for it. */
+const customCanvasRenderer: CanvasCellRenderer = {
+  kind: "canvas",
+  paint: () => undefined
+};
+
+function textColumn(overrides: Partial<RuntimeColumn> = {}): RuntimeColumn {
+  return {
+    id: "c",
+    field: "c",
+    width: 100,
+    typeName: "text",
+    format: (value) => (value === undefined || value === null ? "" : String(value)),
+    clipboard: { copy: true, paste: true },
+    wrap: false,
+    version: 1,
+    ...overrides
+  };
+}
+
+function createLayout(rowCount = 10, columnWidths = [100]): LayoutEngine {
+  return new LayoutEngine({
+    rowCount,
+    columnCount: columnWidths.length,
+    rowHeight: DEFAULT_ROW_HEIGHT,
+    columnWidths
+  });
+}
+
+function createScene(layout: LayoutEngine, modelVersion = 1, height = 48): SceneSnapshot {
+  return new SceneSnapshot({
+    version: 1,
+    skeleton: SkeletonSnapshot.fromLayout(layout, modelVersion),
+    viewport: new ViewportSnapshot({
+      version: 1,
+      scrollTop: 0,
+      scrollLeft: 0,
+      width: 100,
+      height
+    })
+  });
+}
+
+interface Harness {
+  readonly service: WrapMeasurementService;
+  readonly onError: ReturnType<typeof vi.fn>;
+  readonly layout: LayoutEngine;
+  readonly scene: SceneSnapshot;
+}
+
+function createService(options: {
+  readonly columns?: readonly RuntimeColumn[];
+  readonly cells?: ReadonlyMap<string, unknown>;
+  readonly layout?: LayoutEngine;
+  readonly sceneHeight?: number;
+} = {}): Harness {
+  const columns = options.columns ?? [textColumn({ wrap: true })];
+  const cells = options.cells ?? new Map<string, unknown>();
+  const layout = options.layout ?? createLayout();
+  const onError = vi.fn();
+  const service = new WrapMeasurementService({
+    measureContext: new RecordingCanvasContext(),
+    getColumns: () => columns,
+    getCell: (row, column) => cells.get(`${row}:${column}`),
+    onError
+  });
+  return { service, onError, layout, scene: createScene(layout, 1, options.sceneHeight) };
+}
+
+function basisFor(harness: Harness, provenance = new Map<number, "auto" | "manual">()) {
+  return {
+    scene: harness.scene,
+    modelVersion: harness.scene.modelVersion,
+    layoutVersion: harness.scene.layoutVersion,
+    defaultRowHeight: DEFAULT_ROW_HEIGHT,
+    rowHeightProvenance: provenance
+  };
+}
+
+describe("WrapMeasurementService.hasWrapColumns", () => {
+  it("is false when no column opted into wrap", () => {
+    const { service } = createService({ columns: [textColumn()] });
+    expect(service.hasWrapColumns()).toBe(false);
+  });
+
+  it("is true for a wrap column on the built-in paint path", () => {
+    const { service } = createService({ columns: [textColumn({ wrap: true })] });
+    expect(service.hasWrapColumns()).toBe(true);
+  });
+
+  it("ignores a wrap column that owns its own renderer", () => {
+    const { service } = createService({
+      columns: [textColumn({ wrap: true, renderer: customCanvasRenderer })]
+    });
+    expect(service.hasWrapColumns()).toBe(false);
+  });
+});
+
+describe("WrapMeasurementService.computeRequiredRowHeight", () => {
+  it("returns the default height when content fits on one line", () => {
+    const harness = createService({ cells: new Map([["0:0", "short"]]) });
+    expect(harness.service.computeRequiredRowHeight(0, harness.scene, DEFAULT_ROW_HEIGHT))
+      .toBe(DEFAULT_ROW_HEIGHT);
+  });
+
+  it("grows to fit wrapped content", () => {
+    // 26 characters at 13 per line = 2 lines.
+    const harness = createService({ cells: new Map([["0:0", "aaaaaaaaaaaa bbbbbbbbbbbb"]]) });
+    expect(harness.service.computeRequiredRowHeight(0, harness.scene, DEFAULT_ROW_HEIGHT))
+      .toBe(lineHeightFor(2));
+  });
+
+  it("takes the tallest column, not the last one", () => {
+    const harness = createService({
+      columns: [
+        textColumn({ id: "a", wrap: true }),
+        textColumn({ id: "b", wrap: true })
+      ],
+      cells: new Map<string, unknown>([
+        ["0:0", "aaaaaaaaaaaa bbbbbbbbbbbb cccccccccccc"],
+        ["0:1", "short"]
+      ]),
+      layout: createLayout(10, [100, 100])
+    });
+    expect(harness.service.computeRequiredRowHeight(0, harness.scene, DEFAULT_ROW_HEIGHT))
+      .toBe(lineHeightFor(3));
+  });
+
+  it("skips columns owned by a custom renderer", () => {
+    const harness = createService({
+      columns: [textColumn({ wrap: true, renderer: customCanvasRenderer })],
+      cells: new Map([["0:0", "aaaaaaaaaaaa bbbbbbbbbbbb"]])
+    });
+    expect(harness.service.computeRequiredRowHeight(0, harness.scene, DEFAULT_ROW_HEIGHT))
+      .toBe(DEFAULT_ROW_HEIGHT);
+  });
+
+  it("skips a column too narrow to hold any text", () => {
+    const harness = createService({
+      columns: [textColumn({ wrap: true, width: 8 })],
+      cells: new Map([["0:0", "aaaaaaaaaaaa bbbbbbbbbbbb"]]),
+      layout: createLayout(10, [8])
+    });
+    expect(harness.service.computeRequiredRowHeight(0, harness.scene, DEFAULT_ROW_HEIGHT))
+      .toBe(DEFAULT_ROW_HEIGHT);
+  });
+});
+
+describe("WrapMeasurementService cache", () => {
+  it("reports visible rows once and then treats them as measured", () => {
+    const harness = createService({ sceneHeight: 48 });
+    const first = harness.service.visibleUnmeasuredRows(harness.scene);
+    expect(first.length).toBeGreaterThan(0);
+
+    harness.service.markMeasured(first);
+    expect(harness.service.visibleUnmeasuredRows(harness.scene)).toEqual([]);
+  });
+
+  it("forgetRow re-exposes exactly one row", () => {
+    const harness = createService();
+    const rows = harness.service.visibleUnmeasuredRows(harness.scene);
+    harness.service.markMeasured(rows);
+
+    harness.service.forgetRow(rows[0] as number);
+    expect(harness.service.visibleUnmeasuredRows(harness.scene)).toEqual([rows[0]]);
+  });
+
+  it("forgetRowRange re-exposes only rows inside the span", () => {
+    const harness = createService({ sceneHeight: 240 });
+    const rows = harness.service.visibleUnmeasuredRows(harness.scene);
+    harness.service.markMeasured(rows);
+
+    harness.service.forgetRowRange(1, 2);
+    expect(harness.service.visibleUnmeasuredRows(harness.scene)).toEqual([1, 2]);
+  });
+
+  it("forgetAll drops the whole epoch", () => {
+    const harness = createService();
+    const rows = harness.service.visibleUnmeasuredRows(harness.scene);
+    harness.service.markMeasured(rows);
+
+    harness.service.forgetAll();
+    expect(harness.service.measuredRowCount).toBe(0);
+    expect(harness.service.visibleUnmeasuredRows(harness.scene)).toEqual([...rows]);
+  });
+});
+
+describe("WrapMeasurementService.planUpdates", () => {
+  it("rejects a Scene that is not the current model/layout basis", () => {
+    const harness = createService();
+    expect(() =>
+      harness.service.planUpdates(new Set([0]), {
+        ...basisFor(harness),
+        modelVersion: harness.scene.modelVersion + 1
+      })
+    ).toThrow(/does not match model\/layout/);
+  });
+
+  it("reports a resize for a row whose content no longer fits", () => {
+    const harness = createService({ cells: new Map([["0:0", "aaaaaaaaaaaa bbbbbbbbbbbb"]]) });
+    const plan = harness.service.planUpdates(new Set([0]), basisFor(harness));
+
+    expect(plan.updates).toEqual([{ row: 0, height: lineHeightFor(2) }]);
+    expect(plan.measuredWithoutResize).toEqual([]);
+  });
+
+  it("marks a row measured when it already has the right height, without an update", () => {
+    const harness = createService({ cells: new Map([["0:0", "short"]]) });
+    const plan = harness.service.planUpdates(new Set([0]), basisFor(harness));
+
+    expect(plan.updates).toEqual([]);
+    expect(plan.measuredWithoutResize).toEqual([0]);
+    expect(harness.service.measuredRowCount).toBe(1);
+  });
+
+  it("never measures a manually resized row", () => {
+    const harness = createService({ cells: new Map([["0:0", "aaaaaaaaaaaa bbbbbbbbbbbb"]]) });
+    const plan = harness.service.planUpdates(
+      new Set([0]),
+      basisFor(harness, new Map([[0, "manual"]]))
+    );
+
+    expect(plan.updates).toEqual([]);
+    expect(plan.measuredWithoutResize).toEqual([0]);
+  });
+
+  it("reports a throwing formatter and keeps measuring the other rows", () => {
+    const harness = createService({
+      columns: [
+        textColumn({
+          wrap: true,
+          format: (_value, context) => {
+            if (context.row === 0) {
+              throw new Error("bad formatter");
+            }
+            return "aaaaaaaaaaaa bbbbbbbbbbbb";
+          }
+        })
+      ]
+    });
+    const plan = harness.service.planUpdates(new Set([0, 1]), basisFor(harness));
+
+    expect(harness.onError).toHaveBeenCalledTimes(1);
+    expect(harness.onError.mock.calls[0]?.[1]).toBe("finalize:wrap-measurement");
+    expect(plan.updates).toEqual([{ row: 1, height: lineHeightFor(2) }]);
+  });
+
+  it("freezes the plan so a caller cannot mutate measured geometry", () => {
+    const harness = createService({ cells: new Map([["0:0", "aaaaaaaaaaaa bbbbbbbbbbbb"]]) });
+    const plan = harness.service.planUpdates(new Set([0]), basisFor(harness));
+
+    expect(Object.isFrozen(plan)).toBe(true);
+    expect(Object.isFrozen(plan.updates)).toBe(true);
+    expect(Object.isFrozen(plan.updates[0])).toBe(true);
+  });
+});
+
+describe("WrapMeasurementService.rowsNeedingDefaultReset", () => {
+  it("finds auto-owned rows still taller than the default", () => {
+    const layout = createLayout();
+    layout.setRowHeight(2, 60);
+    const harness = createService({ layout });
+
+    expect(
+      harness.service.rowsNeedingDefaultReset(
+        harness.scene,
+        new Map([[2, "auto"]]),
+        DEFAULT_ROW_HEIGHT
+      )
+    ).toEqual([2]);
+  });
+
+  it("leaves manually resized rows alone", () => {
+    const layout = createLayout();
+    layout.setRowHeight(2, 60);
+    const harness = createService({ layout });
+
+    expect(
+      harness.service.rowsNeedingDefaultReset(
+        harness.scene,
+        new Map([[2, "manual"]]),
+        DEFAULT_ROW_HEIGHT
+      )
+    ).toEqual([]);
+  });
+});
