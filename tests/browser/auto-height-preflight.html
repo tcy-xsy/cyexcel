@@ -59,6 +59,18 @@
                 : `row-${row}`,
           keeper: `keep-${row}`
         }));
+      } else if (scenario === "batch-per-frame") {
+        // A taller viewport and text that wraps to about two lines, so one
+        // scroll brings a whole screen of never-measured wrap rows into view at
+        // once. With the default 115px viewport and nine-line text only two
+        // rows fit, and those are already measured at construction — no batch
+        // would ever be produced to count.
+        document.getElementById("app").style.height = "400px";
+        columns = [{ ...wrapColumn, width: 120 }, keeperColumn];
+        data = Array.from({ length: 200 }, (_unused, row) => ({
+          wrapped: `row ${row} alpha beta gamma`,
+          keeper: `keep-${row}`
+        }));
       } else {
         throw new Error(`Unknown auto-height preflight scenario: ${scenario}`);
       }
@@ -73,16 +85,44 @@
       });
       const rowLayoutRows = [];
       const errors = [];
+
+      // A free-running frame counter, so every row-layout batch can be stamped
+      // with the frame it landed in. The gate is "at most one model row-height
+      // batch per frame"; without a stamp, N batches spread over N frames and N
+      // batches inside one frame look identical from the patch stream.
+      let frameId = 0;
+      const tick = () => {
+        frameId += 1;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+
+      const rowLayoutBatches = [];
       sheet.events.on("change", ({ patches }) => {
         for (const patch of patches) {
-          if (patch.type === "row-layout") rowLayoutRows.push(...patch.rows);
+          if (patch.type === "row-layout") {
+            rowLayoutRows.push(...patch.rows);
+            rowLayoutBatches.push({ frameId, rowCount: patch.rows.length });
+          }
         }
       });
       sheet.events.on("error", ({ error, eventName }) => {
         errors.push({ eventName, message: String(error?.message ?? error) });
       });
 
-      window.__autoHeightPreflight = { sheet, rowLayoutRows, errors };
+      const scroller = document.querySelector("#app").firstElementChild;
+      window.__autoHeightPreflight = {
+        sheet,
+        rowLayoutRows,
+        rowLayoutBatches,
+        errors,
+        resetBatches() {
+          rowLayoutBatches.length = 0;
+        },
+        scrollBy(delta) {
+          scroller.scrollTop += delta;
+        }
+      };
       window.__cyexcelAutoHeightPreflightReady = true;
     </script>
   </body>
