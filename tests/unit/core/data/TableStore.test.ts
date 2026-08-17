@@ -360,3 +360,41 @@ describe("TableStore — structural column operations", () => {
     expect(store.getCell(0, 2)).toEqual(["x"]);
   });
 });
+
+describe("TableStore DataSource transaction capability", () => {
+  /** The minimal read/write DataSource: no optional capability declared. */
+  function minimalSource(): DataSource {
+    return {
+      getRowCount: () => 2,
+      getColumnCount: () => 2,
+      getCell: (row, column) => `${row}:${column}`,
+      setCell: () => {}
+    };
+  }
+
+  it("throws MutationNotSupported when the DataSource has no beginTransaction", () => {
+    // The counterpart to the StructuralModificationNotSupported cases above,
+    // and the code a caller sees for an ordinary cell write rather than a
+    // structural one. It had an error code and a message but no assertion
+    // until this test — the gap the Phase 8 audit turned up.
+    const store = new TableStore(minimalSource());
+
+    try {
+      store.beginMutationSession("t1");
+      expect.unreachable("expected beginMutationSession to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CyExcelError);
+      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.MutationNotSupported);
+    }
+  });
+
+  it("names the missing contract in the message, not just the code", () => {
+    const store = new TableStore(minimalSource());
+    try {
+      store.beginMutationSession("t1");
+      expect.unreachable("expected beginMutationSession to throw");
+    } catch (error) {
+      expect((error as CyExcelError).message).toContain("staged transaction contract");
+    }
+  });
+});
