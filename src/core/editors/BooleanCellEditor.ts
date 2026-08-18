@@ -29,6 +29,26 @@ export function createBooleanCellEditor(): CellEditor {
       const checkboxElement = document.createElement("input");
       checkboxElement.type = "checkbox";
       checkboxElement.checked = Boolean(context.initialValue);
+      // Toggle without letting the press move focus out of the editor.
+      //
+      // On macOS, clicking a checkbox does not focus it — WebKit follows that
+      // platform convention and blurs instead. EditorManager treats a focusout
+      // that leaves the editor container as "commit", so on Safari merely
+      // clicking this checkbox committed the *old* value and tore the editor
+      // down; the trace was pointerdown@INPUT -> focusout@INPUT -> the grid
+      // canvas taking focus, with the click event never completing on the
+      // input at all. Chromium focuses the control on press, which is why the
+      // bug only surfaced once the browser matrix was actually run.
+      //
+      // preventDefault() on mousedown suppresses only the focus change; the
+      // checkbox's activation behaviour runs on click and still toggles
+      // normally, so the state is left to the platform. (Toggling by hand here
+      // as well double-toggles: the manual flip and the native click cancel
+      // out, and the cell commits its original value.)
+      checkboxElement.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        checkboxElement.focus();
+      });
       wrapperElement.appendChild(checkboxElement);
 
       container.appendChild(wrapperElement);
