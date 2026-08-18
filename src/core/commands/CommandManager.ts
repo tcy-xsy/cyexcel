@@ -17,7 +17,8 @@ import type {
   PreparedTransaction,
   TransactionReadView
 } from "../mutations";
-import type { Command, CommandContext, Patch } from "../types";
+import type { SemanticChange } from "../data/changes";
+import type { Command, CommandContext } from "../types";
 import type { CommandPlanner } from "./CommandHandlerRegistry";
 
 export interface BeforeCommandContext extends CancellableContext {
@@ -27,7 +28,7 @@ export interface BeforeCommandContext extends CancellableContext {
 
 export interface BeforeTransactionCommitContext extends CancellableContext {
   readonly commands: readonly Command[];
-  readonly patches: readonly Patch[];
+  readonly patches: readonly SemanticChange[];
   readonly model: TransactionReadView;
   readonly transactionId: string;
 }
@@ -108,11 +109,11 @@ export class CommandManager {
     this.#history.clear();
   }
 
-  execute(command: Command, options: CommandExecutionOptions = {}): readonly Patch[] {
+  execute(command: Command, options: CommandExecutionOptions = {}): readonly SemanticChange[] {
     return this.transaction(() => this.#planCommand(command), options);
   }
 
-  transaction(fn: () => void, options: CommandExecutionOptions = {}): readonly Patch[] {
+  transaction(fn: () => void, options: CommandExecutionOptions = {}): readonly SemanticChange[] {
     if (this.#frame && !this.#acceptingCommands) {
       throw new CyExcelError(CyExcelErrorCode.ReentrantMutation, "Cannot enter a transaction while it is preparing or committing");
     }
@@ -165,7 +166,7 @@ export class CommandManager {
     }
   }
 
-  undo(): readonly Patch[] | undefined {
+  undo(): readonly SemanticChange[] | undefined {
     const entry = this.#history.peekUndo();
     if (!entry) {
       this.#lastChangeSet = undefined;
@@ -177,7 +178,7 @@ export class CommandManager {
     return mergePatches(replay.patches);
   }
 
-  redo(): readonly Patch[] | undefined {
+  redo(): readonly SemanticChange[] | undefined {
     const entry = this.#history.peekRedo();
     if (!entry) {
       this.#lastChangeSet = undefined;
@@ -218,7 +219,7 @@ export class CommandManager {
     }
   }
 
-  #hookAndCommit(frame: TransactionFrame, prepared: PreparedTransaction): readonly Patch[] {
+  #hookAndCommit(frame: TransactionFrame, prepared: PreparedTransaction): readonly SemanticChange[] {
     try {
       const context = createCancellableContext<Omit<BeforeTransactionCommitContext, keyof CancellableContext>>({
         commands: Object.freeze([...frame.commands]),

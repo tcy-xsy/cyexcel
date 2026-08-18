@@ -122,6 +122,32 @@ export default tseslint.config(
     }
   },
   {
+    // Migration plan §11 (Phase 8): CyExcelCore must not interpret the model's
+    // Patch vocabulary. The original condition was worded as "#invalidatePatches()
+    // 已删除", which is not checkable — the method's remaining content is
+    // post-commit composition, which §12 explicitly allows Core to hold. What is
+    // actually required is that Core stops *reading* changes: dirty derivation
+    // belongs to compileDirtySet(), axis facts to summarizeStructuralChanges(),
+    // measurement to WrapMeasurementService. Importing `Patch` is the tripwire
+    // for that, and unlike a method name it cannot be satisfied by renaming.
+    files: ["src/core/CyExcelCore.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "./types",
+              importNames: ["Patch"],
+              message:
+                "CyExcelCore composes a commit receipt; it does not interpret changes. Consume ChangeSet/SemanticChange, and put any per-change logic in the owning service (ADR 0002, plan §11)."
+            }
+          ]
+        }
+      ]
+    }
+  },
+  {
     // Migration plan §12: History stores receipts, not Command instances.
     files: ["src/core/history/**/*.ts"],
     rules: {

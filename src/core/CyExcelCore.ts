@@ -127,7 +127,6 @@ import type {
   Command,
   DataSource,
   Disposer,
-  Patch,
   RowData
 } from "./types";
 import {
@@ -1362,7 +1361,7 @@ export class CyExcelCore {
     });
   }
 
-  /** Measures whatever rows are about to be painted (already-visible + overscan, per the Scene's own body panes) that haven't been measured before — called from `#syncViewport()`, before painting. A no-op scan when the table has no wrap columns at all, and a no-op per-row once a row has been measured once (until an actual edit re-triggers it via `#invalidatePatches()`'s cell-value/range-value handling). */
+  /** Measures whatever rows are about to be painted (already-visible + overscan, per the Scene's own body panes) that haven't been measured before — called from `#syncViewport()`, before painting. A no-op scan when the table has no wrap columns at all, and a no-op per-row once a row has been measured once (until an actual edit re-triggers it via `#publishCommitReceipt()`'s change-driven cache invalidation). */
   #measureVisibleWrapRows(
     scene: SceneSnapshot,
     remainingFollowUpPasses: number
@@ -1428,11 +1427,11 @@ export class CyExcelCore {
   }
 
   undo(): void {
-    this.#enqueueOrRunMutation(() => this.#invalidatePatches(this.#commandManager.undo()));
+    this.#enqueueOrRunMutation(() => this.#publishCommitReceipt(this.#commandManager.undo()));
   }
 
   redo(): void {
-    this.#enqueueOrRunMutation(() => this.#invalidatePatches(this.#commandManager.redo()));
+    this.#enqueueOrRunMutation(() => this.#publishCommitReceipt(this.#commandManager.redo()));
   }
 
   isEditing(): boolean {
@@ -1526,7 +1525,7 @@ export class CyExcelCore {
   }
 
   #applyCommandNow(command: Command): void {
-    this.#invalidatePatches(this.#commandManager.execute(command));
+    this.#publishCommitReceipt(this.#commandManager.execute(command));
   }
 
   /** User renderers may dispatch commands; replay them after the current receipt is fully observed. */
@@ -1621,11 +1620,22 @@ export class CyExcelCore {
     return runtimeColumn.parse ? runtimeColumn.parse(value, { row, column: runtimeColumn }) : value;
   }
 
-  #invalidatePatches(
-    patches: readonly Patch[] | undefined,
+  /**
+   * Runs the post-commit receipt: structure transition, derived geometry,
+   * Scene publication, measurement and the change event.
+   *
+   * Named `#invalidatePatches` until Phase 8 — a name from when it derived
+   * render invalidation by walking the Patch list itself. It no longer
+   * interprets changes at all: `compileDirtySet()` owns the dirty derivation,
+   * `summarizeStructuralChanges()` the axis facts, and
+   * `WrapMeasurementService` the measurement domain. What is left is
+   * composition, which §12 explicitly allows CyExcelCore to hold.
+   */
+  #publishCommitReceipt(
+    changes: readonly SemanticChange[] | undefined,
     measurementPassesRemaining = AUTO_HEIGHT_MAX_SYNC_PASSES
   ): void {
-    if (!patches) {
+    if (!changes) {
       return;
     }
     // Capture the receipt-derived facts before any finalizer runs. A DOM
@@ -1634,7 +1644,7 @@ export class CyExcelCore {
     const changeSet =
       this.#commandManager.lastChangeSet?.modelVersion === this.#store.version
         ? this.#commandManager.lastChangeSet
-        : createChangeSet(this.#store.version, patches);
+        : createChangeSet(this.#store.version, changes);
     // One pass over the change list instead of the three this method used to
     // make, and the measurement cache's own invalidation rules now live with
     // the cache rather than being spelled out here.
@@ -1744,9 +1754,9 @@ export class CyExcelCore {
         return;
       }
 
-      let patches: readonly Patch[];
+      let changes: readonly SemanticChange[];
       try {
-        patches = this.#commandManager.execute(
+        changes = this.#commandManager.execute(
           new SetRowHeightsCommand(frozenUpdates, "auto"),
           { history: "skip" }
         );
@@ -1762,10 +1772,10 @@ export class CyExcelCore {
       }
 
       this.#measurement.markMeasured(frozenUpdates.map(({ row }) => row));
-      this.#invalidatePatches(patches, remainingFollowUpPasses);
+      this.#publishCommitReceipt(changes, remainingFollowUpPasses);
       const rowLayoutChanges = Object.freeze(
-        patches.filter((patch): patch is Extract<SemanticChange, { type: "row-layout" }> =>
-          patch.type === "row-layout"
+        changes.filter((change): change is Extract<SemanticChange, { type: "row-layout" }> =>
+          change.type === "row-layout"
         )
       );
       if (rowLayoutChanges.length > 0) {
