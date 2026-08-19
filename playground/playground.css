@@ -65,9 +65,16 @@ select {
   cursor: pointer;
 }
 
+/*
+ * Scoped to the playground's own chrome. Without `:not(.sheet-mount *)` this
+ * also hit the grid's boolean cell editor — a real <input type=checkbox>
+ * mounted inside a cell — which then drew a 2px red ring around a small
+ * checkbox nested in a selected cell. A cell editor should look like an
+ * ordinary control and keep the browser's own focus indication.
+ */
 button:focus-visible,
-input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+input:focus-visible:not(.sheet-mount *) {
   outline: 2px solid var(--focus);
   outline-offset: 1px;
 }

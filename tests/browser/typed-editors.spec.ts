@@ -161,3 +161,33 @@ test("json column (explicit createEditor + validate): malformed JSON is rejected
   await expect(page.locator("#app textarea")).toHaveCount(0);
   expect(await getCell(page, 0, 4)).toEqual({ id: 0, note: "changed" });
 });
+
+/**
+ * A cell editor is an ordinary form control and must keep the browser's own
+ * focus indication. The playground's `input:focus-visible` rule used to apply
+ * to it as well, drawing a 2px red ring around a small checkbox nested inside
+ * an already-bordered selected cell.
+ *
+ * Asserted on computed style rather than canvas pixels: an outline is not part
+ * of the canvas bitmap, so a pixel assertion cannot see this class of bug at
+ * all — which is exactly why it went unnoticed.
+ */
+test("the boolean editor's checkbox keeps the browser's default focus ring", async ({ page }) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  await page.mouse.dblclick(box.x + COLUMN_X.active, box.y + ROW_Y.row0);
+  const checkbox = page.locator("#app input[type=checkbox]");
+  await expect(checkbox).toBeChecked();
+  await checkbox.click();
+
+  const outline = await page.evaluate(() => {
+    const el = document.querySelector("#app input[type=checkbox]") as HTMLInputElement;
+    const style = getComputedStyle(el);
+    return { style: style.outlineStyle, width: style.outlineWidth };
+  });
+
+  // "auto" is the engine's own ring; a host stylesheet overriding it would
+  // report a concrete style such as "solid" with its own width.
+  expect(outline.style).toBe("auto");
+});
