@@ -149,3 +149,48 @@ test("a plain click after a multi-region selection collapses back to a single re
   const selection = await readSelection(page, "__gridASelection");
   expect(selection.ranges).toEqual([{ startRow: 1, startColumn: 1, endRow: 1, endColumn: 1 }]);
 });
+
+/**
+ * Reported as "selecting one cell puts a border around the whole table".
+ *
+ * It was not a selection-rendering bug: the content canvas is `tabIndex = 0`
+ * and gets `.focus()` on every click, so the browser painted its own default
+ * focus ring around the entire canvas, behind the one-cell selection box.
+ * Canvas-pixel assertions can never catch this — a CSS outline is not part of
+ * the bitmap — which is why every existing selection test passed.
+ *
+ * The ring is still wanted for keyboard focus: the active-cell box looks the
+ * same whether or not the grid is focused, so it is the only thing that tells
+ * the two apart.
+ */
+function contentCanvasFocusState(page: Page) {
+  return page.evaluate(() => {
+    const canvas = document.querySelectorAll("#grid-a canvas")[0] as HTMLCanvasElement;
+    return {
+      focused: document.activeElement === canvas,
+      outline: getComputedStyle(canvas).outlineStyle
+    };
+  });
+}
+
+test("clicking a cell does not leave a focus ring around the whole grid", async ({ page }) => {
+  await gotoFixture(page);
+  const box = await page.locator("#grid-a").boundingBox();
+  if (!box) {
+    throw new Error("missing bounding box for #grid-a");
+  }
+
+  await page.mouse.click(box.x + 50, box.y + 30);
+
+  await expect.poll(() => contentCanvasFocusState(page)).toEqual({ focused: true, outline: "none" });
+});
+
+test("focusing the grid without a pointer keeps the focus ring", async ({ page }) => {
+  await gotoFixture(page);
+
+  await page.evaluate(() => {
+    (document.querySelectorAll("#grid-a canvas")[0] as HTMLElement).focus();
+  });
+
+  await expect.poll(() => contentCanvasFocusState(page)).toEqual({ focused: true, outline: "auto" });
+});

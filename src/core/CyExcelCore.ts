@@ -611,6 +611,18 @@ export class CyExcelCore {
   >;
   /** Owns the structure version and the teardown that must accompany every bump. */
   readonly #structure: StructureTransition;
+  /**
+   * Whether the focus about to land on the content canvas came from a pointer.
+   *
+   * The canvas is `tabIndex = 0` and gets `.focus()` on every click, so without
+   * this the browser paints its default focus ring around the *entire* canvas
+   * — which reads as "the whole table is selected" sitting behind the one-cell
+   * selection box. Suppressing the ring unconditionally would be worse: it is
+   * currently the only thing distinguishing a focused grid from an unfocused
+   * one, since the active-cell box looks identical either way. So the ring is
+   * kept for keyboard focus (Tab) and dropped only for pointer focus.
+   */
+  #focusFromPointer = false;
   #disposed = false;
 
   constructor(container: HTMLElement, options: CyExcelCoreOptions = {}) {
@@ -1215,6 +1227,8 @@ export class CyExcelCore {
     });
     this.#contentCanvas.addEventListener("dblclick", this.#handleDblClick);
     this.#contentCanvas.addEventListener("keydown", this.#handleKeyDown);
+    this.#contentCanvas.addEventListener("focus", this.#handleContentCanvasFocus);
+    this.#contentCanvas.addEventListener("blur", this.#handleContentCanvasBlur);
     this.#scroller.addEventListener("pointerdown", this.#handleDelegatedPointerDown, true);
     this.#contentCanvas.addEventListener("copy", this.#handleCopyEvent);
     this.#contentCanvas.addEventListener("paste", this.#handlePasteEvent);
@@ -1508,6 +1522,8 @@ export class CyExcelCore {
 
     this.#contentCanvas.removeEventListener("dblclick", this.#handleDblClick);
     this.#contentCanvas.removeEventListener("keydown", this.#handleKeyDown);
+    this.#contentCanvas.removeEventListener("focus", this.#handleContentCanvasFocus);
+    this.#contentCanvas.removeEventListener("blur", this.#handleContentCanvasBlur);
     this.#scroller.removeEventListener("pointerdown", this.#handleDelegatedPointerDown, true);
     this.#contentCanvas.removeEventListener("copy", this.#handleCopyEvent);
     this.#contentCanvas.removeEventListener("paste", this.#handlePasteEvent);
@@ -1711,6 +1727,15 @@ export class CyExcelCore {
       this.#events.emit("change", { changeSet });
     });
   }
+
+  #handleContentCanvasFocus = (): void => {
+    this.#contentCanvas.style.outline = this.#focusFromPointer ? "none" : "";
+  };
+
+  #handleContentCanvasBlur = (): void => {
+    this.#focusFromPointer = false;
+    this.#contentCanvas.style.outline = "";
+  };
 
   #runFinalizer(name: string, run: () => void): boolean {
     try {
@@ -2118,6 +2143,9 @@ export class CyExcelCore {
     if (!event.isPrimary || (event.button !== 0 && event.button !== 2)) {
       return;
     }
+    // Runs before any routing calls contentCanvas.focus(), so the focus
+    // handler below can tell a pointer-driven focus from a Tab.
+    this.#focusFromPointer = true;
     if (this.#bodyGestures.isActive) {
       if (!this.#bodyGestures.matchesPointer(event.pointerId)) {
         return;
