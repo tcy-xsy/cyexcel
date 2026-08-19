@@ -55,7 +55,9 @@
     "build:types": "tsc -p tsconfig.build.json",
     "build": "pnpm build:js && pnpm build:types",
     "report:size": "node scripts/report-bundle-size.mjs",
-    "check": "pnpm typecheck && pnpm lint && pnpm test:all && pnpm build && pnpm test:build && pnpm test:build:browser"
+    "api:changes": "node scripts/public-api-changes.mjs",
+    "check:public-api": "node scripts/public-api-changes.mjs --check HEAD~1..HEAD",
+    "check": "pnpm typecheck && pnpm lint && pnpm check:public-api && pnpm test:all && pnpm build && pnpm test:build && pnpm test:build:browser"
   },
   "engines": {
     "node": ">=20"
