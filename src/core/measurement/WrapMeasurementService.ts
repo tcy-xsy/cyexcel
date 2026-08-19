@@ -22,6 +22,23 @@ export interface WrapMeasurementBasis {
   readonly rowHeightProvenance: ReadonlyMap<number, Exclude<RowHeightProvenance, "default">>;
 }
 
+/**
+ * Upper bound on the "row N has been measured" cache.
+ *
+ * Without one the cache grows with every row ever scrolled past: a wrap-enabled
+ * million-row table retains a million entries, and `forgetRowRange()` — which
+ * scans the cache rather than the edited span — gets slower the longer the
+ * session runs. Both violate Milestone 0's "memory does not keep growing after
+ * five minutes of scrolling".
+ *
+ * Evicting is always safe: a forgotten row is re-measured the next time it is
+ * painted, and measurement is idempotent. The only real constraint is that the
+ * bound must stay far above one screenful, or rows would be evicted while still
+ * visible and re-measured every frame. A 4K-tall viewport at the 16px minimum
+ * row height shows ~135 rows, so this is ~70x the worst case.
+ */
+const MAX_MEASURED_ROWS = 10_000;
+
 export interface RowHeightMeasurement {
   readonly row: number;
   readonly height: number;
@@ -265,6 +282,28 @@ export class WrapMeasurementService {
   markMeasured(rows: Iterable<number>): void {
     for (const row of rows) {
       this.#measuredRows.add(row);
+    }
+    this.#evictOldestOverBound();
+  }
+
+  /**
+   * Drops first-inserted rows until the cache is back within
+   * `MAX_MEASURED_ROWS`. Insertion order is the eviction order because a `Set`
+   * preserves it and re-adding an existing row does not move it — which is the
+   * behaviour wanted here: rows enter the cache when first painted, so the
+   * oldest entries are the ones furthest from wherever the user is now.
+   */
+  #evictOldestOverBound(): void {
+    let excess = this.#measuredRows.size - MAX_MEASURED_ROWS;
+    if (excess <= 0) {
+      return;
+    }
+    for (const row of this.#measuredRows) {
+      this.#measuredRows.delete(row);
+      excess -= 1;
+      if (excess === 0) {
+        return;
+      }
     }
   }
 

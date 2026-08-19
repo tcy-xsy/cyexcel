@@ -416,3 +416,46 @@ describe("WrapMeasurementService.rowsToMeasureFor", () => {
     expect(result.visibleUnmeasuredCount).toBe(0);
   });
 });
+
+describe("WrapMeasurementService measured-row cache bound", () => {
+  // Far above any plausible cap: a 4K-tall viewport at the 16px minimum row
+  // height shows ~135 rows, so a cap has to be a few orders of magnitude below
+  // this to still leave the current screenful cached.
+  const OVERFLOW = 50_000;
+  const SCREENFUL = 200;
+
+  function markRange(service: WrapMeasurementService, start: number, end: number): void {
+    const rows: number[] = [];
+    for (let row = start; row <= end; row += 1) {
+      rows.push(row);
+    }
+    service.markMeasured(rows);
+  }
+
+  it("caps the cache instead of growing with every row ever made visible", () => {
+    const { service } = createService();
+
+    markRange(service, 0, OVERFLOW - 1);
+
+    // Scrolling a wrap-enabled table through a million rows must not retain a
+    // million cache entries — Milestone 0 requires memory not to grow with
+    // time spent scrolling.
+    expect(service.measuredRowCount).toBeLessThan(OVERFLOW);
+  });
+
+  it("evicts the oldest rows first, so the most recently measured screenful survives", () => {
+    const { service } = createService();
+
+    markRange(service, 0, OVERFLOW - 1);
+
+    // forgetRowRange only deletes rows that are actually cached, so the drop in
+    // measuredRowCount reports precisely how many of that span survived.
+    const beforeNewest = service.measuredRowCount;
+    service.forgetRowRange(OVERFLOW - SCREENFUL, OVERFLOW - 1);
+    expect(beforeNewest - service.measuredRowCount).toBe(SCREENFUL);
+
+    const beforeOldest = service.measuredRowCount;
+    service.forgetRowRange(0, SCREENFUL - 1);
+    expect(beforeOldest - service.measuredRowCount).toBe(0);
+  });
+});

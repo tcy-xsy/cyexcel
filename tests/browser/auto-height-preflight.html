@@ -71,9 +71,24 @@
           wrapped: `row ${row} alpha beta gamma`,
           keeper: `keep-${row}`
         }));
+      } else if (scenario === "large-paste") {
+        // Far more rows than a viewport can ever show, so "how many rows did
+        // this paste measure" separates viewport-driven measurement from
+        // measuring the mutated range.
+        columns = [{ ...wrapColumn, type: "counted" }, keeperColumn];
+        data = Array.from({ length: 5000 }, (_unused, row) => ({
+          wrapped: `row-${row}`,
+          keeper: `keep-${row}`
+        }));
       } else {
         throw new Error(`Unknown auto-height preflight scenario: ${scenario}`);
       }
+
+      // Every row whose wrap-column text was produced, whether to paint it or
+      // to measure it. Counting format() rather than the measurement call
+      // itself keeps the probe on public API: a regression that measured the
+      // whole pasted range would have to format the whole pasted range.
+      const formattedRows = new Set();
 
       const sheet = new CyExcelCore(document.getElementById("app"), {
         columns,
@@ -81,7 +96,16 @@
         rowHeight: 24,
         headerHeight: 20,
         rowHeaderWidth: 36,
-        overscanRows: 0
+        overscanRows: 0,
+        columnTypes: {
+          counted: {
+            extends: "text",
+            format(value, context) {
+              formattedRows.add(context.row);
+              return value === undefined || value === null ? "" : String(value);
+            }
+          }
+        }
       });
       const rowLayoutRows = [];
       const errors = [];
@@ -121,6 +145,22 @@
         },
         scrollBy(delta) {
           scroller.scrollTop += delta;
+        },
+        formattedRowCount() {
+          return formattedRows.size;
+        },
+        resetFormattedRows() {
+          formattedRows.clear();
+        },
+        pasteEveryRow() {
+          const text = Array.from(
+            { length: data.length },
+            (_unused, row) => `pasted row ${row} alpha beta gamma delta epsilon`
+          ).join("\n");
+          return sheet.paste({
+            text,
+            range: { startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 }
+          });
         }
       };
       window.__cyexcelAutoHeightPreflightReady = true;

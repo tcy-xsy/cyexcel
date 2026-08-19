@@ -19,6 +19,9 @@ interface FixtureWindow {
     readonly errors: Array<{ readonly eventName: string; readonly message: string }>;
     resetBatches(): void;
     scrollBy(delta: number): void;
+    formattedRowCount(): number;
+    resetFormattedRows(): void;
+    pasteEveryRow(): Promise<void>;
   };
 }
 
@@ -183,6 +186,52 @@ test("auto-height commits at most one row-height batch per animation frame", asy
     perFrame.set(batch.frameId, (perFrame.get(batch.frameId) ?? 0) + 1);
   }
   expect(Math.max(...perFrame.values())).toBe(1);
+});
+
+/**
+ * Step 21 recorded "a bulk paste into a wrap column measures the affected rows
+ * synchronously on the main thread" as an open risk. The later measurement
+ * rework made measurement viewport-driven, but no test ever entered through the
+ * paste path — the existing gates all arrive via scrolling or structural edits.
+ * This one closes that gap: 5,000 rows are pasted into a wrap column, and the
+ * measurement work has to stay proportional to the viewport, not the paste.
+ */
+test("pasting thousands of rows into a wrap column measures only the visible ones", async ({
+  page
+}) => {
+  await gotoScenario(page, "large-paste");
+  await page.evaluate(() => {
+    (window as unknown as FixtureWindow).__autoHeightPreflight!.resetFormattedRows();
+  });
+
+  await page.evaluate(
+    async () => await (window as unknown as FixtureWindow).__autoHeightPreflight!.pasteEveryRow()
+  );
+  await settlePublications(page);
+
+  const result = await page.evaluate(() => {
+    const fixture = (window as unknown as FixtureWindow).__autoHeightPreflight;
+    if (!fixture) throw new Error("missing auto-height preflight fixture");
+    return {
+      formattedRowCount: fixture.formattedRowCount(),
+      lastPastedCell: fixture.sheet.getCell(4999, 0),
+      visibleRowHeight: fixture.sheet.scene.getRowHeight(0),
+      offscreenRowHeight: fixture.sheet.scene.getRowHeight(4999),
+      errors: [...fixture.errors]
+    };
+  });
+
+  // The paste has to have really landed on all 5,000 rows, or every assertion
+  // below would be satisfied by a paste that silently did nothing.
+  expect(result.lastPastedCell).toBe("pasted row 4999 alpha beta gamma delta epsilon");
+  // Measurement has to have really run, or "few rows measured" would just mean
+  // auto-height is broken.
+  expect(result.visibleRowHeight).toBeGreaterThan(24);
+  // Only then does the bound mean anything: the work follows the viewport, not
+  // the mutated range.
+  expect(result.formattedRowCount).toBeLessThan(100);
+  expect(result.offscreenRowHeight).toBe(24);
+  expect(result.errors).toEqual([]);
 });
 
 test("one auto-height pass resizes many rows in a single batch, not one batch per row", async ({
