@@ -13,6 +13,29 @@ interface FixtureWindow {
   };
 }
 
+/**
+ * Two Playwright limitations, not product limitations — both measured, not
+ * assumed (see doc/scene-mutation-migration-plan.md §14.11):
+ *
+ * - `context.grantPermissions(["clipboard-read"/"clipboard-write"])` is
+ *   Chromium-only; Firefox and WebKit reject the permission name outright, so
+ *   the test dies on its first line.
+ * - Driving the *system* clipboard through synthetic key presses only works in
+ *   Chromium and WebKit. In Firefox a copy round-trip reads back as "", and a
+ *   control experiment showed even a bare `<div>` with a trivial handler cannot
+ *   `setData` on a synthetic ClipboardEvent there — it is an engine rule about
+ *   untrusted events, unrelated to this code.
+ *
+ * These are skipped rather than left failing so that a red matrix means a real
+ * regression. That is a genuine loss of coverage on those engines, not a fix:
+ * whether the clipboard works for real users on Firefox/Safari is verified by
+ * hand, not here.
+ */
+const CLIPBOARD_PERMISSION_ONLY_IN_CHROMIUM =
+  "Playwright's clipboard permissions are Chromium-only (plan §14.11)";
+const SYSTEM_CLIPBOARD_UNAVAILABLE_IN_FIREFOX =
+  "Firefox cannot drive the system clipboard from synthetic input (plan §14.11)";
+
 const MOD = process.platform === "darwin" ? "Meta" : "Control";
 
 async function gotoFixture(page: Page): Promise<void> {
@@ -36,6 +59,7 @@ function getCell(page: Page, row: number, column: number): Promise<unknown> {
 }
 
 test("real Ctrl/Cmd+C copies the selected range as TSV to the system clipboard", async ({ page }) => {
+  test.skip(test.info().project.name === "firefox", SYSTEM_CLIPBOARD_UNAVAILABLE_IN_FIREFOX);
   await gotoFixture(page);
   const box = await getContentCanvasBox(page);
 
@@ -57,6 +81,7 @@ test("real Ctrl/Cmd+C copies the selected range as TSV to the system clipboard",
 test("a clipboard.copy:false column is copied as a blank cell but keeps its column position", async ({
   page
 }) => {
+  test.skip(test.info().project.name === "firefox", SYSTEM_CLIPBOARD_UNAVAILABLE_IN_FIREFOX);
   await gotoFixture(page);
   const box = await getContentCanvasBox(page);
 
@@ -76,6 +101,7 @@ test("a clipboard.copy:false column is copied as a blank cell but keeps its colu
 test("real Ctrl/Cmd+V pastes a system-clipboard TSV block and one undo reverts the whole paste", async ({
   page
 }) => {
+  test.skip(test.info().project.name === "firefox", SYSTEM_CLIPBOARD_UNAVAILABLE_IN_FIREFOX);
   await gotoFixture(page);
 
   await page.locator("#scratch").fill("Zed\t99\r\nYak\t88");
@@ -101,6 +127,7 @@ test("real Ctrl/Cmd+V pastes a system-clipboard TSV block and one undo reverts t
 });
 
 test("pasting into a clipboard.paste:false column leaves its existing value unchanged", async ({ page }) => {
+  test.skip(test.info().project.name === "firefox", SYSTEM_CLIPBOARD_UNAVAILABLE_IN_FIREFOX);
   await gotoFixture(page);
 
   await page.locator("#scratch").fill("Nova\t1\tignored\t999");
@@ -120,6 +147,7 @@ test("the programmatic copy() API fully serializes an array cell in raw mode, no
   page,
   context
 }) => {
+  test.skip(test.info().project.name !== "chrome" && test.info().project.name !== "chromium", CLIPBOARD_PERMISSION_ONLY_IN_CHROMIUM);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await gotoFixture(page);
 
@@ -136,6 +164,7 @@ test("the programmatic paste() API reads from the system clipboard and commits a
   page,
   context
 }) => {
+  test.skip(test.info().project.name !== "chrome" && test.info().project.name !== "chromium", CLIPBOARD_PERMISSION_ONLY_IN_CHROMIUM);
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await gotoFixture(page);
 
@@ -179,6 +208,7 @@ test("copy({ download: true }) triggers a real file download instead of writing 
 test(`${MOD}+click adds a disconnected region, but copying only serializes the active one`, async ({
   page
 }) => {
+  test.skip(test.info().project.name === "firefox", SYSTEM_CLIPBOARD_UNAVAILABLE_IN_FIREFOX);
   await gotoFixture(page);
   const box = await getContentCanvasBox(page);
 

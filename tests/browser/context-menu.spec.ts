@@ -128,6 +128,12 @@ test("right-clicking a cell inside an existing multi-cell selection preserves it
   page,
   context
 }) => {
+  // Playwright grants clipboard permissions only in Chromium; both of these
+  // verify their outcome through the system clipboard. See plan §14.11.
+  test.skip(
+    test.info().project.name !== "chrome" && test.info().project.name !== "chromium",
+    "Playwright's clipboard permissions are Chromium-only (plan §14.11)"
+  );
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await gotoFixture(page);
   const box = await getAppBox(page);
@@ -169,6 +175,12 @@ test("createBasicContextMenuPlugin's Copy/Paste actions round-trip through the r
   page,
   context
 }) => {
+  // Playwright grants clipboard permissions only in Chromium; both of these
+  // verify their outcome through the system clipboard. See plan §14.11.
+  test.skip(
+    test.info().project.name !== "chrome" && test.info().project.name !== "chromium",
+    "Playwright's clipboard permissions are Chromium-only (plan §14.11)"
+  );
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await gotoFixture(page);
   const box = await getAppBox(page);
