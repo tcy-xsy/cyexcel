@@ -163,16 +163,18 @@ test("json column (explicit createEditor + validate): malformed JSON is rejected
 });
 
 /**
- * A cell editor is an ordinary form control and must keep the browser's own
- * focus indication. The playground's `input:focus-visible` rule used to apply
- * to it as well, drawing a 2px red ring around a small checkbox nested inside
- * an already-bordered selected cell.
+ * The boolean editor's checkbox draws no focus ring of its own.
+ *
+ * The editor wrapper already carries a solid selection-coloured border while
+ * it is open, so focus stays indicated; a second ring nested inside a
+ * cell-sized box is only noise. This is the opposite call from the grid canvas
+ * (see selection-interaction.spec.ts), where suppressing the ring for keyboard
+ * focus would have left nothing at all to show the grid was focused.
  *
  * Asserted on computed style rather than canvas pixels: an outline is not part
- * of the canvas bitmap, so a pixel assertion cannot see this class of bug at
- * all — which is exactly why it went unnoticed.
+ * of the canvas bitmap, so a pixel assertion cannot see this at all.
  */
-test("the boolean editor's checkbox keeps the browser's default focus ring", async ({ page }) => {
+test("the boolean editor's checkbox draws no focus ring", async ({ page }) => {
   await gotoFixture(page);
   const box = await getContentCanvasBox(page);
 
@@ -181,13 +183,15 @@ test("the boolean editor's checkbox keeps the browser's default focus ring", asy
   await expect(checkbox).toBeChecked();
   await checkbox.click();
 
-  const outline = await page.evaluate(() => {
-    const el = document.querySelector("#app input[type=checkbox]") as HTMLInputElement;
-    const style = getComputedStyle(el);
-    return { style: style.outlineStyle, width: style.outlineWidth };
-  });
-
-  // "auto" is the engine's own ring; a host stylesheet overriding it would
-  // report a concrete style such as "solid" with its own width.
-  expect(outline.style).toBe("auto");
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const el = document.querySelector("#app input[type=checkbox]") as HTMLInputElement;
+        return {
+          focused: document.activeElement === el,
+          outline: getComputedStyle(el).outlineStyle
+        };
+      })
+    )
+    .toEqual({ focused: true, outline: "none" });
 });

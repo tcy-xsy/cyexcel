@@ -49,6 +49,13 @@ export function createBooleanCellEditor(): CellEditor {
         event.preventDefault();
         checkboxElement.focus();
       });
+      // No focus ring on the checkbox itself. Unlike the grid canvas — where
+      // suppressing the ring would have left nothing indicating focus — the
+      // editor wrapper above already draws a solid selection-coloured border
+      // for as long as the editor is open, so the composite still shows both
+      // that the editor has focus and which cell it belongs to. A second ring
+      // inside that border only reads as visual noise in a cell-sized box.
+      checkboxElement.style.outline = "none";
       wrapperElement.appendChild(checkboxElement);
 
       container.appendChild(wrapperElement);
