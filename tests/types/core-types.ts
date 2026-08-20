@@ -57,6 +57,8 @@ function describeChange(value: SemanticChange): string {
       return `row-layout:${value.rows.join(",")}`;
     case "full-reset":
       return "full-reset";
+    case "row-reorder":
+      return `row-reorder:${value.order.join(",")}`;
   }
 }
 void describeChange;

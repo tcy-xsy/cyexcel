@@ -42,6 +42,8 @@ function patchKey(patch: Patch): string {
       ].join(":");
     case "full-reset":
       return "full-reset";
+    case "row-reorder":
+      return ["row-reorder", patch.order.join(",")].join(":");
   }
 }
 

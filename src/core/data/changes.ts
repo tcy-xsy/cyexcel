@@ -89,6 +89,7 @@ export function summarizeStructuralChanges(
   for (const change of changes) {
     switch (change.type) {
       case "row-structure":
+      case "row-reorder":
         hasRowStructure = true;
         break;
       case "column-structure":
@@ -160,6 +161,11 @@ export function compileDirtySet(changes: readonly SemanticChange[]): DirtySet {
         skeleton = skeleton === "row-axis" ? "full" : "column-axis";
         break;
       case "row-structure":
+      case "row-reorder":
+        // A reorder does not itself change row numbers, but each row's
+        // height travels with it, so band boundaries move and the gutter
+        // must repaint just as it would for insert/delete/move (see
+        // doc/scene-mutation-migration-plan.md §14.7).
         domCells = true;
         rowHeader = true;
         content = "full";

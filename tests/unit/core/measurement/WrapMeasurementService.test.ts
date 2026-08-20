@@ -335,6 +335,15 @@ describe("WrapMeasurementService.invalidateFor", () => {
     }
   });
 
+  it("forgets every measured row after a reorder", () => {
+    const harness = measuredHarness();
+    expect(harness.service.measuredRowCount).toBeGreaterThan(0);
+
+    harness.service.invalidateFor([{ type: "row-reorder", order: Int32Array.from([1, 0]) }]);
+
+    expect(harness.service.measuredRowCount).toBe(0);
+  });
+
   it("leaves the cache alone when nothing in the list touches it", () => {
     const harness = measuredHarness();
     const before = harness.service.measuredRowCount;

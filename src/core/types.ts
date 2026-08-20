@@ -129,7 +129,16 @@ export type Patch =
       readonly rows: readonly [number, ...number[]];
       readonly range: CellRange;
     }
-  | { readonly type: "full-reset" };
+  | { readonly type: "full-reset" }
+  /**
+   * A whole-axis row permutation (`order[newPosition] = oldPosition`).
+   *
+   * Deliberately its own variant rather than a fourth `row-structure`
+   * operation: `remapIndex()` and every consumer of `row-structure` assume
+   * `start`/`count` semantics that a permutation does not have, so widening
+   * that variant would compile while silently remapping indices wrongly.
+   */
+  | { readonly type: "row-reorder"; readonly order: Int32Array };
 
 export interface Command<TType extends string = string, TParams = unknown> {
   readonly type: TType;

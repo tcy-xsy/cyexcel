@@ -98,6 +98,20 @@ describe("compileDirtySet", () => {
     });
   });
 
+  it("treats a row-reorder like a row-structure fact, including the row-header repaint", () => {
+    // Row numbers are positional and do not themselves change, but each row's
+    // height travels with it under a reorder, so band boundaries move and the
+    // gutter must repaint (doc/scene-mutation-migration-plan.md §14.7).
+    const dirty = compileDirtySet([{ type: "row-reorder", order: Int32Array.from([1, 0]) }]);
+
+    expect(dirty).toEqual({
+      content: "full",
+      skeleton: "row-axis",
+      selection: true,
+      presentation: { domCells: true, columnHeader: false, rowHeader: true, domHeaders: false }
+    });
+  });
+
   it("escalates every band for a column-axis fact, matching the old per-patch invalidateAll", () => {
     const columnAxisFacts: readonly SemanticChange[] = [
       { type: "column-structure", operation: "insert", start: 0, count: 1 },
@@ -155,6 +169,17 @@ describe("summarizeStructuralChanges", () => {
   it("stays false for an empty list", () => {
     expect(summarizeStructuralChanges([])).toEqual({
       hasRowStructure: false,
+      hasColumnStructure: false,
+      hasColumnLayout: false,
+      hasRowLayout: false
+    });
+  });
+
+  it("counts a row-reorder as a row-structure fact", () => {
+    expect(
+      summarizeStructuralChanges([{ type: "row-reorder", order: Int32Array.from([1, 0]) }])
+    ).toEqual({
+      hasRowStructure: true,
       hasColumnStructure: false,
       hasColumnLayout: false,
       hasRowLayout: false

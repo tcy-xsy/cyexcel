@@ -57,6 +57,19 @@ describe("mergePatches", () => {
     ]);
   });
 
+  it("dedupes row-reorder patches by their order sequence", () => {
+    const patches: Patch[] = [
+      { type: "row-reorder", order: Int32Array.from([1, 0, 2]) },
+      { type: "row-reorder", order: Int32Array.from([1, 0, 2]) },
+      { type: "row-reorder", order: Int32Array.from([2, 0, 1]) }
+    ];
+
+    expect(mergePatches(patches)).toEqual([
+      { type: "row-reorder", order: Int32Array.from([1, 0, 2]) },
+      { type: "row-reorder", order: Int32Array.from([2, 0, 1]) }
+    ]);
+  });
+
   it("dedupes column-layout patches by column index", () => {
     const patches: Patch[] = [
       { type: "column-layout", column: 2 },
