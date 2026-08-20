@@ -1367,9 +1367,17 @@ export class CyExcelCore {
     options: { signal?: AbortSignal } = {}
   ): boolean {
     // Resolved eagerly so an out-of-range column throws from the call itself.
+    const runtimeColumn = this.#columnManager.getColumn(column);
+    const columnCompare = runtimeColumn.compare;
     const compare = createDefaultSortCompare(
       direction,
-      this.#columnManager.getColumn(column).compare
+      columnCompare === undefined
+        ? undefined
+        // Invoked *on* the column, the way `column.format()` is called in
+        // createColumnAwarePainter: a comparator written as an object method
+        // may read `this.options` (rank by the column's configured order,
+        // say), and detaching it would break that only when sorted.
+        : (left, right) => columnCompare.call(runtimeColumn, left, right)
     );
     let applied = true;
     this.#enqueueOrRunMutation(() => {

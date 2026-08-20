@@ -17,7 +17,11 @@ interface SortSheet {
 
 interface FixtureWindow {
   __sortFixtureReady?: boolean;
-  __sort?: { sheet: SortSheet };
+  __sort?: {
+    sheet: SortSheet;
+    getCommitCount(): number;
+    setOnCompare(hook: (() => void) | null): void;
+  };
 }
 
 async function gotoFixture(page: Page, query = ""): Promise<void> {
@@ -128,27 +132,95 @@ test("one undo restores both the row order and the row heights", async ({ page }
   expect(after).toEqual(before);
 });
 
+test("a column comparator written as a method is called on its column", async ({ page }) => {
+  await gotoFixture(page);
+
+  const applied = await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    return sheet.sortByColumn(3, "asc");
+  });
+  expect(applied).toBe(true);
+
+  const column = await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    return [0, 1, 2].map((row) => sheet.getCell(row, 0) as string);
+  });
+
+  // The "priority" comparator is an object method that reads `this.options`
+  // to rank low < medium < high. Detached from its column it throws; ordered
+  // alphabetically it would give high < low < medium = banana, cherry, apple.
+  expect(column).toEqual(["cherry", "apple", "banana"]);
+});
+
 test("an already-aborted signal returns false and writes nothing", async ({ page }) => {
   await gotoFixture(page);
 
   const result = await page.evaluate(() => {
-    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    const fixture = (window as unknown as FixtureWindow).__sort!;
+    const sheet = fixture.sheet;
     const controller = new AbortController();
     controller.abort();
     const columnBefore = [0, 1, 2].map((row) => sheet.getCell(row, 0) as string);
+    const commitsBefore = fixture.getCommitCount();
+
     const applied = sheet.sortByColumn(0, "asc", { signal: controller.signal });
-    // Nothing was written, so there is nothing on the history stack either.
-    sheet.undo();
+
+    // Read before any undo(): an implementation that applied the sort *and*
+    // returned false is exactly what this test exists to rule out, and an
+    // undo() first would hide it.
     return {
       applied,
       columnBefore,
-      columnAfter: [0, 1, 2].map((row) => sheet.getCell(row, 0) as string)
+      columnAfter: [0, 1, 2].map((row) => sheet.getCell(row, 0) as string),
+      commits: fixture.getCommitCount() - commitsBefore
     };
   });
 
   expect(result.applied).toBe(false);
   expect(result.columnBefore).toEqual(["banana", "cherry", "apple"]);
   expect(result.columnAfter).toEqual(result.columnBefore);
+  // Nothing was committed, so nothing went onto the history stack either.
+  expect(result.commits).toBe(0);
+});
+
+test("aborting from inside the comparator returns false and writes nothing", async ({ page }) => {
+  await gotoFixture(page);
+
+  const result = await page.evaluate(() => {
+    const fixture = (window as unknown as FixtureWindow).__sort!;
+    const sheet = fixture.sheet;
+    const controller = new AbortController();
+    const columnBefore = [0, 1, 2].map((row) => sheet.getCell(row, 0) as string);
+    const commitsBefore = fixture.getCommitCount();
+
+    // Aborts partway through the sort itself, after the keys have been read
+    // — not before sortByColumn() was entered.
+    let comparisons = 0;
+    fixture.setOnCompare(() => {
+      comparisons += 1;
+      controller.abort();
+    });
+    let applied: boolean;
+    try {
+      applied = sheet.sortByColumn(3, "asc", { signal: controller.signal });
+    } finally {
+      fixture.setOnCompare(null);
+    }
+
+    return {
+      applied,
+      comparisons,
+      columnBefore,
+      columnAfter: [0, 1, 2].map((row) => sheet.getCell(row, 0) as string),
+      commits: fixture.getCommitCount() - commitsBefore
+    };
+  });
+
+  // The abort really did happen mid-computation, not before entry.
+  expect(result.comparisons).toBeGreaterThan(0);
+  expect(result.applied).toBe(false);
+  expect(result.columnAfter).toEqual(result.columnBefore);
+  expect(result.commits).toBe(0);
 });
 
 async function refusedSort(page: Page): Promise<{
