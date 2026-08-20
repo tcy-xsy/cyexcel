@@ -203,6 +203,21 @@ export class TableStore {
     );
   }
 
+  /**
+   * Whole-axis permutation (Step 22 sorting). Unlike the other row mutations
+   * there is no start/count/target shape to validate against the row axis —
+   * `ArrayDataSource`'s own transaction validates `order` as a permutation —
+   * so this skips `#assertStructuralShape`.
+   */
+  createReorderRowsMutation(order: Int32Array): Mutation {
+    this.#assertTransactionalStructuralCapability("reorderRows");
+    return new TableDataMutation(
+      this.#dataSource,
+      { type: "reorder-rows", order },
+      [{ type: "full-reset" }]
+    );
+  }
+
   createInsertColumnsMutation(start: number, columns: readonly ColumnFieldMapping[]): Mutation {
     this.#assertTransactionalStructuralCapability("insertColumns");
     this.#assertStructuralShape("column", "insert", start, columns.length);
@@ -255,6 +270,10 @@ export class TableStore {
 
   moveRows(start: number, count: number, target: number): TableStoreCommitResult {
     return this.#execute(this.createMoveRowsMutation(start, count, target));
+  }
+
+  reorderRows(order: Int32Array): TableStoreCommitResult {
+    return this.#execute(this.createReorderRowsMutation(order));
   }
 
   insertColumns(start: number, columns: readonly ColumnFieldMapping[]): TableStoreCommitResult {

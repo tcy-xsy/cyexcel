@@ -563,14 +563,20 @@ export class ArrayDataSource implements DataSource {
             );
           }
           case "reorder-rows": {
-            assertValidRowOrder(mutation.order, rowCount);
-            const inverse = invertRowOrder(mutation.order);
-            reorderRowPieces(mutation.order);
+            // Defensively copied, like every sibling case copies its
+            // caller-supplied payload (insert-columns' `{...column}`,
+            // restore-cells' cell copies): a caller that reuses `order`
+            // between prepareMutation() and commit() must not desync
+            // apply()/the already-staged view from the precomputed inverse.
+            const order = Int32Array.from(mutation.order);
+            assertValidRowOrder(order, rowCount);
+            const inverse = invertRowOrder(order);
+            reorderRowPieces(order);
             return prepared(
-              mutation,
+              { type: "reorder-rows", order },
               { type: "reorder-rows", order: inverse },
-              64 + mutation.order.length * 4,
-              () => this.reorderRows(mutation.order),
+              64 + order.length * 4,
+              () => this.reorderRows(order),
               () => this.reorderRows(inverse)
             );
           }

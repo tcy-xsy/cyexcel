@@ -409,6 +409,78 @@ describe("ArrayDataSource.reorderRows", () => {
 
     transaction.dispose();
   });
+
+  // Review finding 1: prepareMutation's "reorder-rows" case must defensively
+  // copy the caller-supplied Int32Array, the same way insert-columns copies
+  // `{...column}` and restore-cells copies its cells — otherwise a caller
+  // that reuses/clobbers its own order buffer between prepareMutation() and
+  // commit() desyncs apply() (and the already-staged view) from the
+  // precomputed inverse.
+  it("is immune to the caller mutating the order buffer after prepareMutation() returns", () => {
+    const source = new ArrayDataSource(
+      [{ name: "a" }, { name: "b" }, { name: "c" }],
+      [{ id: "name", field: "name" }]
+    );
+    const buffer = Int32Array.from([2, 0, 1]);
+
+    const transaction = source.beginTransaction(0 as ModelRevision);
+    const preparedMutation = transaction.prepareMutation({ type: "reorder-rows", order: buffer });
+    buffer.fill(0); // caller reuses/clobbers its own buffer before committing
+
+    preparedMutation.commit();
+
+    expect([source.getCell(0, 0), source.getCell(1, 0), source.getCell(2, 0)]).toEqual(["c", "a", "b"]);
+
+    transaction.dispose();
+  });
+
+  // Review finding 2: nothing previously exercised the transactional
+  // forward/inverse pair end to end. An asymmetric permutation (not
+  // self-inverse, unlike [1, 0]) is required — a self-inverse order would
+  // let a swapped apply()/revert() pass by accident.
+  it("commit() applies the reorder to the underlying rows, and rollback() restores the original order", () => {
+    const source = new ArrayDataSource(
+      [{ name: "a" }, { name: "b" }, { name: "c" }],
+      [{ id: "name", field: "name" }]
+    );
+
+    const transaction = source.beginTransaction(0 as ModelRevision);
+    const preparedMutation = transaction.prepareMutation({
+      type: "reorder-rows",
+      order: Int32Array.from([2, 0, 1])
+    });
+
+    preparedMutation.commit();
+    expect([source.getCell(0, 0), source.getCell(1, 0), source.getCell(2, 0)]).toEqual(["c", "a", "b"]);
+
+    preparedMutation.rollback();
+    expect([source.getCell(0, 0), source.getCell(1, 0), source.getCell(2, 0)]).toEqual(["a", "b", "c"]);
+
+    transaction.dispose();
+  });
+
+  // Review finding 3: the overlay-rekey block in reorderRowPieces() is
+  // non-obvious logic added to close a real trap — a base row's staged
+  // (uncommitted) setCell is keyed by its numeric #rows index, which stops
+  // being that row's token once the reorder folds it into an "inserted"
+  // piece. Without rekeying, this staged edit would silently disappear from
+  // reads through the transaction.
+  it("keeps a staged setCell on a base row visible through the transaction after a subsequent reorder", () => {
+    const source = new ArrayDataSource(
+      [{ name: "a" }, { name: "b" }, { name: "c" }],
+      [{ id: "name", field: "name" }]
+    );
+
+    const transaction = source.beginTransaction(0 as ModelRevision);
+    transaction.prepareMutation({ type: "set-cell", row: 0, column: 0, value: "A2" });
+    transaction.prepareMutation({ type: "reorder-rows", order: Int32Array.from([2, 0, 1]) });
+
+    // Row 0 ("a", staged to "A2") moves to position 1 under order [2, 0, 1]:
+    // next[1] = prev[0].
+    expect(transaction.getCell(1, 0)).toBe("A2");
+
+    transaction.dispose();
+  });
 });
 
 describe("ArrayDataSource — moveColumns", () => {
