@@ -28,6 +28,7 @@ import {
   InsertRowsCommand,
   DeleteRowsCommand,
   MoveRowsCommand,
+  ReorderRowsCommand,
   InsertColumnsCommand,
   DeleteColumnsCommand,
   MoveColumnsCommand,
@@ -113,6 +114,7 @@ import {
 } from "./scene";
 import { WrapMeasurementService } from "./measurement";
 import { ShortcutRegistry, type ShortcutHandler } from "./shortcuts";
+import { computeSortOrder, createDefaultSortCompare } from "./sort";
 import {
   ContentLayerRenderer,
   CanvasSurface,
@@ -1343,6 +1345,50 @@ export class CyExcelCore {
       this.#cancelActiveEdit();
       this.#applyCommandNow(new MoveRowsCommand(start, count, target));
     });
+  }
+
+  /**
+   * Physically reorders every row by `column`. The data permutation and the
+   * row geometry (each row's height and height-provenance) land in the same
+   * transaction, so no published frame can show sorted rows against unsorted
+   * heights, and one undo puts both back.
+   *
+   * The comparator is the column's cell type's `compare` when it defines one,
+   * otherwise `createDefaultSortCompare(direction)`.
+   *
+   * Returns `false` when `options.signal` aborted before the order was
+   * applied — a cancelled sort writes nothing, so there is nothing to undo.
+   */
+  sortByColumn(
+    column: number,
+    direction: "asc" | "desc",
+    options: { signal?: AbortSignal } = {}
+  ): boolean {
+    // Resolved eagerly so an out-of-range column throws from the call itself.
+    const compare = this.#columnManager.getColumn(column).compare
+      ?? createDefaultSortCompare(direction);
+    let applied = true;
+    this.#enqueueOrRunMutation(() => {
+      // Computed inside the mutation slot rather than before it: if this call
+      // lands while a commit is in flight it is deferred, and the permutation
+      // has to be a permutation of the row count that will actually be there
+      // when ReorderRowsCommand validates it.
+      const order = computeSortOrder({
+        rowCount: this.#store.getRowCount(),
+        getSortKey: (row) => this.#store.getCell(row, column),
+        compare,
+        direction,
+        ...(options.signal === undefined ? {} : { signal: options.signal })
+      });
+      if (order === null) {
+        applied = false;
+        return;
+      }
+      // A sort moves the row under the editor out from under it.
+      this.#cancelActiveEdit();
+      this.#applyCommandNow(new ReorderRowsCommand(order));
+    });
+    return applied;
   }
 
   /** Sets an exact row height through Command/Mutation/History. */

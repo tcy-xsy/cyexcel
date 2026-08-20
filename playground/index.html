@@ -30,6 +30,15 @@
           <span class="hint-inline">Ctrl/Cmd+Z 撤销、Ctrl/Cmd+Shift+Z 或 Ctrl/Cmd+Y 重做也能用</span>
         </div>
         <div class="toolbar-group">
+          <label class="hint-inline">排序列 <select id="sortColumn"></select></label>
+          <button class="button" id="sortAscButton" type="button">升序</button>
+          <button class="button" id="sortDescButton" type="button">降序</button>
+          <span class="hint-inline" id="sortHint">
+            调用 <code>sheet.sortByColumn(列, "asc" | "desc")</code>——物理重排行，行高跟着行走，
+            一次撤销同时还原顺序和行高
+          </span>
+        </div>
+        <div class="toolbar-group">
           <button class="button" id="exportButton" type="button">导出选区为 TSV</button>
           <span class="hint-inline" id="shortcutHint">
             调用 <code>sheet.copy({ download: true })</code>；Ctrl/Cmd+S 是同一个动作的快捷键

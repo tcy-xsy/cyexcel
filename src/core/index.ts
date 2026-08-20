@@ -55,6 +55,8 @@ export {
   type DeleteRowsCommandParams,
   MoveRowsCommand,
   type MoveRowsCommandParams,
+  ReorderRowsCommand,
+  type ReorderRowsCommandParams,
   InsertColumnsCommand,
   type InsertColumnsCommandParams,
   DeleteColumnsCommand,
@@ -120,6 +122,14 @@ export type {
   SelectionBounds,
   SelectionSnapshot
 } from "./interaction";
+
+// Sorting primitives, so a caller can build its own sort (a multi-column one,
+// say) on the same permutation contract `sortByColumn()` commits.
+export {
+  computeSortOrder,
+  createDefaultSortCompare,
+  type SortRequest
+} from "./sort";
 
 // User-facing column, cell, header and editor extension contracts.
 export type { Canvas2DLike } from "./render";

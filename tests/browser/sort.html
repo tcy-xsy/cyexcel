@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel sort fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 400px;
+        height: 250px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { ArrayDataSource, CyExcelCore } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+      const columns = [
+        { id: "name", field: "name", width: 120, header: "Name" },
+        { id: "score", field: "score", width: 80, header: "Score", type: "number" }
+      ];
+      // Deliberately asymmetric: ascending by "name" is [2, 0, 1]
+      // (apple <- 2, banana <- 0, cherry <- 1), which is not its own inverse,
+      // so a direction bug cannot survive undo.
+      const rows = [
+        { name: "banana", score: 2 },
+        { name: "cherry", score: 3 },
+        { name: "apple", score: 1 }
+      ];
+
+      const variant = new URLSearchParams(location.search).get("dataSource");
+
+      // Only the four required DataSource methods: no beginTransaction at
+      // all, so no mutation of any kind can be staged.
+      const minimalDataSource = {
+        getRowCount: () => rows.length,
+        getColumnCount: () => columns.length,
+        getCell: (row, column) => rows[row][columns[column].field],
+        setCell: (row, column, value) => {
+          rows[row][columns[column].field] = value;
+        }
+      };
+
+      // Fully transactional and structurally editable, but with no
+      // reorderRows(): the case the reorder capability check exists for.
+      const backing = new ArrayDataSource(
+        rows,
+        columns.map((column) => ({ id: column.id, field: column.field }))
+      );
+      const noReorderDataSource = {
+        getRowCount: () => backing.getRowCount(),
+        getColumnCount: () => backing.getColumnCount(),
+        getCell: (row, column) => backing.getCell(row, column),
+        setCell: (row, column, value) => backing.setCell(row, column, value),
+        beginTransaction: (revision) => backing.beginTransaction(revision),
+        insertRows: (start, inserted) => backing.insertRows(start, inserted),
+        deleteRows: (start, count) => backing.deleteRows(start, count),
+        moveRows: (start, count, target) => backing.moveRows(start, count, target)
+        // No reorderRows on purpose.
+      };
+
+      const dataSource =
+        variant === "minimal"
+          ? minimalDataSource
+          : variant === "no-reorder"
+            ? noReorderDataSource
+            : undefined;
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        ...(dataSource ? { dataSource } : { data: rows }),
+        rowHeight: 20,
+        headerHeight: 20,
+        rowHeaderWidth: 40
+      });
+
+      window.__sort = { sheet };
+      window.__sortFixtureReady = true;
+    </script>
+  </body>
+</html>

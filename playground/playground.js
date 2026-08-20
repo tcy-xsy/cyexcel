@@ -269,6 +269,10 @@ const cellValue = document.getElementById("cellValue");
 const readCellButton = document.getElementById("readCellButton");
 const writeCellButton = document.getElementById("writeCellButton");
 const cellFormResult = document.getElementById("cellFormResult");
+const sortColumn = document.getElementById("sortColumn");
+const sortAscButton = document.getElementById("sortAscButton");
+const sortDescButton = document.getElementById("sortDescButton");
+const sortHint = document.getElementById("sortHint");
 const metricConstruct = document.getElementById("metricConstruct");
 const metricFps = document.getElementById("metricFps");
 
@@ -277,14 +281,19 @@ let currentRowCount = 0;
 let statusBarDefaultText = "";
 let statusBarErrorTimeoutId = null;
 
-function populateCellColumnSelect() {
-  cellColumn.innerHTML = "";
+function populateColumnSelect(select) {
+  select.innerHTML = "";
   COLUMNS.forEach((column, index) => {
     const option = document.createElement("option");
     option.value = String(index);
     option.textContent = `${column.label} (${column.id})`;
-    cellColumn.append(option);
+    select.append(option);
   });
+}
+
+function populateCellColumnSelect() {
+  populateColumnSelect(cellColumn);
+  populateColumnSelect(sortColumn);
 }
 
 function readConfigFromForm() {
@@ -457,6 +466,28 @@ writeCellButton.addEventListener("click", () => {
   cellFormResult.textContent =
     `已写入 (${row}, ${columnIndex}) = ${JSON.stringify(result.value)}，可以用撤销按钮回退`;
 });
+
+/**
+ * Step 22：sheet.sortByColumn() 演示——物理重排整根行轴。数据顺序和行高在同一个
+ * transaction 里提交，所以给某一行设过的行高会跟着那一行走，一次撤销两者一起回退。
+ */
+function sortBy(direction) {
+  if (!core) {
+    return;
+  }
+  const columnIndex = Number(sortColumn.value);
+  const column = COLUMNS[columnIndex];
+  const started = performance.now();
+  const applied = core.sortByColumn(columnIndex, direction);
+  const elapsed = Math.round(performance.now() - started);
+  sortHint.textContent = applied
+    ? `上次动作：按「${column.label}」${direction === "asc" ? "升序" : "降序"}排序 ` +
+      `${currentRowCount.toLocaleString("zh-CN")} 行，用时 ${elapsed}ms（撤销可一步还原顺序和行高）`
+    : "上次动作：排序被取消，什么都没写入";
+}
+
+sortAscButton.addEventListener("click", () => sortBy("asc"));
+sortDescButton.addEventListener("click", () => sortBy("desc"));
 
 rebuildButton.addEventListener("click", rebuild);
 
