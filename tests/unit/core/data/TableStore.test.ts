@@ -218,24 +218,6 @@ describe("TableStore — structural row operations", () => {
     }
   });
 
-  it("a rejected reorderRows leaves the data and version untouched", () => {
-    const rows = [{ name: "A" }, { name: "B" }, { name: "C" }];
-    const source: DataSource = {
-      getRowCount: () => rows.length,
-      getColumnCount: () => 1,
-      getCell: (row) => rows[row]?.name,
-      setCell: (row, _column, value) => {
-        rows[row] = { name: value as string };
-      }
-    };
-    const store = new TableStore(source);
-
-    expect(() => store.reorderRows(Int32Array.from([2, 0, 1]))).toThrow(CyExcelError);
-
-    expect(store.version).toBe(0);
-    expect(rows.map((row) => row.name)).toEqual(["A", "B", "C"]);
-  });
-
   it("throws StructuralModificationNotSupported when the DataSource doesn't implement insertRows", () => {
     // A plain-object DataSource (e.g. a remote/computed one) that never
     // declared insertRows — not an ArrayDataSource with the method deleted,
@@ -297,7 +279,21 @@ describe("TableStore — structural row operations", () => {
   it.each([
     ["zero-count insert", (store: TableStore) => store.insertRows(1, [])],
     ["delete past the end", (store: TableStore) => store.deleteRows(2, 2)],
-    ["move target inside the block", (store: TableStore) => store.moveRows(0, 2, 1)]
+    ["move target inside the block", (store: TableStore) => store.moveRows(0, 2, 1)],
+    // A wrong-length order against the 3-row createStore() fixture — this is
+    // the only TableStore-layer coverage of the assertValidRowOrder() call
+    // in createReorderRowsMutation. Calling createReorderRowsMutation()
+    // directly (not reorderRows()) matters here: reorderRows() would still
+    // pass even if TableStore's own check were deleted, because
+    // ArrayDataSource's own transaction independently re-validates `order`
+    // during prepare() and would mask the gap — see
+    // ArrayDataSource.ts's "reorder-rows" case in beginTransaction(). Calling
+    // createReorderRowsMutation() in isolation, before #execute/prepare()
+    // ever runs, is what actually exercises the call site in this diff.
+    [
+      "reorder with a malformed (wrong-length) order",
+      (store: TableStore) => store.createReorderRowsMutation(Int32Array.from([2, 0]))
+    ]
   ])("rejects %s before mutating data or version", (_label, run) => {
     const { rows, store } = createStore();
 
