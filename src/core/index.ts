@@ -10,7 +10,8 @@ export {
   createCyExcelCore,
   type CyExcelColumnConfig,
   type CyExcelCoreOptions,
-  type CyExcelHeaderActionEvent
+  type CyExcelHeaderActionEvent,
+  type SortState
 } from "./CyExcelCore";
 
 export { CyExcelError, CyExcelErrorCode } from "./errors";
@@ -128,6 +129,7 @@ export type {
 export {
   computeSortOrder,
   createDefaultSortCompare,
+  nextSortDirection,
   type SortRequest
 } from "./sort";
 
@@ -158,9 +160,11 @@ export {
   type HeaderDefinition,
   type ColumnClipboardPolicy
 } from "./cells";
-export type {
-  HeaderGroupDefinition,
-  RuntimeHeader
+export {
+  defaultHeaderHitTest,
+  DEFAULT_HEADER_SORT_ZONE_WIDTH,
+  type HeaderGroupDefinition,
+  type RuntimeHeader
 } from "./headers";
 export {
   createTextCellEditor,

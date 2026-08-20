@@ -1,6 +1,11 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+interface SortState {
+  readonly column: number;
+  readonly direction: "asc" | "desc";
+}
+
 interface SortSheet {
   getCell(row: number, column: number): unknown;
   setRowHeight(row: number, height: number): void;
@@ -12,6 +17,11 @@ interface SortSheet {
   undo(): void;
   readonly scene: {
     getRowHeight(row: number): number;
+  };
+  readonly sortState: SortState | null;
+  readonly events: {
+    on(name: string, handler: (payload: unknown) => void): void;
+    off(name: string, handler: (payload: unknown) => void): void;
   };
 }
 
@@ -30,6 +40,27 @@ async function gotoFixture(page: Page, query = ""): Promise<void> {
     () => (window as unknown as FixtureWindow).__sortFixtureReady === true
   );
 }
+
+/** The column-header canvas box: sort.html has no header groups (flat single leaf row), so canvas index 2 is always the column header — confirmed against the fixture's own layer order (0=content,1=selection,2=column-header,3=row-header). */
+function headerCanvasBox(page: Page) {
+  return page.locator("#app canvas").nth(2).boundingBox();
+}
+
+/**
+ * Clicks inside the reserved click-to-sort strip at the trailing edge of a
+ * *default*-painted header cell (no custom renderer configures its own
+ * hitTest) — the strip is `DEFAULT_HEADER_SORT_ZONE_WIDTH` (18px) wide,
+ * anchored to the column's own right edge, so `columnRightX - 8` always
+ * lands inside it regardless of column width.
+ */
+async function clickHeaderSortZone(page: Page, columnRightX: number): Promise<void> {
+  const headerBox = await headerCanvasBox(page);
+  if (!headerBox) throw new Error("missing header canvas box");
+  await page.mouse.click(headerBox.x + columnRightX - 8, headerBox.y + 10);
+}
+
+// Column x-ranges in sort.html: name [0,120), score [120,200), joined [200,310), priority [310,400).
+const NAME_COLUMN_RIGHT_X = 120;
 
 test("sorting by a column reorders the data and moves row heights with it", async ({ page }) => {
   await gotoFixture(page);
@@ -264,4 +295,107 @@ test("sorting is rejected on a DataSource that cannot transact at all", async ({
   // the reorder capability check: it cannot open a transaction at all.
   expect(result.code).toBe("mutation-not-supported");
   expect(result.columnAfter).toEqual(result.columnBefore);
+});
+
+test("clicking a default header's sort zone sorts ascending and reports it in sortState", async ({
+  page
+}) => {
+  await gotoFixture(page);
+
+  await clickHeaderSortZone(page, NAME_COLUMN_RIGHT_X);
+
+  const result = await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    return {
+      column: [0, 1, 2].map((row) => sheet.getCell(row, 0) as string),
+      sortState: sheet.sortState
+    };
+  });
+
+  expect(result.column).toEqual(["apple", "banana", "cherry"]);
+  expect(result.sortState).toEqual({ column: 0, direction: "asc" });
+});
+
+test("clicking the same header's sort zone twice sorts descending", async ({ page }) => {
+  await gotoFixture(page);
+
+  await clickHeaderSortZone(page, NAME_COLUMN_RIGHT_X);
+  await clickHeaderSortZone(page, NAME_COLUMN_RIGHT_X);
+
+  const result = await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    return {
+      column: [0, 1, 2].map((row) => sheet.getCell(row, 0) as string),
+      sortState: sheet.sortState
+    };
+  });
+
+  expect(result.column).toEqual(["cherry", "banana", "apple"]);
+  expect(result.sortState).toEqual({ column: 0, direction: "desc" });
+});
+
+test("a third click is still a valid sort, never a return to the original row order", async ({
+  page
+}) => {
+  await gotoFixture(page);
+  const originalOrder = ["banana", "cherry", "apple"];
+
+  await clickHeaderSortZone(page, NAME_COLUMN_RIGHT_X);
+  await clickHeaderSortZone(page, NAME_COLUMN_RIGHT_X);
+  await clickHeaderSortZone(page, NAME_COLUMN_RIGHT_X);
+
+  const result = await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    return {
+      column: [0, 1, 2].map((row) => sheet.getCell(row, 0) as string),
+      sortState: sheet.sortState
+    };
+  });
+
+  // The third click cycles back to ascending, *not* to an "unsorted" state
+  // — there is no third indicator value to land on (ADR 0003 §3.4), and the
+  // data itself is never the pre-sort insertion order again.
+  expect(result.column).toEqual(["apple", "banana", "cherry"]);
+  expect(result.column).not.toEqual(originalOrder);
+  expect(result.sortState).toEqual({ column: 0, direction: "asc" });
+});
+
+test("clicking a header's sort zone emits a toggle-sort header-action event", async ({ page }) => {
+  await gotoFixture(page);
+
+  await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    (window as unknown as { __actions: unknown[] }).__actions = [];
+    sheet.events.on("header-action", (payload) =>
+      (window as unknown as { __actions: unknown[] }).__actions.push(payload)
+    );
+  });
+
+  await clickHeaderSortZone(page, NAME_COLUMN_RIGHT_X);
+
+  const actions = await page.evaluate(
+    () => (window as unknown as { __actions: unknown[] }).__actions
+  );
+
+  expect(actions).toMatchObject([
+    {
+      action: { type: "toggle-sort" },
+      column: 0,
+      header: { column: 0, title: "Name" }
+    }
+  ]);
+});
+
+test("a direct sortByColumn() call updates sortState the same way a header click does", async ({
+  page
+}) => {
+  await gotoFixture(page);
+
+  const sortState = await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    sheet.sortByColumn(1, "desc");
+    return sheet.sortState;
+  });
+
+  expect(sortState).toEqual({ column: 1, direction: "desc" });
 });

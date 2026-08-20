@@ -3,7 +3,12 @@ export {
   type HeaderManagerOptions,
   type HeaderManagerRoot
 } from "./HeaderManager";
-export { HeaderCanvasRenderer, type HeaderCanvasRendererOptions } from "./HeaderCanvasRenderer";
+export {
+  HeaderCanvasRenderer,
+  type HeaderCanvasRendererOptions,
+  DEFAULT_HEADER_SORT_ZONE_WIDTH,
+  defaultHeaderHitTest
+} from "./HeaderCanvasRenderer";
 export { RowHeaderCanvasRenderer, type RowHeaderCanvasRendererOptions } from "./RowHeaderCanvasRenderer";
 export { DomHeaderManager, type DomHeaderManagerOptions } from "./DomHeaderManager";
 export { hitTestHeaderGroup } from "./hitTest";

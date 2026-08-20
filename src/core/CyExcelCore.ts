@@ -58,8 +58,10 @@ import {
   HeaderCanvasRenderer,
   HeaderManager,
   RowHeaderCanvasRenderer,
+  defaultHeaderHitTest,
   type HeaderAction,
   type HeaderGroupDefinition,
+  type HeaderState,
   type RuntimeHeader
 } from "./headers";
 import { HookManager, PRODUCTION_HOOK_REGISTRY } from "./hooks";
@@ -114,7 +116,7 @@ import {
 } from "./scene";
 import { WrapMeasurementService } from "./measurement";
 import { ShortcutRegistry, type ShortcutHandler } from "./shortcuts";
-import { computeSortOrder, createDefaultSortCompare } from "./sort";
+import { computeSortOrder, createDefaultSortCompare, nextSortDirection, type SortState } from "./sort";
 import {
   ContentLayerRenderer,
   CanvasSurface,
@@ -143,6 +145,8 @@ import {
 } from "./validateCyExcelCoreOptions";
 
 export type CyExcelColumnConfig = ColumnDefinition;
+
+export type { SortState };
 
 /** Emitted after a custom canvas header hitTest returns an action. */
 export interface CyExcelHeaderActionEvent {
@@ -545,6 +549,14 @@ export class CyExcelCore {
   readonly #cellTypeRegistry: CellTypeRegistry;
   readonly #columnManager: ColumnManager;
   readonly #headerManager: HeaderManager;
+  /**
+   * The last `sortByColumn()` outcome applied via header-click, or `null`
+   * before any header-click sort. Reflects the last sort *applied*, not the
+   * data's live order — editing a cell afterwards does not clear it (ADR
+   * 0003 §3.4, matching Excel). Backs both the header's visual indicator
+   * (via `#headerState()`) and the public `sortState` getter.
+   */
+  #sortState: SortState | null = null;
   readonly #columnHeaderHeight: number;
   readonly #groupHeaderHeight: number;
   readonly #rowHeaderWidth: number;
@@ -868,7 +880,8 @@ export class CyExcelCore {
     this.#headerCanvasRenderer = new HeaderCanvasRenderer({
       ctx: headerCtx,
       getScene: () => this.#scene,
-      headerManager: this.#headerManager
+      headerManager: this.#headerManager,
+      getHeaderState: (column) => this.#headerState(column)
     });
     this.#rowHeaderCanvasRenderer = new RowHeaderCanvasRenderer({
       ctx: rowHeaderCtx,
@@ -882,7 +895,8 @@ export class CyExcelCore {
     });
     this.#domHeaderManager = new DomHeaderManager({
       container: dom.headerDomLayer,
-      headerManager: this.#headerManager
+      headerManager: this.#headerManager,
+      getHeaderState: (column) => this.#headerState(column)
     });
     initialization.defer(() => this.#domHeaderManager.dispose());
 
@@ -1283,6 +1297,17 @@ export class CyExcelCore {
   }
 
   /**
+   * The most recent successful `sortByColumn()` call — via header click or
+   * direct API call, both update this the same way — or `null` if no sort
+   * has ever been applied. Reflects the *last sort applied*, not the
+   * data's current order: editing a cell afterwards does not clear it,
+   * same one-shot indicator semantics as Excel (ADR 0003 §3.4).
+   */
+  get sortState(): SortState | null {
+    return this.#sortState;
+  }
+
+  /**
    * Registers a keyboard shortcut (`"Mod+Shift+Z"`-style combo — see
    * ShortcutRegistry.parseShortcut()). The built-in Mod+Z/Mod+Shift+Z/
    * Mod+Y/Enter shortcuts are registered the same way at construction, so a
@@ -1400,6 +1425,14 @@ export class CyExcelCore {
       this.#cancelActiveEdit();
       this.#applyCommandNow(new ReorderRowsCommand(order));
     });
+    if (applied) {
+      // Updated regardless of call site (header click or direct API call):
+      // the indicator reflects the *last sort applied*, not how it was
+      // triggered. A cancelled sort (applied === false) changed nothing, so
+      // it leaves whatever indicator was already showing untouched.
+      this.#sortState = { column, direction };
+      this.#renderScheduler.invalidatePresentation({ columnHeader: true, domHeaders: true });
+    }
     return applied;
   }
 
@@ -2480,25 +2513,32 @@ export class CyExcelCore {
     }
     const header = this.#headerManager.getHeader(hit.column);
     const renderer = header.renderer;
-    if (!renderer || renderer.kind !== "canvas" || !renderer.hitTest) {
-      return declineInput();
-    }
 
     let action: HeaderAction | void;
-    try {
-      action = renderer.hitTest({
-        ctx: this.#headerCanvas.getContext("2d") as Canvas2DLike,
-        rect: hit.rect,
-        column: hit.column,
-        title: header.title,
-        state: {},
-        point: hit.localPoint
-      });
-    } catch (error) {
-      this.#events.emit("error", {
-        error,
-        eventName: `interaction:canvas-header-hit-test:${hit.column}`
-      });
+    if (renderer === undefined) {
+      // No custom renderer -> the default painter's own reserved right-edge
+      // strip is click-to-sort (see defaultHeaderHitTest's doc comment).
+      action = defaultHeaderHitTest({ rect: hit.rect, point: hit.localPoint });
+    } else if (renderer.kind === "canvas" && renderer.hitTest) {
+      try {
+        action = renderer.hitTest({
+          ctx: this.#headerCanvas.getContext("2d") as Canvas2DLike,
+          rect: hit.rect,
+          column: hit.column,
+          title: header.title,
+          state: this.#headerState(hit.column),
+          point: hit.localPoint
+        });
+      } catch (error) {
+        this.#events.emit("error", {
+          error,
+          eventName: `interaction:canvas-header-hit-test:${hit.column}`
+        });
+        return declineInput();
+      }
+    } else {
+      // A "dom" renderer, or a canvas renderer with no hitTest at all:
+      // neither participates in this action-hitTest path.
       return declineInput();
     }
     if (!action) {
@@ -2514,11 +2554,42 @@ export class CyExcelCore {
     this.#interactionFrames.enqueueIntent(() => {
       if (payload.structureVersion === this.#structure.version) {
         this.#events.emit("header-action", payload);
+        if (payload.action.type === "toggle-sort") {
+          this.#handleToggleSort(payload.column);
+        }
       }
     });
     event.preventDefault();
     this.#contentCanvas.focus();
     return handleInput(undefined);
+  }
+
+  /** `HeaderState` for one column, as shown by its header's sort/filter indicator. Backs both `HeaderCanvasRenderer`/`DomHeaderManager`'s `getHeaderState` and the `state` a custom canvas renderer's `hitTest`/`paint` receive. Filtering is Part B — always `false` for now. */
+  #headerState(column: number): HeaderState {
+    return {
+      sorted: this.#sortState !== null && this.#sortState.column === column ? this.#sortState.direction : false,
+      filtered: false
+    };
+  }
+
+  /**
+   * Handles a `toggle-sort` header action: cycles asc/desc via
+   * `nextSortDirection` — never a third "restore original order" state,
+   * because a physical sort destroys the original order and only undo can
+   * recover it (ADR 0003 §3.4). `sortByColumn` itself updates `#sortState`
+   * on success, so a click and a direct `sortByColumn` call both keep the
+   * indicator honest. A DataSource that rejects the sort (no
+   * `reorderRows`, or no transaction support at all) reports an `error`
+   * event instead of throwing out of the pointer-routing pipeline, and
+   * leaves the indicator exactly where it was.
+   */
+  #handleToggleSort(column: number): void {
+    const direction = nextSortDirection(this.#sortState, column);
+    try {
+      this.sortByColumn(column, direction);
+    } catch (error) {
+      this.#events.emit("error", { error, eventName: `interaction:toggle-sort:${column}` });
+    }
   }
 
   #routeHeaderSelection(
