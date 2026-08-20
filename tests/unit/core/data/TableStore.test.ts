@@ -182,24 +182,58 @@ describe("TableStore — structural row operations", () => {
     expect(result.version).toBe(1);
   });
 
-  // Review finding 4: today's changesForDataMutation() maps "reorder-rows"
-  // to a "full-reset" Patch — coarser than the "row-structure" Patch every
-  // other row branch above emits, since a whole-axis permutation has no
-  // faithful start/count/target shape. A later task replaces this with a
-  // dedicated Patch; pinning today's behavior here is what makes that
-  // replacement visible instead of silent. An asymmetric permutation
-  // ([2, 0, 1], not self-inverse) is used so a swapped apply/revert would
-  // show up as a wrong row order, not accidentally pass.
-  it("reorderRows emits a full-reset Patch and bumps the version", () => {
+  // An asymmetric permutation ([2, 0, 1], not self-inverse) is used so a
+  // swapped apply/revert would show up as a wrong row order, not
+  // accidentally pass.
+  it("reorderRows emits a row-reorder Patch carrying the order and bumps the version", () => {
     const { store } = createStore();
 
     const result = store.reorderRows(Int32Array.from([2, 0, 1]));
 
-    expect(result.patches).toEqual([{ type: "full-reset" }]);
+    expect(result.patches).toEqual([{ type: "row-reorder", order: Int32Array.from([2, 0, 1]) }]);
     expect(result.version).toBe(1);
     expect(store.getCell(0, 0)).toBe("C");
     expect(store.getCell(1, 0)).toBe("A");
     expect(store.getCell(2, 0)).toBe("B");
+  });
+
+  it("throws StructuralModificationNotSupported when the DataSource doesn't implement reorderRows", () => {
+    // A plain-object DataSource that implements only the four required
+    // methods, mirroring the insertRows/deleteRows/moveRows capability
+    // checks above.
+    const source: DataSource = {
+      getRowCount: () => 3,
+      getColumnCount: () => 1,
+      getCell: () => "A",
+      setCell: () => {}
+    };
+    const store = new TableStore(source);
+
+    try {
+      store.reorderRows(Int32Array.from([2, 0, 1]));
+      expect.unreachable("expected reorderRows to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CyExcelError);
+      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.StructuralModificationNotSupported);
+    }
+  });
+
+  it("a rejected reorderRows leaves the data and version untouched", () => {
+    const rows = [{ name: "A" }, { name: "B" }, { name: "C" }];
+    const source: DataSource = {
+      getRowCount: () => rows.length,
+      getColumnCount: () => 1,
+      getCell: (row) => rows[row]?.name,
+      setCell: (row, _column, value) => {
+        rows[row] = { name: value as string };
+      }
+    };
+    const store = new TableStore(source);
+
+    expect(() => store.reorderRows(Int32Array.from([2, 0, 1]))).toThrow(CyExcelError);
+
+    expect(store.version).toBe(0);
+    expect(rows.map((row) => row.name)).toEqual(["A", "B", "C"]);
   });
 
   it("throws StructuralModificationNotSupported when the DataSource doesn't implement insertRows", () => {

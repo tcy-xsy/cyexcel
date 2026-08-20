@@ -1,4 +1,5 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
+import { assertValidRowOrder } from "../layout/rowOrder";
 import { validateAxisChange } from "../layout/structuralChange";
 import {
   MutationCoordinator,
@@ -73,13 +74,9 @@ function changesForDataMutation(mutation: DataMutation, fallback: readonly Patch
     case "reorder-rows":
       // A whole-axis permutation touches every row at once and has no
       // start/count/target shape the "row-structure" Patch can carry
-      // faithfully (a fabricated one would mislead index-remapping
-      // consumers such as selection). "full-reset" is the honest, already-
-      // reserved-but-unused-in-src encoding for "everything must be treated
-      // as dirty" (Task 3 scope stops at DataSource/DataMutation; extending
-      // Patch with a "reorder" variant is left to whichever future task
-      // wires a Sort command through TableStore).
-      return [{ type: "full-reset" }];
+      // faithfully, so it gets its own Patch variant that carries the order
+      // directly instead of being approximated by another shape.
+      return [{ type: "row-reorder", order: mutation.order }];
     case "insert-columns":
       return [{ type: "column-structure", operation: "insert", start: mutation.start, count: mutation.columns.length }];
     case "delete-columns":
@@ -205,16 +202,20 @@ export class TableStore {
 
   /**
    * Whole-axis permutation (Step 22 sorting). Unlike the other row mutations
-   * there is no start/count/target shape to validate against the row axis —
-   * `ArrayDataSource`'s own transaction validates `order` as a permutation —
-   * so this skips `#assertStructuralShape`.
+   * there is no start/count/target shape to validate against the row axis,
+   * so this skips `#assertStructuralShape` and instead validates `order` is
+   * a permutation of the current row count directly — `TableStore.reorderRows`
+   * is reachable without going through `ArrayDataSource`, so a wrong-length
+   * or non-permutation order must fail here rather than relying on whatever
+   * DataSource happens to be behind this store.
    */
   createReorderRowsMutation(order: Int32Array): Mutation {
     this.#assertTransactionalStructuralCapability("reorderRows");
+    assertValidRowOrder(order, this.getRowCount());
     return new TableDataMutation(
       this.#dataSource,
       { type: "reorder-rows", order },
-      [{ type: "full-reset" }]
+      [{ type: "row-reorder", order }]
     );
   }
 
