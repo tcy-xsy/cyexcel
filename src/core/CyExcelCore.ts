@@ -2553,10 +2553,16 @@ export class CyExcelCore {
     });
     this.#interactionFrames.enqueueIntent(() => {
       if (payload.structureVersion === this.#structure.version) {
-        this.#events.emit("header-action", payload);
+        // Applied before emit(): a `toggle-sort` listener that synchronously
+        // reads `sortState` (this playground's own sortHint update, for
+        // instance) must see the sort this exact action just produced, not
+        // the previous one — emitting first would leave every listener one
+        // click behind, always describing the *last* sort instead of the
+        // current one.
         if (payload.action.type === "toggle-sort") {
           this.#handleToggleSort(payload.column);
         }
+        this.#events.emit("header-action", payload);
       }
     });
     event.preventDefault();
