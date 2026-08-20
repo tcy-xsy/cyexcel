@@ -20,6 +20,10 @@ interface SortSheet {
   readonly scene: {
     getRowHeight(row: number): number;
   };
+  readonly selection: {
+    readonly kind: string;
+    readonly range: { readonly startColumn: number; readonly endColumn: number };
+  };
   readonly sortState: SortState | null;
   readonly events: {
     on(name: string, handler: (payload: unknown) => void): void;
@@ -398,6 +402,35 @@ test("a header click whose sort is refused leaves the indicator and the data exa
   // sort, so announcing `toggle-sort` after refusing to sort would tell every
   // listener a sort just happened. The `error` event is the whole report.
   expect(result.headerActions).toEqual([]);
+});
+
+test("a column too narrow for both zones can still be selected by clicking its header", async ({
+  page
+}) => {
+  await gotoFixture(page, "?narrow=1");
+
+  // "score" is 10px wide here, spanning [120, 130). Every point in it
+  // satisfies `x >= width - 18`, so without a width floor the entire header
+  // is a sort zone and this column loses column-selection outright.
+  const headerBox = await headerCanvasBox(page);
+  if (!headerBox) throw new Error("missing header canvas box");
+  await page.mouse.click(headerBox.x + 125, headerBox.y + 10);
+
+  const result = await page.evaluate(() => {
+    const fixture = (window as unknown as FixtureWindow).__sort!;
+    return {
+      selection: fixture.sheet.selection,
+      sortState: fixture.sheet.sortState,
+      column: [0, 1, 2].map((row) => fixture.sheet.getCell(row, 0) as string)
+    };
+  });
+
+  expect(result.selection).toMatchObject({
+    kind: "column",
+    range: { startColumn: 1, endColumn: 1 }
+  });
+  expect(result.sortState).toBeNull();
+  expect(result.column).toEqual(["banana", "cherry", "apple"]);
 });
 
 test("a custom header renderer's toggle-sort stays a notification -- the core sorts nothing", async ({

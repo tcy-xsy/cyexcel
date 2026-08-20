@@ -32,6 +32,16 @@ const DEFAULT_PADDING = 4;
 export const DEFAULT_HEADER_SORT_ZONE_WIDTH = 18;
 
 /**
+ * Narrowest column that gets a sort zone at all. Below this the zone would
+ * cover the whole header and there would be nowhere left to click to select
+ * the column — the two gestures stop coexisting and selection is simply
+ * lost for that column. A column too narrow to hold both keeps selection,
+ * which is the gesture that has always been there; sorting it stays
+ * available through `sortByColumn`.
+ */
+export const DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH = DEFAULT_HEADER_SORT_ZONE_WIDTH * 2;
+
+/**
  * Hit-test for the default (no custom `HeaderRenderer`) header painter —
  * the canvas analog of `defaultHeaderPainter` above. Columns with a custom
  * canvas renderer supply their own `hitTest`; this is only consulted when
@@ -47,6 +57,9 @@ export function defaultHeaderHitTest(zone: {
   readonly rect: CellRect;
   readonly point: { readonly x: number; readonly y: number };
 }): HeaderAction | undefined {
+  if (zone.rect.width < DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH) {
+    return undefined;
+  }
   if (zone.point.x >= zone.rect.width - DEFAULT_HEADER_SORT_ZONE_WIDTH) {
     return { type: "toggle-sort" };
   }

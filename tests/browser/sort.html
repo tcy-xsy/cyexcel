@@ -68,7 +68,15 @@
           width: 120,
           header: customHeaders ? { title: "Name", renderer: customNameHeaderRenderer } : "Name"
         },
-        { id: "score", field: "score", width: 80, header: "Score", type: "number" },
+        {
+          id: "score",
+          field: "score",
+          // `?narrow=1` shrinks this column below the width at which a sort
+          // zone and a selection zone can coexist in one header.
+          width: new URLSearchParams(location.search).get("narrow") === "1" ? 10 : 80,
+          header: "Score",
+          type: "number"
+        },
         { id: "joined", field: "joined", width: 110, header: "Joined", type: "date" },
         {
           id: "priority",

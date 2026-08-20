@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import type { CanvasHeaderRenderer } from "../../../../src/core/cells";
-import { HeaderCanvasRenderer, HeaderManager } from "../../../../src/core/headers";
+import {
+  DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH,
+  DEFAULT_HEADER_SORT_ZONE_WIDTH,
+  defaultHeaderHitTest,
+  HeaderCanvasRenderer,
+  HeaderManager
+} from "../../../../src/core/headers";
 import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "../../../../src/core/layout";
 import type { ViewportState } from "../../../../src/core/layout";
 import { SceneSnapshot } from "../../../../src/core/scene";
@@ -512,5 +518,43 @@ describe("HeaderCanvasRenderer — clipping", () => {
     expect(saves).toBeGreaterThan(0);
     expect(ctx.calls.filter((call) => call.method === "restore")).toHaveLength(saves);
     expect(ctx.calls.filter((call) => call.method === "clip")).toHaveLength(saves);
+  });
+});
+
+describe("defaultHeaderHitTest", () => {
+  const rect = (width: number) => ({ x: 0, y: 0, width, height: 24 });
+
+  it("claims the trailing strip of a wide-enough header for toggle-sort", () => {
+    const wide = rect(120);
+
+    expect(defaultHeaderHitTest({ rect: wide, point: { x: 119, y: 10 } }))
+      .toEqual({ type: "toggle-sort" });
+    expect(defaultHeaderHitTest({
+      rect: wide,
+      point: { x: 120 - DEFAULT_HEADER_SORT_ZONE_WIDTH, y: 10 }
+    })).toEqual({ type: "toggle-sort" });
+    // ...and leaves the rest of the cell to column selection.
+    expect(defaultHeaderHitTest({
+      rect: wide,
+      point: { x: 120 - DEFAULT_HEADER_SORT_ZONE_WIDTH - 1, y: 10 }
+    })).toBeUndefined();
+  });
+
+  it("gives a column too narrow to hold both zones no sort zone at all", () => {
+    // Without a width floor, `x >= width - 18` is true for *every* point in
+    // a column narrower than 18px: the whole header becomes a sort zone and
+    // the column can never be selected by clicking it again.
+    for (const width of [1, 6, 17, DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH - 1]) {
+      for (const x of [0, width / 2, width - 0.5]) {
+        expect(defaultHeaderHitTest({ rect: rect(width), point: { x, y: 10 } }))
+          .toBeUndefined();
+      }
+    }
+    // Exactly at the floor both zones still fit, so the strip comes back.
+    const floor = DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH;
+    expect(defaultHeaderHitTest({ rect: rect(floor), point: { x: floor - 1, y: 10 } }))
+      .toEqual({ type: "toggle-sort" });
+    expect(defaultHeaderHitTest({ rect: rect(floor), point: { x: 0, y: 10 } }))
+      .toBeUndefined();
   });
 });

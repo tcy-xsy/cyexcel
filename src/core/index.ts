@@ -163,6 +163,7 @@ export {
 export {
   defaultHeaderHitTest,
   DEFAULT_HEADER_SORT_ZONE_WIDTH,
+  DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH,
   type HeaderGroupDefinition,
   type RuntimeHeader
 } from "./headers";

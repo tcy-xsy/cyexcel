@@ -372,6 +372,27 @@ describe("LayoutRootMutation", () => {
         .toEqual(["manual", "default", "manual"]);
     });
 
+    it("describes the inverse permutation in the inverse mutation's own patch", () => {
+      const layout = createTallRows();
+      const coordinator = new MutationCoordinator();
+
+      const receipt = coordinator.commit(
+        coordinator.prepare("reorder", [
+          new LayoutRootMutation(layout, { type: "reorder-rows", order: order() })
+        ])
+      );
+
+      // Read straight off the *unprepared* inverse, the way a consumer that
+      // wants to know what an undo will do (a History size estimate, a
+      // dirty-region preview) reasonably might. prepare() recomputes
+      // `changes`, so nothing today depends on this — but a reorder's patch
+      // carries the permutation itself, and the inverse used to be handed
+      // the forward one: [2, 0, 1] instead of its inverse [1, 2, 0].
+      expect([...receipt.inverse].map((mutation) => mutation.changes)).toEqual([
+        [{ type: "row-reorder", order: Int32Array.from([1, 2, 0]) }]
+      ]);
+    });
+
     it("stages a second reorder against the preceding staged root, not the live one", () => {
       const layout = createTallRows();
       const coordinator = new MutationCoordinator();

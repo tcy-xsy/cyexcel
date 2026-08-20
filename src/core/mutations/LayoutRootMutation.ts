@@ -117,11 +117,16 @@ export class LayoutRootMutation implements Mutation {
     context.roots.set(this.#layout, nextRoot);
     const changes = Object.freeze([patchFor(this.#action, nextRoot)]);
     const forward = new LayoutRootMutation(this.#layout, this.#action, changes);
-    const inverse = new LayoutRootMutation(
-      this.#layout,
-      inverseAction(previousRoot, this.#action),
-      changes
-    );
+    // No `changes` for the inverse: `changes` describes the *forward* patch.
+    // Every other action's patch happens to be direction-independent, and
+    // prepare() recomputes `changes` before the inverse's own is ever read,
+    // so passing it was harmless — but a reorder's patch carries the
+    // permutation itself, so handing the inverse the forward one loads a gun
+    // for any future code that reads `mutation.changes` on an unprepared
+    // inverse and gets the wrong direction for a sort undo. The
+    // constructor's `patchFor(action, layout.root)` fallback derives it from
+    // the inverse action instead.
+    const inverse = new LayoutRootMutation(this.#layout, inverseAction(previousRoot, this.#action));
     let commitStarted = false;
     let rolledBack = false;
 
