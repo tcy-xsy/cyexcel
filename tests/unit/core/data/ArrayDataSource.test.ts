@@ -382,6 +382,12 @@ describe("ArrayDataSource.reorderRows", () => {
     expect(() => source.reorderRows(Int32Array.from([0, 0]))).toThrow(/not a permutation/);
   });
 
+  it("throws a stable error code when reordering rows in a readonly source", () => {
+    const source = new ArrayDataSource([{ name: "A" }, { name: "B" }], [{ id: "name", field: "name" }], { readonly: true });
+
+    expect(() => source.reorderRows(Int32Array.from([1, 0]))).toThrow(CyExcelError);
+  });
+
   // Controller Ruling 4: prepareMutation's "reorder-rows" case must keep the
   // transaction's own in-progress row view current, the same way "move-rows"
   // calls moveRowPieces() before returning — otherwise a transaction that

@@ -154,6 +154,12 @@ export class ArrayDataSource implements DataSource {
   }
 
   reorderRows(order: Int32Array): void {
+    if (this.#readonly) {
+      throw new CyExcelError(
+        CyExcelErrorCode.ReadonlyDataSource,
+        "Cannot write to a readonly ArrayDataSource"
+      );
+    }
     assertValidRowOrder(order, this.#rows.length);
     const next = applyRowOrder(this.#rows, order);
     for (let index = 0; index < next.length; index += 1) {
