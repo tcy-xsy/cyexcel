@@ -38,6 +38,21 @@ describe("ChangeSet", () => {
     expect(Object.isFrozen(rowLayout.rows)).toBe(true);
     expect(Object.isFrozen(rowLayout.range)).toBe(true);
   });
+
+  it("deep-snapshots the order of a row-reorder fact", () => {
+    const order = Int32Array.from([1, 0, 2]);
+    const changes = createChangeSet(3, [{ type: "row-reorder", order }]);
+
+    order[0] = 99;
+
+    expect(changes.changes).toEqual([{ type: "row-reorder", order: Int32Array.from([1, 0, 2]) }]);
+    const rowReorder = changes.changes[0];
+    expect(rowReorder?.type).toBe("row-reorder");
+    if (rowReorder?.type !== "row-reorder") {
+      throw new Error("expected row-reorder change");
+    }
+    expect(Object.isFrozen(rowReorder)).toBe(true);
+  });
 });
 
 describe("compileDirtySet", () => {

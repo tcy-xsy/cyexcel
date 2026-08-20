@@ -51,7 +51,16 @@ function snapshotChange(change: SemanticChange): SemanticChange {
         ] as [number, ...number[]]),
         range: Object.freeze({ ...change.range })
       });
-    default:
+    case "row-reorder":
+      // Object.freeze() throws on a non-empty TypedArray, so the caller's
+      // live Int32Array must be copied, not frozen in place.
+      return Object.freeze({ ...change, order: change.order.slice() });
+    case "cell-value":
+    case "cell-style":
+    case "row-structure":
+    case "column-structure":
+    case "column-layout":
+    case "full-reset":
       return Object.freeze({ ...change });
   }
 }
