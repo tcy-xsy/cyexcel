@@ -70,6 +70,37 @@ describe("mergePatches", () => {
     ]);
   });
 
+  it("dedupes row-reorder patches without ever stringifying a permutation", () => {
+    // The two patches one sort commit produces (TableStore's and the layout
+    // participant's) are distinct Int32Arrays with equal content —
+    // `createChangeSet` slices each order, so identity comparison would stop
+    // them merging. Keying them by content is what this guards against: a
+    // 1M-element `join(",")` costs ~190ms and ~6.9M chars *per patch*, on
+    // every commit and again on every undo/redo, for a merged array
+    // `#publishCommitReceipt` then discards.
+    class ObservedOrder extends Int32Array {
+      joins = 0;
+      override join(separator?: string): string {
+        this.joins += 1;
+        return super.join(separator);
+      }
+    }
+    const first = ObservedOrder.from([1, 0, 2]) as ObservedOrder;
+    const second = ObservedOrder.from([1, 0, 2]) as ObservedOrder;
+    const third = ObservedOrder.from([2, 0, 1]) as ObservedOrder;
+
+    const merged = mergePatches([
+      { type: "row-reorder", order: first },
+      { type: "row-reorder", order: second },
+      { type: "row-reorder", order: third }
+    ]);
+
+    expect(
+      merged.map((patch) => (patch.type === "row-reorder" ? [...patch.order] : patch.type))
+    ).toEqual([[1, 0, 2], [2, 0, 1]]);
+    expect([first.joins, second.joins, third.joins]).toEqual([0, 0, 0]);
+  });
+
   it("dedupes column-layout patches by column index", () => {
     const patches: Patch[] = [
       { type: "column-layout", column: 2 },

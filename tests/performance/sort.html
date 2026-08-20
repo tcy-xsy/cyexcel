@@ -88,9 +88,10 @@
         await nextFrame();
 
         document.getElementById("sort-trigger").addEventListener("click", () => {
-          // Deliberately synchronous inside the click handler: this is
-          // exactly how a real user's header click reaches
-          // CyExcelCore's #handleToggleSort -> sortByColumn(), and is what
+          // Deliberately synchronous inside the click handler: it puts the
+          // whole sort on the main thread in one task, the same way a real
+          // header click does (that path runs the identical sort body
+          // inline from CyExcelCore's #applyHeaderSort), which is what
           // makes the longtask measurement below meaningful.
           const longTasks = observeLongTasks();
           const before = performance.now();
