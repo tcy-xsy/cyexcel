@@ -52,4 +52,43 @@ describe("computeSortOrder", () => {
 
     expect(getSortKey).toHaveBeenCalledTimes(3);
   });
+
+  it("returns null when aborted during key extraction", () => {
+    const controller = new AbortController();
+    const getSortKey = (row: number) => {
+      if (row === 2) {
+        controller.abort();
+      }
+      return [30, 10, 20][row];
+    };
+    const result = computeSortOrder({
+      rowCount: 3,
+      getSortKey,
+      compare: (a, b) => (a as number) - (b as number),
+      direction: "asc",
+      signal: controller.signal
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it("returns null when aborted during sort", () => {
+    const controller = new AbortController();
+    let compareCalls = 0;
+    const compare = (left: unknown, right: unknown) => {
+      compareCalls += 1;
+      if (compareCalls === 2) {
+        controller.abort();
+      }
+      return (left as number) - (right as number);
+    };
+    const result = computeSortOrder({
+      ...numbers([30, 10, 20]),
+      direction: "asc",
+      compare,
+      signal: controller.signal
+    });
+
+    expect(result).toBeNull();
+  });
 });

@@ -42,9 +42,9 @@ export function computeSortOrder(request: SortRequest): Int32Array | null {
   const sign = direction === "desc" ? -1 : 1;
   indices.sort((left, right) => {
     const result = compare(keys[left], keys[right]);
-    // Stability: Array.prototype.sort is stable per spec, but the index
-    // tiebreak also keeps `desc` stable instead of reversing equal runs.
-    return result === 0 ? left - right : result * sign;
+    // Stability is guaranteed by Array.prototype.sort (ES2019+): equal keys
+    // keep their original relative order in both ascending and descending.
+    return result * sign;
   });
 
   if (signal && signal.aborted) {
