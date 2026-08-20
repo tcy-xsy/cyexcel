@@ -611,19 +611,22 @@ export class LayoutEngine {
    * index, so each entry has to be pushed to its new position instead, which
    * means keying by `invertRowOrder(order)[oldRow]`.
    */
-  prepareReorderRows(order: Int32Array): PreparedLayoutRoot {
-    assertValidRowOrder(order, this.#root.rowCount);
+  prepareReorderRows(
+    order: Int32Array,
+    base: LayoutRoot = this.#root,
+  ): PreparedLayoutRoot {
+    assertValidRowOrder(order, base.rowCount);
     const inverse = invertRowOrder(order);
     const rowHeightProvenance = new Map<number, Exclude<RowHeightProvenance, 'default'>>();
-    for (const [row, value] of this.#root.rowHeightProvenance) {
+    for (const [row, value] of base.rowHeightProvenance) {
       rowHeightProvenance.set(inverse[row] as number, value);
     }
     return this.#createRoot(
-      this.#root.version + 1,
-      this.#root.rowCount,
-      this.#root.rowMetrics.reorder(order),
+      base.version + 1,
+      base.rowCount,
+      base.rowMetrics.reorder(order),
       rowHeightProvenance,
-      this.#root.columnAxis,
+      base.columnAxis,
     );
   }
 

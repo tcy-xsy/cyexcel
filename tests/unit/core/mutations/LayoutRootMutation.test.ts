@@ -322,4 +322,68 @@ describe("LayoutRootMutation", () => {
     expect(coordinator.revisionGate.revision).toBe(0);
     expect(coordinator.state).toBe("idle");
   });
+
+  describe("reorder-rows action", () => {
+    // Deliberately asymmetric: [2, 0, 1] is not its own inverse, so a
+    // direction mix-up between order and invertRowOrder() cannot pass.
+    const order = () => Int32Array.from([2, 0, 1]);
+
+    function createTallRows(): LayoutEngine {
+      const layout = createLayout();
+      layout.setRowHeight(0, 60);
+      layout.setRowHeight(2, 44);
+      return layout;
+    }
+
+    it("carries each row's height and provenance to its new position", () => {
+      const layout = createTallRows();
+      const coordinator = new MutationCoordinator();
+      const initialRoot = layout.root;
+
+      const prepared = coordinator.prepare("reorder", [
+        new LayoutRootMutation(layout, { type: "reorder-rows", order: order() })
+      ]);
+
+      expect(layout.root).toBe(initialRoot);
+      expect([0, 1, 2].map((row) => layout.getRowHeight(row))).toEqual([60, 20, 44]);
+
+      const receipt = coordinator.commit(prepared);
+
+      // order[newPosition] = oldPosition, so new 0 <- old 2, new 1 <- old 0.
+      expect([0, 1, 2].map((row) => layout.getRowHeight(row))).toEqual([44, 60, 20]);
+      expect([0, 1, 2].map((row) => layout.getRowHeightProvenance(row)))
+        .toEqual(["manual", "manual", "default"]);
+      expect(receipt.patches).toEqual([{ type: "row-reorder", order: Int32Array.from([2, 0, 1]) }]);
+    });
+
+    it("inverts to the inverse permutation, restoring every height", () => {
+      const layout = createTallRows();
+      const coordinator = new MutationCoordinator();
+
+      const receipt = coordinator.commit(
+        coordinator.prepare("reorder", [
+          new LayoutRootMutation(layout, { type: "reorder-rows", order: order() })
+        ])
+      );
+      coordinator.commit(coordinator.prepare("undo-reorder", [...receipt.inverse]));
+
+      expect([0, 1, 2].map((row) => layout.getRowHeight(row))).toEqual([60, 20, 44]);
+      expect([0, 1, 2].map((row) => layout.getRowHeightProvenance(row)))
+        .toEqual(["manual", "default", "manual"]);
+    });
+
+    it("stages a second reorder against the preceding staged root, not the live one", () => {
+      const layout = createTallRows();
+      const coordinator = new MutationCoordinator();
+
+      const prepared = coordinator.prepare("reorder-twice", [
+        new LayoutRootMutation(layout, { type: "reorder-rows", order: order() }),
+        new LayoutRootMutation(layout, { type: "reorder-rows", order: order() })
+      ]);
+      coordinator.commit(prepared);
+
+      // [2,0,1] twice composes to [1,2,0]: new 0 <- old 1, new 1 <- old 2.
+      expect([0, 1, 2].map((row) => layout.getRowHeight(row))).toEqual([20, 44, 60]);
+    });
+  });
 });
