@@ -1353,8 +1353,10 @@ export class CyExcelCore {
    * transaction, so no published frame can show sorted rows against unsorted
    * heights, and one undo puts both back.
    *
-   * The comparator is the column's cell type's `compare` when it defines one,
-   * otherwise `createDefaultSortCompare(direction)`.
+   * Non-empty values are ordered by the column's cell type's `compare` when
+   * it defines one, and by `createDefaultSortCompare`'s number-or-string
+   * fallback otherwise. Empty cells (`null`/`undefined`) sort last in both
+   * directions either way — see `createDefaultSortCompare`.
    *
    * Returns `false` when `options.signal` aborted before the order was
    * applied — a cancelled sort writes nothing, so there is nothing to undo.
@@ -1365,8 +1367,10 @@ export class CyExcelCore {
     options: { signal?: AbortSignal } = {}
   ): boolean {
     // Resolved eagerly so an out-of-range column throws from the call itself.
-    const compare = this.#columnManager.getColumn(column).compare
-      ?? createDefaultSortCompare(direction);
+    const compare = createDefaultSortCompare(
+      direction,
+      this.#columnManager.getColumn(column).compare
+    );
     let applied = true;
     this.#enqueueOrRunMutation(() => {
       // Computed inside the mutation slot rather than before it: if this call

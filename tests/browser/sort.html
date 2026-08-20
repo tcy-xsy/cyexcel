@@ -24,15 +24,19 @@
       const container = document.getElementById("app");
       const columns = [
         { id: "name", field: "name", width: 120, header: "Name" },
-        { id: "score", field: "score", width: 80, header: "Score", type: "number" }
+        { id: "score", field: "score", width: 80, header: "Score", type: "number" },
+        { id: "joined", field: "joined", width: 110, header: "Joined", type: "date" }
       ];
       // Deliberately asymmetric: ascending by "name" is [2, 0, 1]
       // (apple <- 2, banana <- 0, cherry <- 1), which is not its own inverse,
       // so a direction bug cannot survive undo.
+      //
+      // The dates are picked so weekday-name order (what String(date) gives)
+      // and chronological order disagree: Sat / Wed / Mon vs 11th / 1st / 6th.
       const rows = [
-        { name: "banana", score: 2 },
-        { name: "cherry", score: 3 },
-        { name: "apple", score: 1 }
+        { name: "banana", score: 2, joined: new Date(Date.UTC(2020, 0, 11, 12)) },
+        { name: "cherry", score: 3, joined: new Date(Date.UTC(2020, 0, 1, 12)) },
+        { name: "apple", score: 1, joined: new Date(Date.UTC(2020, 0, 6, 12)) }
       ];
 
       const variant = new URLSearchParams(location.search).get("dataSource");

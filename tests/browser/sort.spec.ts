@@ -76,6 +76,27 @@ test("sorting descending reverses the ascending order", async ({ page }) => {
   expect(column).toEqual(["cherry", "banana", "apple"]);
 });
 
+test("a date column sorts chronologically, not by the raw Date string", async ({ page }) => {
+  await gotoFixture(page);
+
+  const applied = await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    return sheet.sortByColumn(2, "asc");
+  });
+  expect(applied).toBe(true);
+
+  const column = await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    return [0, 1, 2].map((row) => sheet.getCell(row, 0) as string);
+  });
+
+  // Chronological is Jan 1 / Jan 6 / Jan 11 = cherry, apple, banana. Ordering
+  // the raw Date values as strings would give their weekday names, Mon < Sat
+  // < Wed = apple, banana, cherry — so this also proves the column's cell
+  // type `compare` really does reach the sort at runtime.
+  expect(column).toEqual(["cherry", "apple", "banana"]);
+});
+
 test("one undo restores both the row order and the row heights", async ({ page }) => {
   await gotoFixture(page);
 

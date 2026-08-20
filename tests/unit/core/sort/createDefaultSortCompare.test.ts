@@ -63,3 +63,62 @@ describe("createDefaultSortCompare", () => {
     expect([...order!]).toEqual([0, 4, 2, 1, 3]);
   });
 });
+
+describe("createDefaultSortCompare with a cell type's comparator", () => {
+  // Chronological, like the "date" built-in: the string order of these is
+  // Mon < Sat < Wed, so the fallback could never produce it.
+  const wedJan01 = new Date(Date.UTC(2020, 0, 1, 12));
+  const monJan06 = new Date(Date.UTC(2020, 0, 6, 12));
+  const satJan11 = new Date(Date.UTC(2020, 0, 11, 12));
+  const chronological = (left: unknown, right: unknown): number =>
+    (left as Date).getTime() - (right as Date).getTime();
+
+  it("delegates two defined values to it instead of comparing them as strings", () => {
+    const compare = createDefaultSortCompare("asc", chronological);
+
+    expect(sign(compare(wedJan01, monJan06))).toBe(-1);
+    expect(sign(compare(satJan11, wedJan01))).toBe(1);
+    expect(sign(compare(wedJan01, wedJan01))).toBe(0);
+  });
+
+  it("never hands it a null or undefined side", () => {
+    const seen: unknown[] = [];
+    const compare = createDefaultSortCompare("asc", (left, right) => {
+      seen.push(left, right);
+      return chronological(left, right);
+    });
+
+    compare(null, wedJan01);
+    compare(wedJan01, undefined);
+    compare(undefined, null);
+
+    expect(seen).toEqual([]);
+  });
+
+  it("still keeps empty cells last in both directions", () => {
+    const keys = [satJan11, null, wedJan01, undefined, monJan06];
+    const request = {
+      rowCount: keys.length,
+      getSortKey: (row: number) => keys[row]
+    };
+
+    expect([
+      ...computeSortOrder({
+        ...request,
+        compare: createDefaultSortCompare("asc", chronological),
+        direction: "asc"
+      })!
+    ]).toEqual([2, 4, 0, 1, 3]);
+
+    // The cell type orders the real dates; the empties stay at the bottom
+    // rather than flipping to the top, which is what a bare
+    // `column.compare` would do here.
+    expect([
+      ...computeSortOrder({
+        ...request,
+        compare: createDefaultSortCompare("desc", chronological),
+        direction: "desc"
+      })!
+    ]).toEqual([0, 4, 2, 1, 3]);
+  });
+});
