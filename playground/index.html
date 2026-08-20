@@ -35,7 +35,9 @@
           <button class="button" id="sortDescButton" type="button">降序</button>
           <span class="hint-inline" id="sortHint">
             调用 <code>sheet.sortByColumn(列, "asc" | "desc")</code>——物理重排行，行高跟着行走，
-            一次撤销同时还原顺序和行高
+            一次撤销同时还原顺序和行高。也可以直接点表头最右侧约 18px 的窄条排序，标题旁的
+            ▲/▼ 显示当前排序列和方向；再点一次在升/降序间切换，不会回到原始顺序（要找回原顺序
+            只能撤销）
           </span>
         </div>
         <div class="toolbar-group">

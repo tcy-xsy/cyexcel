@@ -388,6 +388,27 @@ function rebuild() {
     }, 5000);
   });
 
+  // Step 22 Part A：表头右侧窄条也能直接触发排序（HeaderCanvasRenderer 的
+  // defaultHeaderHitTest），不只是上面的升序/降序按钮。header-action 事件在
+  // 那条路径下触发，这里同步 sortHint 和排序列下拉框，让两种触发方式在界面
+  // 上看起来是同一件事——core.sortState 是两条路径共用的同一份状态。
+  core.events.on("header-action", (event) => {
+    if (event.action.type !== "toggle-sort") {
+      return;
+    }
+    const state = core.sortState;
+    if (!state) {
+      return;
+    }
+    const column = COLUMNS[state.column];
+    sortColumn.value = String(state.column);
+    sortHint.textContent =
+      `上次动作：点击表头「${column.label}」排序为` +
+      `${state.direction === "asc" ? "升序" : "降序"}（共 ` +
+      `${currentRowCount.toLocaleString("zh-CN")} 行，撤销可一步还原顺序和行高）。` +
+      "再点一次表头在升/降序间切换，不会回到原始顺序";
+  });
+
   const maxRow = Math.max(0, currentRowCount - 1);
   if (Number(cellRow.value) > maxRow) {
     cellRow.value = String(maxRow);
