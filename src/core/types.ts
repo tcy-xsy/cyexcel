@@ -39,6 +39,14 @@ export interface DataSource {
   insertColumns?(start: number, columns: readonly ColumnFieldMapping[]): void;
   deleteColumns?(start: number, count: number): void;
   moveColumns?(start: number, count: number, target: number): void;
+  /**
+   * Optional whole-axis row permutation (Step 22 sorting). `order` follows the
+   * repo-wide convention `order[newPosition] = oldPosition`. Kept separate from
+   * `moveRows()` because a sort is not expressible as a cheap sequence of
+   * moves, and because a DataSource may reasonably support one and not the
+   * other.
+   */
+  reorderRows?(order: Int32Array): void;
   /** Optional strong transaction adapter. Mutable TableStore operations require it. */
   beginTransaction?(baseRevision: ModelRevision): DataSourceTransaction;
 }
@@ -62,6 +70,7 @@ export type DataMutation =
   | { readonly type: "insert-row-objects"; readonly start: number; readonly rows: readonly RowData[] }
   | { readonly type: "delete-rows"; readonly start: number; readonly count: number }
   | { readonly type: "move-rows"; readonly start: number; readonly count: number; readonly target: number }
+  | { readonly type: "reorder-rows"; readonly order: Int32Array }
   | { readonly type: "insert-columns"; readonly start: number; readonly columns: readonly ColumnFieldMapping[] }
   | { readonly type: "delete-columns"; readonly start: number; readonly count: number }
   | { readonly type: "move-columns"; readonly start: number; readonly count: number; readonly target: number };

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ArrayDataSource } from "../../../../src/core/data";
 import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
+import type { ModelRevision } from "../../../../src/core/model";
 
 describe("ArrayDataSource", () => {
   it("reads and writes by numeric index through a stable column field", () => {
@@ -349,6 +350,58 @@ describe("ArrayDataSource — deleteColumns", () => {
     expect(source.getCell(0, 0)).toBe("A");
     expect(source.getCell(0, 1)).toBe(1);
     expect(source.getCell(0, 2)).toBe(5);
+  });
+});
+
+describe("ArrayDataSource.reorderRows", () => {
+  it("permutes rows without touching any cell value", () => {
+    const source = new ArrayDataSource(
+      [{ name: "c" }, { name: "a" }, { name: "b" }],
+      [{ id: "name", field: "name" }]
+    );
+
+    source.reorderRows(Int32Array.from([1, 2, 0]));
+
+    expect([source.getCell(0, 0), source.getCell(1, 0), source.getCell(2, 0)]).toEqual(["a", "b", "c"]);
+  });
+
+  it("keeps the caller's own array untouched", () => {
+    const rows = [{ name: "c" }, { name: "a" }, { name: "b" }];
+    const source = new ArrayDataSource(rows, [{ id: "name", field: "name" }]);
+
+    source.reorderRows(Int32Array.from([1, 2, 0]));
+
+    // The constructor shallow-copies the container, so structural changes
+    // never reorder an array the caller still holds.
+    expect(rows.map((row) => row.name)).toEqual(["c", "a", "b"]);
+  });
+
+  it("rejects an order that is not a permutation", () => {
+    const source = new ArrayDataSource([{ name: "a" }, { name: "b" }], [{ id: "name", field: "name" }]);
+
+    expect(() => source.reorderRows(Int32Array.from([0, 0]))).toThrow(/not a permutation/);
+  });
+
+  // Controller Ruling 4: prepareMutation's "reorder-rows" case must keep the
+  // transaction's own in-progress row view current, the same way "move-rows"
+  // calls moveRowPieces() before returning — otherwise a transaction that
+  // reorders and then reads sees the pre-reorder order.
+  it("keeps the transaction's own read view current after staging a reorder", () => {
+    const source = new ArrayDataSource(
+      [{ name: "c" }, { name: "a" }, { name: "b" }],
+      [{ id: "name", field: "name" }]
+    );
+
+    const transaction = source.beginTransaction(0 as ModelRevision);
+    transaction.prepareMutation({ type: "reorder-rows", order: Int32Array.from([1, 2, 0]) });
+
+    expect([
+      transaction.getCell(0, 0),
+      transaction.getCell(1, 0),
+      transaction.getCell(2, 0)
+    ]).toEqual(["a", "b", "c"]);
+
+    transaction.dispose();
   });
 });
 

@@ -70,6 +70,16 @@ function changesForDataMutation(mutation: DataMutation, fallback: readonly Patch
       return [{ type: "row-structure", operation: "delete", start: mutation.start, count: mutation.count }];
     case "move-rows":
       return [{ type: "row-structure", operation: "move", start: mutation.start, count: mutation.count, target: mutation.target }];
+    case "reorder-rows":
+      // A whole-axis permutation touches every row at once and has no
+      // start/count/target shape the "row-structure" Patch can carry
+      // faithfully (a fabricated one would mislead index-remapping
+      // consumers such as selection). "full-reset" is the honest, already-
+      // reserved-but-unused-in-src encoding for "everything must be treated
+      // as dirty" (Task 3 scope stops at DataSource/DataMutation; extending
+      // Patch with a "reorder" variant is left to whichever future task
+      // wires a Sort command through TableStore).
+      return [{ type: "full-reset" }];
     case "insert-columns":
       return [{ type: "column-structure", operation: "insert", start: mutation.start, count: mutation.columns.length }];
     case "delete-columns":

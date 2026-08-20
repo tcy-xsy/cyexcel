@@ -1,4 +1,5 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
+import { applyRowOrder, assertValidRowOrder, invertRowOrder } from "../layout/rowOrder";
 import { validateAxisChange } from "../layout/structuralChange";
 import type { ModelRevision } from "../model";
 import type {
@@ -150,6 +151,14 @@ export class ArrayDataSource implements DataSource {
     const moved = this.#rows.splice(start, count);
     const adjustedTarget = target > start ? target - count : target;
     this.#insertItems(this.#rows, adjustedTarget, moved);
+  }
+
+  reorderRows(order: Int32Array): void {
+    assertValidRowOrder(order, this.#rows.length);
+    const next = applyRowOrder(this.#rows, order);
+    for (let index = 0; index < next.length; index += 1) {
+      this.#rows[index] = next[index] as RowData;
+    }
   }
 
   /**
@@ -350,6 +359,34 @@ export class ArrayDataSource implements DataSource {
       const targetIndex = splitRowsAt(adjustedTarget);
       rowPieces.splice(targetIndex, 0, ...moved);
     };
+    /**
+     * A reorder touches every row, so — unlike moveRowPieces — there is no
+     * cheap segment-preserving edit; the whole piece list collapses into one
+     * materialized `{ kind: "inserted" }` piece holding the permuted row
+     * objects (Controller Ruling 4). Any in-flight cell overlay is rekeyed
+     * along with its row: a "base" row's overlay is keyed by its numeric
+     * `#rows` index, which stops being that row's token once it lands in an
+     * "inserted" piece, so the overlay would otherwise become unreachable —
+     * silently dropping a staged-but-uncommitted `setCell` that preceded the
+     * reorder in the same transaction.
+     */
+    const reorderRowPieces = (order: Int32Array) => {
+      const permuted: RowData[] = new Array(rowCount);
+      for (let index = 0; index < order.length; index += 1) {
+        const oldToken = rowTokenAt(order[index] as number);
+        const row = rowObject(oldToken);
+        permuted[index] = row;
+        if (typeof oldToken === "number") {
+          const overlay = cellOverlay.get(oldToken);
+          if (overlay) {
+            cellOverlay.delete(oldToken);
+            cellOverlay.set(row, overlay);
+          }
+        }
+      }
+      rowPieces.length = 0;
+      rowPieces.push({ kind: "inserted", rows: permuted });
+    };
     const prepared = (
       forward: DataMutation,
       inverse: DataMutation,
@@ -517,6 +554,18 @@ export class ArrayDataSource implements DataSource {
               64 + mutation.count * 16,
               () => this.moveRows(mutation.start, mutation.count, mutation.target),
               () => this.moveRows(adjustedTarget, mutation.count, undoTarget)
+            );
+          }
+          case "reorder-rows": {
+            assertValidRowOrder(mutation.order, rowCount);
+            const inverse = invertRowOrder(mutation.order);
+            reorderRowPieces(mutation.order);
+            return prepared(
+              mutation,
+              { type: "reorder-rows", order: inverse },
+              64 + mutation.order.length * 4,
+              () => this.reorderRows(mutation.order),
+              () => this.reorderRows(inverse)
             );
           }
           case "insert-columns": {
