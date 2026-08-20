@@ -399,3 +399,51 @@ test("a direct sortByColumn() call updates sortState the same way a header click
 
   expect(sortState).toEqual({ column: 1, direction: "desc" });
 });
+
+test("a header-action listener reading sortState synchronously inside the callback sees the sort this click just produced, not the previous one", async ({
+  page
+}) => {
+  await gotoFixture(page);
+
+  await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    (window as unknown as { __captured: unknown[] }).__captured = [];
+    sheet.events.on("header-action", (payload) => {
+      const action = payload as { action: { type: string } };
+      if (action.action.type !== "toggle-sort") {
+        return;
+      }
+      // Read synchronously, *inside* the listener — this is exactly the
+      // pattern that exposed the header-action emit-ordering bug fixed in
+      // commit 960c1f0 (#routeHeaderCanvasAction used to emit before
+      // applying the sort). Every other test in this file reads sortState
+      // only after the click resolves, via a separate page.evaluate() —
+      // that reads too late to catch a listener seeing stale state, which
+      // is exactly how this bug survived a fully green suite until it was
+      // found by hand in the playground.
+      //
+      // A cell value was tried too (as more directly observable proof the
+      // reorder itself, not just the `sortState` bookkeeping field, had
+      // landed), but `sheet.getCell()` still reads the pre-sort order at
+      // this point even with the fix applied: `ReorderRowsCommand` commits
+      // through the same mutation-intent queue `sortByColumn` enqueues into
+      // from within this already-in-flight interaction frame, so it
+      // finishes after this listener returns regardless of emit order.
+      // `sortState`, a plain field `#handleToggleSort` writes directly, is
+      // the one piece of state 960c1f0 actually guarantees is current here.
+      (window as unknown as { __captured: unknown[] }).__captured.push({
+        sortState: sheet.sortState
+      });
+    });
+  });
+
+  await clickHeaderSortZone(page, NAME_COLUMN_RIGHT_X);
+
+  const captured = await page.evaluate(
+    () => (window as unknown as { __captured: unknown[] }).__captured
+  );
+
+  // Pre-fix (emit before apply), the listener would run before
+  // #handleToggleSort had written #sortState: sortState would still be null.
+  expect(captured).toEqual([{ sortState: { column: 0, direction: "asc" } }]);
+});
