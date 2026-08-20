@@ -43,8 +43,31 @@
         }
       };
 
+      // `?header=custom` puts a *custom* canvas renderer on the "name"
+      // column whose hitTest reports `toggle-sort` for any point in the
+      // cell. A custom renderer's `toggle-sort` is a pure notification —
+      // the host decides what it means — so the core must emit
+      // `header-action` for it without sorting anything itself.
+      const customNameHeaderRenderer = {
+        kind: "canvas",
+        paint({ ctx, rect, title }) {
+          ctx.fillStyle = "#111827";
+          ctx.textBaseline = "middle";
+          ctx.fillText(title, rect.x + 4, rect.y + rect.height / 2);
+        },
+        hitTest() {
+          return { type: "toggle-sort" };
+        }
+      };
+      const customHeaders = new URLSearchParams(location.search).get("header") === "custom";
+
       const columns = [
-        { id: "name", field: "name", width: 120, header: "Name" },
+        {
+          id: "name",
+          field: "name",
+          width: 120,
+          header: customHeaders ? { title: "Name", renderer: customNameHeaderRenderer } : "Name"
+        },
         { id: "score", field: "score", width: 80, header: "Score", type: "number" },
         { id: "joined", field: "joined", width: 110, header: "Joined", type: "date" },
         {
@@ -145,9 +168,24 @@
         commitCount += 1;
       });
 
+      // A sort refused from inside the mutation queue (a header click on a
+      // DataSource that cannot reorder) can only report itself through an
+      // `error` event — it has no call site left to throw at.
+      const errors = [];
+      sheet.events.on("error", ({ error, eventName }) => {
+        errors.push({ eventName, code: error?.code, message: String(error?.message ?? error) });
+      });
+
+      const headerActions = [];
+      sheet.events.on("header-action", ({ action, column }) => {
+        headerActions.push({ action: { ...action }, column });
+      });
+
       window.__sort = {
         sheet,
         getCommitCount: () => commitCount,
+        getErrors: () => errors.map((entry) => ({ ...entry })),
+        getHeaderActions: () => headerActions.map((entry) => ({ ...entry })),
         setOnCompare: (hook) => {
           onCompare = hook;
         }

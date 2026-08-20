@@ -15,6 +15,8 @@ interface SortSheet {
     options?: { signal?: AbortSignal }
   ): boolean;
   undo(): void;
+  insertColumns(start: number, columns: readonly Record<string, unknown>[]): void;
+  deleteColumns(start: number, count?: number): void;
   readonly scene: {
     getRowHeight(row: number): number;
   };
@@ -30,6 +32,8 @@ interface FixtureWindow {
   __sort?: {
     sheet: SortSheet;
     getCommitCount(): number;
+    getErrors(): { eventName: string; code?: string; message: string }[];
+    getHeaderActions(): { action: { type: string }; column: number }[];
     setOnCompare(hook: (() => void) | null): void;
   };
 }
@@ -360,6 +364,108 @@ test("a third click is still a valid sort, never a return to the original row or
   expect(result.sortState).toEqual({ column: 0, direction: "asc" });
 });
 
+test("a header click whose sort is refused leaves the indicator and the data exactly where they were", async ({
+  page
+}) => {
+  // Driven by a real click, never page.evaluate(): a click reaches
+  // #routeHeaderCanvasAction from inside an interaction read lease, so the
+  // sort runs *deferred*, out of the mutation queue's own drain. That is the
+  // only path a real user can take, and it is the path on which a failing
+  // sort has no call site left to throw at — the two page.evaluate()-driven
+  // refusal tests above run the sort synchronously and so never exercise it.
+  await gotoFixture(page, "?dataSource=no-reorder");
+
+  await clickHeaderSortZone(page, NAME_COLUMN_RIGHT_X);
+
+  const result = await page.evaluate(() => {
+    const fixture = (window as unknown as FixtureWindow).__sort!;
+    return {
+      column: [0, 1, 2].map((row) => fixture.sheet.getCell(row, 0) as string),
+      sortState: fixture.sheet.sortState,
+      errors: fixture.getErrors(),
+      headerActions: fixture.getHeaderActions()
+    };
+  });
+
+  expect(result.column).toEqual(["banana", "cherry", "apple"]);
+  // The indicator must still describe the last sort that really happened —
+  // here, none at all.
+  expect(result.sortState).toBeNull();
+  expect(result.errors).toMatchObject([
+    { eventName: "interaction:toggle-sort:0", code: "structural-modification-not-supported" }
+  ]);
+  // ...and no `header-action` either: for a default header the core owns the
+  // sort, so announcing `toggle-sort` after refusing to sort would tell every
+  // listener a sort just happened. The `error` event is the whole report.
+  expect(result.headerActions).toEqual([]);
+});
+
+test("a custom header renderer's toggle-sort stays a notification -- the core sorts nothing", async ({
+  page
+}) => {
+  await gotoFixture(page, "?header=custom");
+
+  // The custom renderer's hitTest reports toggle-sort anywhere in the cell,
+  // so a click at the column midpoint (not in the default painter's reserved
+  // strip, which this column does not have) is enough.
+  const headerBox = await headerCanvasBox(page);
+  if (!headerBox) throw new Error("missing header canvas box");
+  await page.mouse.click(headerBox.x + NAME_COLUMN_RIGHT_X / 2, headerBox.y + 10);
+
+  const result = await page.evaluate(() => {
+    const fixture = (window as unknown as FixtureWindow).__sort!;
+    return {
+      column: [0, 1, 2].map((row) => fixture.sheet.getCell(row, 0) as string),
+      sortState: fixture.sheet.sortState,
+      commits: fixture.getCommitCount(),
+      headerActions: fixture.getHeaderActions()
+    };
+  });
+
+  // Before this branch `toggle-sort` was purely a notification a host
+  // translated into its own command; a custom renderer must keep that
+  // contract, or every host following doc/customization-and-hooks.md §7
+  // (which tells it to dispatch its own sort from the listener) gets two
+  // physical reorders and two history entries per click.
+  expect(result.column).toEqual(["banana", "cherry", "apple"]);
+  expect(result.sortState).toBeNull();
+  expect(result.commits).toBe(0);
+  expect(result.headerActions).toEqual([{ action: { type: "toggle-sort" }, column: 0 }]);
+});
+
+test("a structural column change clears the sort indicator", async ({ page }) => {
+  await gotoFixture(page);
+
+  const afterInsert = await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    sheet.sortByColumn(1, "asc");
+    const sorted = sheet.sortState;
+    sheet.insertColumns(0, [{ id: "extra", field: "extra", width: 50, header: "Extra" }]);
+    return { sorted, after: sheet.sortState };
+  });
+
+  expect(afterInsert.sorted).toEqual({ column: 1, direction: "asc" });
+  // An inserted column shifts every column index right; keeping `column: 1`
+  // would draw the indicator on a different column than the one that was
+  // sorted. ADR 0003 §3.4's indicator is one-shot ("the last sort applied"),
+  // and after the column axis moves that claim is no longer safe to make.
+  expect(afterInsert.after).toBeNull();
+
+  const afterDelete = await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    sheet.sortByColumn(2, "desc");
+    const sorted = sheet.sortState;
+    sheet.deleteColumns(2, 1);
+    return { sorted, after: sheet.sortState };
+  });
+
+  expect(afterDelete.sorted).toEqual({ column: 2, direction: "desc" });
+  // The sorted column is gone: a `sortState` naming it would hand callers an
+  // index for a column that no longer exists, and would start the *new*
+  // column 2 at "desc" on its first click.
+  expect(afterDelete.after).toBeNull();
+});
+
 test("clicking a header's sort zone emits a toggle-sort header-action event", async ({ page }) => {
   await gotoFixture(page);
 
@@ -422,17 +528,17 @@ test("a header-action listener reading sortState synchronously inside the callba
       // is exactly how this bug survived a fully green suite until it was
       // found by hand in the playground.
       //
-      // A cell value was tried too (as more directly observable proof the
-      // reorder itself, not just the `sortState` bookkeeping field, had
-      // landed), but `sheet.getCell()` still reads the pre-sort order at
-      // this point even with the fix applied: `ReorderRowsCommand` commits
-      // through the same mutation-intent queue `sortByColumn` enqueues into
-      // from within this already-in-flight interaction frame, so it
-      // finishes after this listener returns regardless of emit order.
-      // `sortState`, a plain field `#handleToggleSort` writes directly, is
-      // the one piece of state 960c1f0 actually guarantees is current here.
+      // The cell is read alongside it, and that is the half that matters
+      // most: when this test was first written the header click applied its
+      // sort by calling `sortByColumn` from inside the interaction intent,
+      // which only *queued* the reorder behind the drain already running —
+      // so `sortState` was current here while the data underneath it still
+      // was not. The core now runs the reorder inline in that intent, so
+      // both are true together, which is the only version of this guarantee
+      // worth having.
       (window as unknown as { __captured: unknown[] }).__captured.push({
-        sortState: sheet.sortState
+        sortState: sheet.sortState,
+        topCell: sheet.getCell(0, 0)
       });
     });
   });
@@ -443,7 +549,11 @@ test("a header-action listener reading sortState synchronously inside the callba
     () => (window as unknown as { __captured: unknown[] }).__captured
   );
 
-  // Pre-fix (emit before apply), the listener would run before
-  // #handleToggleSort had written #sortState: sortState would still be null.
-  expect(captured).toEqual([{ sortState: { column: 0, direction: "asc" } }]);
+  // Pre-fix (emit before apply), the listener would run before the sort had
+  // written #sortState: sortState would still be null. Pre-*this*-fix,
+  // sortState would already read `asc` while `getCell(0, 0)` still returned
+  // "banana" — the indicator describing a sort that had not happened.
+  expect(captured).toEqual([
+    { sortState: { column: 0, direction: "asc" }, topCell: "apple" }
+  ]);
 });
