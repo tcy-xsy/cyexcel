@@ -13,6 +13,8 @@ export interface DataCommandMutationFactory {
   createInsertRows(start: number, rows: readonly (readonly unknown[])[]): Mutation;
   createDeleteRows(start: number, count: number): Mutation;
   createMoveRows(start: number, count: number, target: number): Mutation;
+  /** Whole-axis permutation, `order[newPosition] = oldPosition`. */
+  createReorderRows(order: Int32Array): Mutation;
   createInsertColumns(start: number, columns: readonly ColumnFieldMapping[]): Mutation;
   createDeleteColumns(start: number, count: number): Mutation;
   createMoveColumns(start: number, count: number, target: number): Mutation;

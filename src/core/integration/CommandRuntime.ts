@@ -85,6 +85,10 @@ export class TableDataCommandMutationFactory implements DataCommandMutationFacto
     return this.#store.createMoveRowsMutation(start, count, target);
   }
 
+  createReorderRows(order: Int32Array): Mutation {
+    return this.#store.createReorderRowsMutation(order);
+  }
+
   createInsertColumns(start: number, columns: readonly ColumnFieldMapping[]): Mutation {
     return this.#store.createInsertColumnsMutation(start, columns);
   }
