@@ -54,22 +54,40 @@ describe("computeSortOrder", () => {
   });
 
   it("returns null when aborted during key extraction", () => {
+    // Use enough rows that sort's compare would definitely be invoked.
+    const values = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
     const controller = new AbortController();
     const getSortKey = (row: number) => {
-      if (row === 2) {
+      if (row === values.length - 1) {
         controller.abort();
       }
-      return [30, 10, 20][row];
+      return values[row];
     };
+    const compare = vi.fn((a: unknown, b: unknown) => (a as number) - (b as number));
+
+    // First, verify compare IS called in the non-aborted case.
+    computeSortOrder({
+      rowCount: values.length,
+      getSortKey: (row: number) => values[row],
+      compare,
+      direction: "asc"
+    });
+    const compareCalls = compare.mock.calls.length;
+    expect(compareCalls).toBeGreaterThan(0);
+
+    // Now test the aborted case: compare should not be called because
+    // the post-extraction checkpoint prevents sort from running.
+    const compareSpyAborted = vi.fn((a: unknown, b: unknown) => (a as number) - (b as number));
     const result = computeSortOrder({
-      rowCount: 3,
+      rowCount: values.length,
       getSortKey,
-      compare: (a, b) => (a as number) - (b as number),
+      compare: compareSpyAborted,
       direction: "asc",
       signal: controller.signal
     });
 
     expect(result).toBeNull();
+    expect(compareSpyAborted).not.toHaveBeenCalled();
   });
 
   it("returns null when aborted during sort", () => {
