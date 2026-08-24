@@ -51,7 +51,16 @@ function snapshotChange(change: SemanticChange): SemanticChange {
         ] as [number, ...number[]]),
         range: Object.freeze({ ...change.range })
       });
-    default:
+    case "row-reorder":
+      // Object.freeze() throws on a non-empty TypedArray, so the caller's
+      // live Int32Array must be copied, not frozen in place.
+      return Object.freeze({ ...change, order: change.order.slice() });
+    case "cell-value":
+    case "cell-style":
+    case "row-structure":
+    case "column-structure":
+    case "column-layout":
+    case "full-reset":
       return Object.freeze({ ...change });
   }
 }
@@ -89,6 +98,7 @@ export function summarizeStructuralChanges(
   for (const change of changes) {
     switch (change.type) {
       case "row-structure":
+      case "row-reorder":
         hasRowStructure = true;
         break;
       case "column-structure":
@@ -160,6 +170,11 @@ export function compileDirtySet(changes: readonly SemanticChange[]): DirtySet {
         skeleton = skeleton === "row-axis" ? "full" : "column-axis";
         break;
       case "row-structure":
+      case "row-reorder":
+        // A reorder does not itself change row numbers, but each row's
+        // height travels with it, so band boundaries move and the gutter
+        // must repaint just as it would for insert/delete/move (see
+        // doc/scene-mutation-migration-plan.md §14.7).
         domCells = true;
         rowHeader = true;
         content = "full";

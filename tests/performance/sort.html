@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel sort benchmark (1,000,000 rows x 50 columns)</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 900px;
+        height: 500px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <!-- A real button, clicked by the test via page.click() — not called
+         through page.evaluate(). Chromium's Long Tasks
+         (PerformanceObserver({entryTypes:["longtask"]})) does not attribute
+         script run via CDP's Runtime.evaluate (what page.evaluate() uses) to
+         a task the same way it does script run from a genuine DOM event;
+         a page.evaluate()-triggered version of this same busy sort measured
+         longTaskCount 0 every time despite blocking >800ms, while an
+         identical busy-loop triggered by page.click() was correctly
+         captured. Only a click makes this measurement trustworthy. -->
+    <button id="sort-trigger">Sort</button>
+    <!-- Imports the real BUILT artifact, not /src/... — same "固定 production
+         build" rule first-paint.html follows, since a million-row sort's
+         main-thread cost has to reflect what a real consumer's bundle does. -->
+    <script type="module">
+      import { CyExcelCore } from "/dist/core.js";
+      import { buildBenchmarkColumns, buildBenchmarkRows } from "/tests/performance/support/dataset.ts";
+
+      const ROW_COUNT = 1_000_000;
+      const COLUMN_COUNT = 50;
+      // Column index 1: dataset.ts's buildCellValue() gives column % 5 === 1
+      // a plain number — sorted through createDefaultSortCompare's numeric
+      // fallback, not a column-level `compare`, so this measures the actual
+      // computeSortOrder/Array.prototype.sort cost the doc comment in
+      // src/core/sort/computeSortOrder.ts and Task 7's "分片说明" refer to,
+      // not a custom comparator's own overhead.
+      const SORT_COLUMN = 1;
+
+      function nextFrame() {
+        return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }
+
+      function observeLongTasks() {
+        const durations = [];
+        let observer;
+        if (typeof PerformanceObserver !== "undefined") {
+          try {
+            observer = new PerformanceObserver((list) => {
+              for (const entry of list.getEntries()) {
+                durations.push(entry.duration);
+              }
+            });
+            observer.observe({ entryTypes: ["longtask"] });
+          } catch {
+            observer = undefined;
+          }
+        }
+        return {
+          stop() {
+            observer?.disconnect();
+            return durations.length;
+          },
+          durations
+        };
+      }
+
+      async function run() {
+        const container = document.getElementById("app");
+        const columns = buildBenchmarkColumns(COLUMN_COUNT);
+        // Data generation is benchmark-harness cost, not part of the sort
+        // itself — left out of every timed window below, same reasoning as
+        // first-paint.html excluding it from constructMs.
+        const data = buildBenchmarkRows(ROW_COUNT, COLUMN_COUNT);
+        const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+
+        // Let first paint settle before the timed run, so the sheet's own
+        // initial render doesn't get counted as part of the sort's cost or
+        // its long-task window.
+        await nextFrame();
+
+        document.getElementById("sort-trigger").addEventListener("click", () => {
+          // Deliberately synchronous inside the click handler: it puts the
+          // whole sort on the main thread in one task, the same way a real
+          // header click does (that path runs the identical sort body
+          // inline from CyExcelCore's #applyHeaderSort), which is what
+          // makes the longtask measurement below meaningful.
+          const longTasks = observeLongTasks();
+          const before = performance.now();
+          // sortByColumn() is synchronous — the permutation is computed and
+          // committed inside this one call, unlike paste()/copy() above.
+          const applied = sheet.sortByColumn(SORT_COLUMN, "asc");
+          const afterSort = performance.now();
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              const afterPaint = performance.now();
+              const longTaskCount = longTasks.stop();
+              window.__cyexcelSortResult = {
+                applied,
+                sortMs: afterSort - before,
+                repaintMs: afterPaint - afterSort,
+                longTaskCount
+              };
+              window.__cyexcelSortDone = true;
+            });
+          });
+        });
+
+        window.__sheet = sheet;
+        window.__cyexcelPerfReady = true;
+      }
+
+      run();
+    </script>
+  </body>
+</html>

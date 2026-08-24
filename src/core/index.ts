@@ -10,7 +10,8 @@ export {
   createCyExcelCore,
   type CyExcelColumnConfig,
   type CyExcelCoreOptions,
-  type CyExcelHeaderActionEvent
+  type CyExcelHeaderActionEvent,
+  type SortState
 } from "./CyExcelCore";
 
 export { CyExcelError, CyExcelErrorCode } from "./errors";
@@ -55,6 +56,8 @@ export {
   type DeleteRowsCommandParams,
   MoveRowsCommand,
   type MoveRowsCommandParams,
+  ReorderRowsCommand,
+  type ReorderRowsCommandParams,
   InsertColumnsCommand,
   type InsertColumnsCommandParams,
   DeleteColumnsCommand,
@@ -121,6 +124,15 @@ export type {
   SelectionSnapshot
 } from "./interaction";
 
+// Sorting primitives, so a caller can build its own sort (a multi-column one,
+// say) on the same permutation contract `sortByColumn()` commits.
+export {
+  computeSortOrder,
+  createDefaultSortCompare,
+  nextSortDirection,
+  type SortRequest
+} from "./sort";
+
 // User-facing column, cell, header and editor extension contracts.
 export type { Canvas2DLike } from "./render";
 export {
@@ -148,9 +160,12 @@ export {
   type HeaderDefinition,
   type ColumnClipboardPolicy
 } from "./cells";
-export type {
-  HeaderGroupDefinition,
-  RuntimeHeader
+export {
+  defaultHeaderHitTest,
+  DEFAULT_HEADER_SORT_ZONE_WIDTH,
+  DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH,
+  type HeaderGroupDefinition,
+  type RuntimeHeader
 } from "./headers";
 export {
   createTextCellEditor,

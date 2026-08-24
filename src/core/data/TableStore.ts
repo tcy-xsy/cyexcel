@@ -1,4 +1,5 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
+import { assertValidRowOrder } from "../layout/rowOrder";
 import { validateAxisChange } from "../layout/structuralChange";
 import {
   MutationCoordinator,
@@ -70,6 +71,12 @@ function changesForDataMutation(mutation: DataMutation, fallback: readonly Patch
       return [{ type: "row-structure", operation: "delete", start: mutation.start, count: mutation.count }];
     case "move-rows":
       return [{ type: "row-structure", operation: "move", start: mutation.start, count: mutation.count, target: mutation.target }];
+    case "reorder-rows":
+      // A whole-axis permutation touches every row at once and has no
+      // start/count/target shape the "row-structure" Patch can carry
+      // faithfully, so it gets its own Patch variant that carries the order
+      // directly instead of being approximated by another shape.
+      return [{ type: "row-reorder", order: mutation.order }];
     case "insert-columns":
       return [{ type: "column-structure", operation: "insert", start: mutation.start, count: mutation.columns.length }];
     case "delete-columns":
@@ -193,6 +200,25 @@ export class TableStore {
     );
   }
 
+  /**
+   * Whole-axis permutation (Step 22 sorting). Unlike the other row mutations
+   * there is no start/count/target shape to validate against the row axis,
+   * so this skips `#assertStructuralShape` and instead validates `order` is
+   * a permutation of the current row count directly — `TableStore.reorderRows`
+   * is reachable without going through `ArrayDataSource`, so a wrong-length
+   * or non-permutation order must fail here rather than relying on whatever
+   * DataSource happens to be behind this store.
+   */
+  createReorderRowsMutation(order: Int32Array): Mutation {
+    this.#assertTransactionalStructuralCapability("reorderRows");
+    assertValidRowOrder(order, this.getRowCount());
+    return new TableDataMutation(
+      this.#dataSource,
+      { type: "reorder-rows", order },
+      [{ type: "row-reorder", order }]
+    );
+  }
+
   createInsertColumnsMutation(start: number, columns: readonly ColumnFieldMapping[]): Mutation {
     this.#assertTransactionalStructuralCapability("insertColumns");
     this.#assertStructuralShape("column", "insert", start, columns.length);
@@ -245,6 +271,10 @@ export class TableStore {
 
   moveRows(start: number, count: number, target: number): TableStoreCommitResult {
     return this.#execute(this.createMoveRowsMutation(start, count, target));
+  }
+
+  reorderRows(order: Int32Array): TableStoreCommitResult {
+    return this.#execute(this.createReorderRowsMutation(order));
   }
 
   insertColumns(start: number, columns: readonly ColumnFieldMapping[]): TableStoreCommitResult {

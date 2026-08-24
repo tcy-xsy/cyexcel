@@ -5,6 +5,7 @@ export { ClearRangeCommand, type ClearRangeCommandParams } from "./ClearRangeCom
 export { InsertRowsCommand, type InsertRowsCommandParams } from "./InsertRowsCommand";
 export { DeleteRowsCommand, type DeleteRowsCommandParams } from "./DeleteRowsCommand";
 export { MoveRowsCommand, type MoveRowsCommandParams } from "./MoveRowsCommand";
+export { ReorderRowsCommand, type ReorderRowsCommandParams } from "./ReorderRowsCommand";
 export { type BeforeRowsChangeContext } from "./checkBeforeRowsChange";
 export { InsertColumnsCommand, type InsertColumnsCommandParams } from "./InsertColumnsCommand";
 export { DeleteColumnsCommand, type DeleteColumnsCommandParams } from "./DeleteColumnsCommand";

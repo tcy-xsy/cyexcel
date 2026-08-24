@@ -8,6 +8,7 @@ import type { InsertColumnsCommand } from "./InsertColumnsCommand";
 import type { InsertRowsCommand } from "./InsertRowsCommand";
 import type { MoveColumnsCommand } from "./MoveColumnsCommand";
 import type { MoveRowsCommand } from "./MoveRowsCommand";
+import type { ReorderRowsCommand } from "./ReorderRowsCommand";
 import type { ResizeColumnCommand } from "./ResizeColumnCommand";
 import type { ResizeRowCommand } from "./ResizeRowCommand";
 import type { SetCellCommand } from "./SetCellCommand";
@@ -86,6 +87,27 @@ export function createBuiltinCommandPlanner(options: BuiltinCommandPlannerOption
       const structure = options.structure?.createMoveRows(start, count, target);
       if (structure) {
         context.stage(structure);
+      }
+    }
+  });
+  registry.register<ReorderRowsCommand>({
+    type: "reorder-rows",
+    plan: ({ order }, context) => {
+      // Staged into the same context as the data mutation, exactly like
+      // move-rows stages its structure participant: one transaction, so no
+      // published frame can show reordered data against unreordered row
+      // geometry. The layout side is a LayoutRootAction rather than a
+      // structure participant because a permutation has no
+      // start/count/target to put in an AxisChangeDescriptor.
+      //
+      // No `options.guards?.checkRows(...)` here: beforeRowsChange speaks
+      // insert/delete/move with a start and a count, and inventing one for a
+      // whole-axis permutation would hand every hook a lie about which rows
+      // moved.
+      context.stage(options.data.createReorderRows(order));
+      const layout = options.layout?.createLayoutMutation({ type: "reorder-rows", order });
+      if (layout) {
+        context.stage(layout);
       }
     }
   });

@@ -2,7 +2,8 @@ export {
   CyExcelCore,
   createCyExcelCore,
   type CyExcelCoreOptions,
-  type CyExcelHeaderActionEvent
+  type CyExcelHeaderActionEvent,
+  type SortState
 } from "./core";
 export {
   DEFAULT_CYEXCEL_TAG_NAME,

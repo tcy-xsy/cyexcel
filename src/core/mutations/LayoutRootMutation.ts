@@ -1,5 +1,5 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { LayoutEngine, LayoutRoot, RowHeightProvenance } from "../layout";
+import { invertRowOrder, type LayoutEngine, type LayoutRoot, type RowHeightProvenance } from "../layout";
 import type { Patch } from "../types";
 import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types";
 
@@ -12,22 +12,44 @@ export type LayoutRootAction =
     }
   | { readonly type: "set-column-width"; readonly column: number; readonly width: number }
   | { readonly type: "hide-column"; readonly column: number }
-  | { readonly type: "show-column"; readonly column: number };
+  | { readonly type: "show-column"; readonly column: number }
+  /**
+   * A whole-axis row permutation (`order[newPosition] = oldPosition`).
+   *
+   * It belongs here rather than behind an `AxisChangeDescriptor` because a
+   * permutation has no `start`/`count`/`target` to put in one, and because a
+   * reorder is exactly what this union is for: a root replacement whose
+   * inverse is another action of the same kind (here, the inverse
+   * permutation) rather than something that has to be read back off the
+   * previous root.
+   */
+  | { readonly type: "reorder-rows"; readonly order: Int32Array };
 
 function patchFor(action: LayoutRootAction, root: LayoutRoot): Patch {
-  if (action.type === "set-row-height") {
-    return {
-      type: "row-layout",
-      rows: Object.freeze([action.row]),
-      range: {
-        startRow: action.row,
-        startColumn: 0,
-        endRow: root.rowCount - 1,
-        endColumn: Math.max(0, root.columnCount - 1)
-      }
-    };
+  switch (action.type) {
+    case "set-row-height":
+      return {
+        type: "row-layout",
+        rows: Object.freeze([action.row]),
+        range: {
+          startRow: action.row,
+          startColumn: 0,
+          endRow: root.rowCount - 1,
+          endColumn: Math.max(0, root.columnCount - 1)
+        }
+      };
+    case "reorder-rows":
+      return { type: "row-reorder", order: action.order };
+    case "set-column-width":
+    case "hide-column":
+    case "show-column":
+      return { type: "column-layout", column: action.column };
   }
-  return { type: "column-layout", column: action.column };
+}
+
+/** History budgeting: only a permutation carries a payload worth counting. */
+function estimatedBytesFor(action: LayoutRootAction): number {
+  return action.type === "reorder-rows" ? 96 + action.order.length * 4 : 96;
 }
 
 function prepareAction(layout: LayoutEngine, root: LayoutRoot, action: LayoutRootAction): LayoutRoot {
@@ -43,6 +65,8 @@ function prepareAction(layout: LayoutEngine, root: LayoutRoot, action: LayoutRoo
       return layout.prepareHideColumn(action.column, root);
     case "show-column":
       return layout.prepareShowColumn(action.column, root);
+    case "reorder-rows":
+      return layout.prepareReorderRows(action.order, root);
   }
 }
 
@@ -67,6 +91,10 @@ function inverseAction(root: LayoutRoot, action: LayoutRootAction): LayoutRootAc
       return root.columnAxis.isColumnHidden(action.column)
         ? { type: "hide-column", column: action.column }
         : { type: "show-column", column: action.column };
+    case "reorder-rows":
+      // The only action whose inverse needs nothing from `root`: undoing a
+      // permutation is applying the inverse permutation.
+      return { type: "reorder-rows", order: invertRowOrder(action.order) };
   }
 }
 
@@ -89,11 +117,16 @@ export class LayoutRootMutation implements Mutation {
     context.roots.set(this.#layout, nextRoot);
     const changes = Object.freeze([patchFor(this.#action, nextRoot)]);
     const forward = new LayoutRootMutation(this.#layout, this.#action, changes);
-    const inverse = new LayoutRootMutation(
-      this.#layout,
-      inverseAction(previousRoot, this.#action),
-      changes
-    );
+    // No `changes` for the inverse: `changes` describes the *forward* patch.
+    // Every other action's patch happens to be direction-independent, and
+    // prepare() recomputes `changes` before the inverse's own is ever read,
+    // so passing it was harmless — but a reorder's patch carries the
+    // permutation itself, so handing the inverse the forward one loads a gun
+    // for any future code that reads `mutation.changes` on an unprepared
+    // inverse and gets the wrong direction for a sort undo. The
+    // constructor's `patchFor(action, layout.root)` fallback derives it from
+    // the inverse action instead.
+    const inverse = new LayoutRootMutation(this.#layout, inverseAction(previousRoot, this.#action));
     let commitStarted = false;
     let rolledBack = false;
 
@@ -101,7 +134,7 @@ export class LayoutRootMutation implements Mutation {
       hasEffect: nextRoot !== previousRoot,
       forward,
       inverse,
-      estimatedBytes: 96,
+      estimatedBytes: estimatedBytesFor(this.#action),
       commit: () => {
         if (this.#layout.root !== previousRoot) {
           throw new CyExcelError(CyExcelErrorCode.MutationConflict, "Layout root changed after mutation prepare");

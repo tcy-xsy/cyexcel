@@ -268,6 +268,7 @@ export class WrapMeasurementService {
           this.forgetRowRange(change.range.startRow, change.range.endRow);
           break;
         case "row-structure":
+        case "row-reorder":
         case "column-structure":
         case "column-layout":
         case "full-reset":

@@ -182,6 +182,42 @@ describe("TableStore — structural row operations", () => {
     expect(result.version).toBe(1);
   });
 
+  // An asymmetric permutation ([2, 0, 1], not self-inverse) is used so a
+  // swapped apply/revert would show up as a wrong row order, not
+  // accidentally pass.
+  it("reorderRows emits a row-reorder Patch carrying the order and bumps the version", () => {
+    const { store } = createStore();
+
+    const result = store.reorderRows(Int32Array.from([2, 0, 1]));
+
+    expect(result.patches).toEqual([{ type: "row-reorder", order: Int32Array.from([2, 0, 1]) }]);
+    expect(result.version).toBe(1);
+    expect(store.getCell(0, 0)).toBe("C");
+    expect(store.getCell(1, 0)).toBe("A");
+    expect(store.getCell(2, 0)).toBe("B");
+  });
+
+  it("throws StructuralModificationNotSupported when the DataSource doesn't implement reorderRows", () => {
+    // A plain-object DataSource that implements only the four required
+    // methods, mirroring the insertRows/deleteRows/moveRows capability
+    // checks above.
+    const source: DataSource = {
+      getRowCount: () => 3,
+      getColumnCount: () => 1,
+      getCell: () => "A",
+      setCell: () => {}
+    };
+    const store = new TableStore(source);
+
+    try {
+      store.reorderRows(Int32Array.from([2, 0, 1]));
+      expect.unreachable("expected reorderRows to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CyExcelError);
+      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.StructuralModificationNotSupported);
+    }
+  });
+
   it("throws StructuralModificationNotSupported when the DataSource doesn't implement insertRows", () => {
     // A plain-object DataSource (e.g. a remote/computed one) that never
     // declared insertRows — not an ArrayDataSource with the method deleted,
@@ -243,7 +279,21 @@ describe("TableStore — structural row operations", () => {
   it.each([
     ["zero-count insert", (store: TableStore) => store.insertRows(1, [])],
     ["delete past the end", (store: TableStore) => store.deleteRows(2, 2)],
-    ["move target inside the block", (store: TableStore) => store.moveRows(0, 2, 1)]
+    ["move target inside the block", (store: TableStore) => store.moveRows(0, 2, 1)],
+    // A wrong-length order against the 3-row createStore() fixture — this is
+    // the only TableStore-layer coverage of the assertValidRowOrder() call
+    // in createReorderRowsMutation. Calling createReorderRowsMutation()
+    // directly (not reorderRows()) matters here: reorderRows() would still
+    // pass even if TableStore's own check were deleted, because
+    // ArrayDataSource's own transaction independently re-validates `order`
+    // during prepare() and would mask the gap — see
+    // ArrayDataSource.ts's "reorder-rows" case in beginTransaction(). Calling
+    // createReorderRowsMutation() in isolation, before #execute/prepare()
+    // ever runs, is what actually exercises the call site in this diff.
+    [
+      "reorder with a malformed (wrong-length) order",
+      (store: TableStore) => store.createReorderRowsMutation(Int32Array.from([2, 0]))
+    ]
   ])("rejects %s before mutating data or version", (_label, run) => {
     const { rows, store } = createStore();
 

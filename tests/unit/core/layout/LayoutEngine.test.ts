@@ -1389,3 +1389,69 @@ describe('LayoutEngine root prepare/replace', () => {
     expect(layout.version).toBe(version);
   });
 });
+
+describe('LayoutEngine.prepareReorderRows', () => {
+  // Asymmetric permutation on purpose: order[i] = order-inverse[i] would hold
+  // for a self-inverse permutation like [1, 0], which can't distinguish a
+  // correct inverse-mapped provenance table from an un-inverted one.
+  function createLayout(): LayoutEngine {
+    const layout = new LayoutEngine({
+      rowCount: 3,
+      columnCount: 1,
+      rowHeight: 24,
+      columnWidths: [100],
+    });
+    layout.setRowHeight(0, 60);
+    return layout;
+  }
+
+  it('moves custom row heights along with their rows', () => {
+    const layout = createLayout();
+
+    layout.replaceRoot(layout.prepareReorderRows(Int32Array.from([2, 0, 1])));
+
+    expect(layout.getRowHeight(1)).toBe(60);
+    expect(layout.getRowHeight(0)).toBe(24);
+    expect(layout.getRowHeight(2)).toBe(24);
+  });
+
+  it('moves row height provenance along with its row', () => {
+    const layout = createLayout();
+    expect(layout.getRowHeightProvenance(0)).toBe('manual');
+
+    layout.replaceRoot(layout.prepareReorderRows(Int32Array.from([2, 0, 1])));
+
+    // Provenance must follow the row, or a hand-resized row silently becomes
+    // auto-owned and the next content change overwrites the user's height.
+    expect(layout.getRowHeightProvenance(1)).toBe('manual');
+    expect(layout.getRowHeightProvenance(0)).toBe('default');
+    expect(layout.getRowHeightProvenance(2)).toBe('default');
+  });
+
+  it('keeps the total height unchanged', () => {
+    const layout = createLayout();
+    const before = layout.getTotalHeight();
+
+    layout.replaceRoot(layout.prepareReorderRows(Int32Array.from([2, 0, 1])));
+
+    expect(layout.getTotalHeight()).toBe(before);
+  });
+
+  it('does not mutate the current root', () => {
+    const layout = createLayout();
+    const version = layout.version;
+
+    const prepared = layout.prepareReorderRows(Int32Array.from([2, 0, 1]));
+
+    expect(layout.getRowHeight(0)).toBe(60);
+    expect(layout.getRowHeightProvenance(0)).toBe('manual');
+    expect(layout.version).toBe(version);
+    expect(prepared.version).toBe(version + 1);
+  });
+
+  it('rejects an order whose length does not match the row count', () => {
+    const layout = createLayout();
+
+    expect(() => layout.prepareReorderRows(Int32Array.from([1, 0]))).toThrow(RangeError);
+  });
+});

@@ -2,6 +2,7 @@ import { CyExcelError, CyExcelErrorCode } from '../errors';
 import { ColumnAxisSnapshot } from './ColumnAxisSnapshot';
 import { RowMetrics, type RowMetricsFragment } from './RowMetrics';
 import type { ColumnStructureChange } from './columnStructure';
+import { assertValidRowOrder, invertRowOrder } from './rowOrder';
 import {
   remapIndex,
   validateAxisChange,
@@ -598,6 +599,35 @@ export class LayoutEngine {
       count,
       target,
     });
+  }
+
+  /**
+   * Physically reorders rows (`order[newPosition] = oldPosition`), carrying
+   * each row's height and height-provenance with it.
+   *
+   * The two remaps run in opposite directions on purpose: `rowMetrics.reorder`
+   * consumes `order` directly, because it pulls each new row's height from
+   * `order[newPosition]`. `rowHeightProvenance` is keyed by the *old* row
+   * index, so each entry has to be pushed to its new position instead, which
+   * means keying by `invertRowOrder(order)[oldRow]`.
+   */
+  prepareReorderRows(
+    order: Int32Array,
+    base: LayoutRoot = this.#root,
+  ): PreparedLayoutRoot {
+    assertValidRowOrder(order, base.rowCount);
+    const inverse = invertRowOrder(order);
+    const rowHeightProvenance = new Map<number, Exclude<RowHeightProvenance, 'default'>>();
+    for (const [row, value] of base.rowHeightProvenance) {
+      rowHeightProvenance.set(inverse[row] as number, value);
+    }
+    return this.#createRoot(
+      base.version + 1,
+      base.rowCount,
+      base.rowMetrics.reorder(order),
+      rowHeightProvenance,
+      base.columnAxis,
+    );
   }
 
   prepareInsertColumns(

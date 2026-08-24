@@ -1,6 +1,18 @@
 import type { Patch } from "../types";
 
-function patchKey(patch: Patch): string {
+/**
+ * Every patch variant whose identity fits in a short string. `row-reorder`
+ * is deliberately not one of them: its identity *is* the whole permutation,
+ * so a content key means joining an `Int32Array` with one element per row.
+ * For a million-row sort that is ~190ms and ~6.9M chars per patch — and a
+ * sort commit produces two (`TableStore` and the layout participant) — on
+ * every commit and again on every undo/redo, to build a merged array
+ * `#publishCommitReceipt` only ever tests for truthiness. `mergePatches`
+ * compares those few permutations element-wise instead.
+ */
+type KeyedPatch = Exclude<Patch, { readonly type: "row-reorder" }>;
+
+function patchKey(patch: KeyedPatch): string {
   switch (patch.type) {
     case "cell-value":
     case "cell-style":
@@ -46,6 +58,26 @@ function patchKey(patch: Patch): string {
 }
 
 /**
+ * Element-wise, never by identity: `createChangeSet` `.slice()`s each order,
+ * so one sort's data and layout permutations are always different objects
+ * with equal content and an identity check would stop them merging.
+ */
+function sameOrder(left: Int32Array, right: Int32Array): boolean {
+  if (left === right) {
+    return true;
+  }
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Deduplicates structurally identical patches, keeping the first
  * occurrence. This only collapses exact repeats within one commit — merging
  * spatially adjacent dirty regions into one repaint is RenderScheduler's
@@ -53,14 +85,26 @@ function patchKey(patch: Patch): string {
  */
 export function mergePatches(patches: readonly Patch[]): Patch[] {
   const seen = new Set<string>();
+  // A list rather than a key set, and scanned rather than hashed: see
+  // `KeyedPatch`. One commit holds a handful of permutations at most, so a
+  // few element-wise scans cost ~1ms per million rows and allocate nothing,
+  // against ~340ms and ~14MB to key the same pair by content.
+  const seenOrders: Int32Array[] = [];
   const merged: Patch[] = [];
 
   for (const patch of patches) {
-    const key = patchKey(patch);
-    if (seen.has(key)) {
-      continue;
+    if (patch.type === "row-reorder") {
+      if (seenOrders.some((order) => sameOrder(order, patch.order))) {
+        continue;
+      }
+      seenOrders.push(patch.order);
+    } else {
+      const key = patchKey(patch);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
     }
-    seen.add(key);
     merged.push(patch);
   }
 

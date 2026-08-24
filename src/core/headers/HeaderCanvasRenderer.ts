@@ -10,7 +10,7 @@ import {
   TEXT_COLOR
 } from "../render/theme";
 import type { HeaderManager } from "./HeaderManager";
-import type { HeaderRenderContext, HeaderState, RuntimeHeaderGroup } from "./types";
+import type { HeaderAction, HeaderRenderContext, HeaderState, RuntimeHeaderGroup } from "./types";
 
 export interface HeaderCanvasRendererOptions {
   readonly ctx: Canvas2DLike;
@@ -20,6 +20,51 @@ export interface HeaderCanvasRendererOptions {
 }
 
 const DEFAULT_PADDING = 4;
+
+/**
+ * Width, in pixels, of the clickable strip reserved at the trailing edge of
+ * a *default*-rendered leaf header cell for `toggle-sort`. Deliberately not
+ * the whole cell: the rest of the cell is where a plain click still selects
+ * the column (`headers.spec.ts`/`nested-headers.spec.ts`/`row-headers.spec.ts`
+ * all click at column midpoints and must keep doing that), so only a narrow
+ * reserved zone lets both gestures coexist on the same default header.
+ */
+export const DEFAULT_HEADER_SORT_ZONE_WIDTH = 18;
+
+/**
+ * Narrowest column that gets a sort zone at all. Below this the zone would
+ * cover the whole header and there would be nowhere left to click to select
+ * the column — the two gestures stop coexisting and selection is simply
+ * lost for that column. A column too narrow to hold both keeps selection,
+ * which is the gesture that has always been there; sorting it stays
+ * available through `sortByColumn`.
+ */
+export const DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH = DEFAULT_HEADER_SORT_ZONE_WIDTH * 2;
+
+/**
+ * Hit-test for the default (no custom `HeaderRenderer`) header painter —
+ * the canvas analog of `defaultHeaderPainter` above. Columns with a custom
+ * canvas renderer supply their own `hitTest`; this is only consulted when
+ * a leaf column has no renderer at all, so every default header gets
+ * click-to-sort without every existing "click the header to select the
+ * column" test changing meaning.
+ *
+ * `point` must be *rect-relative* (the same `localPoint` shape Scene's
+ * `hitTestColumnHeader` produces, matching the coordinate convention used
+ * by every other canvas hit-test in this codebase) — not absolute.
+ */
+export function defaultHeaderHitTest(zone: {
+  readonly rect: CellRect;
+  readonly point: { readonly x: number; readonly y: number };
+}): HeaderAction | undefined {
+  if (zone.rect.width < DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH) {
+    return undefined;
+  }
+  if (zone.point.x >= zone.rect.width - DEFAULT_HEADER_SORT_ZONE_WIDTH) {
+    return { type: "toggle-sort" };
+  }
+  return undefined;
+}
 
 function defaultHeaderText(title: string, state: HeaderState): string {
   const sortSuffix = state.sorted === "asc" ? " ▲" : state.sorted === "desc" ? " ▼" : "";

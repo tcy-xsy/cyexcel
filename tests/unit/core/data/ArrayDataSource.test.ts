@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ArrayDataSource } from "../../../../src/core/data";
 import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
+import type { ModelRevision } from "../../../../src/core/model";
 
 describe("ArrayDataSource", () => {
   it("reads and writes by numeric index through a stable column field", () => {
@@ -349,6 +350,136 @@ describe("ArrayDataSource — deleteColumns", () => {
     expect(source.getCell(0, 0)).toBe("A");
     expect(source.getCell(0, 1)).toBe(1);
     expect(source.getCell(0, 2)).toBe(5);
+  });
+});
+
+describe("ArrayDataSource.reorderRows", () => {
+  it("permutes rows without touching any cell value", () => {
+    const source = new ArrayDataSource(
+      [{ name: "c" }, { name: "a" }, { name: "b" }],
+      [{ id: "name", field: "name" }]
+    );
+
+    source.reorderRows(Int32Array.from([1, 2, 0]));
+
+    expect([source.getCell(0, 0), source.getCell(1, 0), source.getCell(2, 0)]).toEqual(["a", "b", "c"]);
+  });
+
+  it("keeps the caller's own array untouched", () => {
+    const rows = [{ name: "c" }, { name: "a" }, { name: "b" }];
+    const source = new ArrayDataSource(rows, [{ id: "name", field: "name" }]);
+
+    source.reorderRows(Int32Array.from([1, 2, 0]));
+
+    // The constructor shallow-copies the container, so structural changes
+    // never reorder an array the caller still holds.
+    expect(rows.map((row) => row.name)).toEqual(["c", "a", "b"]);
+  });
+
+  it("rejects an order that is not a permutation", () => {
+    const source = new ArrayDataSource([{ name: "a" }, { name: "b" }], [{ id: "name", field: "name" }]);
+
+    expect(() => source.reorderRows(Int32Array.from([0, 0]))).toThrow(/not a permutation/);
+  });
+
+  it("throws a stable error code when reordering rows in a readonly source", () => {
+    const source = new ArrayDataSource([{ name: "A" }, { name: "B" }], [{ id: "name", field: "name" }], { readonly: true });
+
+    expect(() => source.reorderRows(Int32Array.from([1, 0]))).toThrow(CyExcelError);
+  });
+
+  // Controller Ruling 4: prepareMutation's "reorder-rows" case must keep the
+  // transaction's own in-progress row view current, the same way "move-rows"
+  // calls moveRowPieces() before returning — otherwise a transaction that
+  // reorders and then reads sees the pre-reorder order.
+  it("keeps the transaction's own read view current after staging a reorder", () => {
+    const source = new ArrayDataSource(
+      [{ name: "c" }, { name: "a" }, { name: "b" }],
+      [{ id: "name", field: "name" }]
+    );
+
+    const transaction = source.beginTransaction(0 as ModelRevision);
+    transaction.prepareMutation({ type: "reorder-rows", order: Int32Array.from([1, 2, 0]) });
+
+    expect([
+      transaction.getCell(0, 0),
+      transaction.getCell(1, 0),
+      transaction.getCell(2, 0)
+    ]).toEqual(["a", "b", "c"]);
+
+    transaction.dispose();
+  });
+
+  // Review finding 1: prepareMutation's "reorder-rows" case must defensively
+  // copy the caller-supplied Int32Array, the same way insert-columns copies
+  // `{...column}` and restore-cells copies its cells — otherwise a caller
+  // that reuses/clobbers its own order buffer between prepareMutation() and
+  // commit() desyncs apply() (and the already-staged view) from the
+  // precomputed inverse.
+  it("is immune to the caller mutating the order buffer after prepareMutation() returns", () => {
+    const source = new ArrayDataSource(
+      [{ name: "a" }, { name: "b" }, { name: "c" }],
+      [{ id: "name", field: "name" }]
+    );
+    const buffer = Int32Array.from([2, 0, 1]);
+
+    const transaction = source.beginTransaction(0 as ModelRevision);
+    const preparedMutation = transaction.prepareMutation({ type: "reorder-rows", order: buffer });
+    buffer.fill(0); // caller reuses/clobbers its own buffer before committing
+
+    preparedMutation.commit();
+
+    expect([source.getCell(0, 0), source.getCell(1, 0), source.getCell(2, 0)]).toEqual(["c", "a", "b"]);
+
+    transaction.dispose();
+  });
+
+  // Review finding 2: nothing previously exercised the transactional
+  // forward/inverse pair end to end. An asymmetric permutation (not
+  // self-inverse, unlike [1, 0]) is required — a self-inverse order would
+  // let a swapped apply()/revert() pass by accident.
+  it("commit() applies the reorder to the underlying rows, and rollback() restores the original order", () => {
+    const source = new ArrayDataSource(
+      [{ name: "a" }, { name: "b" }, { name: "c" }],
+      [{ id: "name", field: "name" }]
+    );
+
+    const transaction = source.beginTransaction(0 as ModelRevision);
+    const preparedMutation = transaction.prepareMutation({
+      type: "reorder-rows",
+      order: Int32Array.from([2, 0, 1])
+    });
+
+    preparedMutation.commit();
+    expect([source.getCell(0, 0), source.getCell(1, 0), source.getCell(2, 0)]).toEqual(["c", "a", "b"]);
+
+    preparedMutation.rollback();
+    expect([source.getCell(0, 0), source.getCell(1, 0), source.getCell(2, 0)]).toEqual(["a", "b", "c"]);
+
+    transaction.dispose();
+  });
+
+  // Review finding 3: the overlay-rekey block in reorderRowPieces() is
+  // non-obvious logic added to close a real trap — a base row's staged
+  // (uncommitted) setCell is keyed by its numeric #rows index, which stops
+  // being that row's token once the reorder folds it into an "inserted"
+  // piece. Without rekeying, this staged edit would silently disappear from
+  // reads through the transaction.
+  it("keeps a staged setCell on a base row visible through the transaction after a subsequent reorder", () => {
+    const source = new ArrayDataSource(
+      [{ name: "a" }, { name: "b" }, { name: "c" }],
+      [{ id: "name", field: "name" }]
+    );
+
+    const transaction = source.beginTransaction(0 as ModelRevision);
+    transaction.prepareMutation({ type: "set-cell", row: 0, column: 0, value: "A2" });
+    transaction.prepareMutation({ type: "reorder-rows", order: Int32Array.from([2, 0, 1]) });
+
+    // Row 0 ("a", staged to "A2") moves to position 1 under order [2, 0, 1]:
+    // next[1] = prev[0].
+    expect(transaction.getCell(1, 0)).toBe("A2");
+
+    transaction.dispose();
   });
 });
 

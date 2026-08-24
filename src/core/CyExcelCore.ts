@@ -28,6 +28,7 @@ import {
   InsertRowsCommand,
   DeleteRowsCommand,
   MoveRowsCommand,
+  ReorderRowsCommand,
   InsertColumnsCommand,
   DeleteColumnsCommand,
   MoveColumnsCommand,
@@ -57,8 +58,10 @@ import {
   HeaderCanvasRenderer,
   HeaderManager,
   RowHeaderCanvasRenderer,
+  defaultHeaderHitTest,
   type HeaderAction,
   type HeaderGroupDefinition,
+  type HeaderState,
   type RuntimeHeader
 } from "./headers";
 import { HookManager, PRODUCTION_HOOK_REGISTRY } from "./hooks";
@@ -113,6 +116,7 @@ import {
 } from "./scene";
 import { WrapMeasurementService } from "./measurement";
 import { ShortcutRegistry, type ShortcutHandler } from "./shortcuts";
+import { computeSortOrder, createDefaultSortCompare, nextSortDirection, type SortState } from "./sort";
 import {
   ContentLayerRenderer,
   CanvasSurface,
@@ -141,6 +145,8 @@ import {
 } from "./validateCyExcelCoreOptions";
 
 export type CyExcelColumnConfig = ColumnDefinition;
+
+export type { SortState };
 
 /** Emitted after a custom canvas header hitTest returns an action. */
 export interface CyExcelHeaderActionEvent {
@@ -543,6 +549,16 @@ export class CyExcelCore {
   readonly #cellTypeRegistry: CellTypeRegistry;
   readonly #columnManager: ColumnManager;
   readonly #headerManager: HeaderManager;
+  /**
+   * The last sort *applied* — never one that is merely queued or that a
+   * DataSource refused; `#runSortByColumn` writes it only after the reorder
+   * commits. `null` before any sort, and again after any column-structure
+   * change (see `#publishCommitReceipt`). Not the data's live order:
+   * editing a cell afterwards does not clear it (ADR 0003 §3.4, matching
+   * Excel). Backs both the header's visual indicator (via `#headerState()`)
+   * and the public `sortState` getter.
+   */
+  #sortState: SortState | null = null;
   readonly #columnHeaderHeight: number;
   readonly #groupHeaderHeight: number;
   readonly #rowHeaderWidth: number;
@@ -866,7 +882,8 @@ export class CyExcelCore {
     this.#headerCanvasRenderer = new HeaderCanvasRenderer({
       ctx: headerCtx,
       getScene: () => this.#scene,
-      headerManager: this.#headerManager
+      headerManager: this.#headerManager,
+      getHeaderState: (column) => this.#headerState(column)
     });
     this.#rowHeaderCanvasRenderer = new RowHeaderCanvasRenderer({
       ctx: rowHeaderCtx,
@@ -880,7 +897,8 @@ export class CyExcelCore {
     });
     this.#domHeaderManager = new DomHeaderManager({
       container: dom.headerDomLayer,
-      headerManager: this.#headerManager
+      headerManager: this.#headerManager,
+      getHeaderState: (column) => this.#headerState(column)
     });
     initialization.defer(() => this.#domHeaderManager.dispose());
 
@@ -1281,6 +1299,21 @@ export class CyExcelCore {
   }
 
   /**
+   * The most recent sort that was actually applied — via header click or
+   * direct API call, both update this the same way — or `null` if no sort
+   * has ever been applied. A sort that is still queued, that was cancelled
+   * by its `AbortSignal`, or that the DataSource refused never appears
+   * here. Reflects the *last sort applied*, not the data's current order:
+   * editing a cell afterwards does not clear it, same one-shot indicator
+   * semantics as Excel (ADR 0003 §3.4). A column insert/delete/move clears
+   * it, because after the column axis moves the claim can no longer be made
+   * about any particular index.
+   */
+  get sortState(): SortState | null {
+    return this.#sortState;
+  }
+
+  /**
    * Registers a keyboard shortcut (`"Mod+Shift+Z"`-style combo — see
    * ShortcutRegistry.parseShortcut()). The built-in Mod+Z/Mod+Shift+Z/
    * Mod+Y/Enter shortcuts are registered the same way at construction, so a
@@ -1343,6 +1376,93 @@ export class CyExcelCore {
       this.#cancelActiveEdit();
       this.#applyCommandNow(new MoveRowsCommand(start, count, target));
     });
+  }
+
+  /**
+   * Physically reorders every row by `column`. The data permutation and the
+   * row geometry (each row's height and height-provenance) land in the same
+   * transaction, so no published frame can show sorted rows against unsorted
+   * heights, and one undo puts both back.
+   *
+   * Non-empty values are ordered by the column's cell type's `compare` when
+   * it defines one, and by `createDefaultSortCompare`'s number-or-string
+   * fallback otherwise. Empty cells (`null`/`undefined`) sort last in both
+   * directions either way — see `createDefaultSortCompare`.
+   *
+   * Returns whether the sort was **applied before this call returned**. It
+   * is `false` in two distinguishable-by-context cases:
+   *
+   * - `options.signal` aborted before the order was applied. A cancelled
+   *   sort writes nothing, so there is nothing to undo.
+   * - The call arrived while the mutation queue was busy — from inside an
+   *   event listener or a header-click intent, say — and was queued behind
+   *   the in-flight commit. The sort still runs, just later; watch
+   *   `sortState` or the `change` event for it, and note that a queued sort
+   *   that a DataSource then refuses reports through the `error` event
+   *   rather than throwing back here.
+   *
+   * Either way `false` means "nothing had been applied yet when this
+   * returned", never "the indicator moved anyway".
+   */
+  sortByColumn(
+    column: number,
+    direction: "asc" | "desc",
+    options: { signal?: AbortSignal } = {}
+  ): boolean {
+    // Resolved eagerly so an out-of-range column throws from the call itself.
+    this.#columnManager.getColumn(column);
+    let applied = false;
+    this.#enqueueOrRunMutation(() => {
+      applied = this.#runSortByColumn(column, direction, options.signal);
+    });
+    return applied;
+  }
+
+  /**
+   * The sort itself, run inline in whatever mutation slot the caller is
+   * already standing in — `sortByColumn`'s queued closure, or the header
+   * click intent, which runs during the mutation queue's own drain and so
+   * can never get a second slot of its own.
+   *
+   * `#sortState` and the indicator repaint happen *after* `#applyCommandNow`
+   * returns. A DataSource that refuses the reorder throws out of here with
+   * the indicator still describing the last sort that really was applied —
+   * the ordering is the whole point, not an accident of layout.
+   */
+  #runSortByColumn(column: number, direction: "asc" | "desc", signal?: AbortSignal): boolean {
+    const runtimeColumn = this.#columnManager.getColumn(column);
+    const columnCompare = runtimeColumn.compare;
+    const compare = createDefaultSortCompare(
+      direction,
+      columnCompare === undefined
+        ? undefined
+        // Invoked *on* the column, the way `column.format()` is called in
+        // createColumnAwarePainter: a comparator written as an object method
+        // may read `this.options` (rank by the column's configured order,
+        // say), and detaching it would break that only when sorted.
+        : (left, right) => columnCompare.call(runtimeColumn, left, right)
+    );
+    // Computed inside the mutation slot rather than before it: if the call
+    // was deferred, the permutation has to be a permutation of the row count
+    // that will actually be there when ReorderRowsCommand validates it.
+    const order = computeSortOrder({
+      rowCount: this.#store.getRowCount(),
+      getSortKey: (row) => this.#store.getCell(row, column),
+      compare,
+      direction,
+      ...(signal === undefined ? {} : { signal })
+    });
+    if (order === null) {
+      return false;
+    }
+    // A sort moves the row under the editor out from under it.
+    this.#cancelActiveEdit();
+    this.#applyCommandNow(new ReorderRowsCommand(order));
+    // Updated regardless of call site (header click or direct API call): the
+    // indicator reflects the *last sort applied*, not how it was triggered.
+    this.#sortState = { column, direction };
+    this.#renderScheduler.invalidatePresentation({ columnHeader: true, domHeaders: true });
+    return true;
   }
 
   /** Sets an exact row height through Command/Mutation/History. */
@@ -1671,6 +1791,18 @@ export class CyExcelCore {
       this.#measurement.invalidateFor(changeSet.changes);
       if (hasRowStructure || hasColumnStructure) {
         this.#structure.apply();
+      }
+      if (hasColumnStructure && this.#sortState !== null) {
+        // Every other column index in the codebase is remapped through
+        // `remapColumnIndex` on insert/delete/move; `#sortState.column` is
+        // *cleared* instead. The indicator is one-shot — it claims "the last
+        // sort applied", not "the data satisfies this order" (ADR 0003
+        // §3.4) — and once the column axis moves underneath it, that claim
+        // is no longer safe to make at all: the sorted column may be gone
+        // entirely, and a stale index would both draw ▲ on the wrong header
+        // and start a different column's first click at "desc".
+        this.#sortState = null;
+        this.#renderScheduler.invalidatePresentation({ columnHeader: true, domHeaders: true });
       }
 
       // The model revision and all authoritative structural roots are already
@@ -2422,25 +2554,32 @@ export class CyExcelCore {
     }
     const header = this.#headerManager.getHeader(hit.column);
     const renderer = header.renderer;
-    if (!renderer || renderer.kind !== "canvas" || !renderer.hitTest) {
-      return declineInput();
-    }
 
     let action: HeaderAction | void;
-    try {
-      action = renderer.hitTest({
-        ctx: this.#headerCanvas.getContext("2d") as Canvas2DLike,
-        rect: hit.rect,
-        column: hit.column,
-        title: header.title,
-        state: {},
-        point: hit.localPoint
-      });
-    } catch (error) {
-      this.#events.emit("error", {
-        error,
-        eventName: `interaction:canvas-header-hit-test:${hit.column}`
-      });
+    if (renderer === undefined) {
+      // No custom renderer -> the default painter's own reserved right-edge
+      // strip is click-to-sort (see defaultHeaderHitTest's doc comment).
+      action = defaultHeaderHitTest({ rect: hit.rect, point: hit.localPoint });
+    } else if (renderer.kind === "canvas" && renderer.hitTest) {
+      try {
+        action = renderer.hitTest({
+          ctx: this.#headerCanvas.getContext("2d") as Canvas2DLike,
+          rect: hit.rect,
+          column: hit.column,
+          title: header.title,
+          state: this.#headerState(hit.column),
+          point: hit.localPoint
+        });
+      } catch (error) {
+        this.#events.emit("error", {
+          error,
+          eventName: `interaction:canvas-header-hit-test:${hit.column}`
+        });
+        return declineInput();
+      }
+    } else {
+      // A "dom" renderer, or a canvas renderer with no hitTest at all:
+      // neither participates in this action-hitTest path.
       return declineInput();
     }
     if (!action) {
@@ -2453,14 +2592,74 @@ export class CyExcelCore {
       header,
       structureVersion: frame.structureVersion
     });
+    // Only the *default* painter's reserved strip means "core, sort this".
+    // A custom renderer's `toggle-sort` is what it has always been — a
+    // notification the host translates into its own command (see
+    // doc/customization-and-hooks.md §7) — and sorting it here as well would
+    // give every host following that doc two reorders and two history
+    // entries per click.
+    const coreOwnsTheSort = renderer === undefined;
     this.#interactionFrames.enqueueIntent(() => {
-      if (payload.structureVersion === this.#structure.version) {
-        this.#events.emit("header-action", payload);
+      if (payload.structureVersion !== this.#structure.version) {
+        return;
       }
+      if (coreOwnsTheSort && payload.action.type === "toggle-sort") {
+        // Applied before emit(), and `#sortState` written only once the
+        // reorder has committed: a listener that synchronously reads
+        // `sortState` (the playground's own sortHint update, for instance)
+        // must see the sort this exact action produced — and must never see
+        // one that has not touched the data. Emitting first left every
+        // listener one click behind; writing `#sortState` first (what this
+        // used to do, from `sortByColumn`'s deferring call site) announced
+        // sorts that had not run yet and could still fail.
+        if (!this.#applyHeaderSort(payload.column)) {
+          // Refused or cancelled. The `error` event already carries why, the
+          // indicator still describes the last sort that really happened,
+          // and emitting `header-action` here would tell every listener a
+          // sort just did.
+          return;
+        }
+      }
+      this.#events.emit("header-action", payload);
     });
     event.preventDefault();
     this.#contentCanvas.focus();
     return handleInput(undefined);
+  }
+
+  /** `HeaderState` for one column, as shown by its header's sort/filter indicator. Backs both `HeaderCanvasRenderer`/`DomHeaderManager`'s `getHeaderState` and the `state` a custom canvas renderer's `hitTest`/`paint` receive. Filtering is Part B — always `false` for now. */
+  #headerState(column: number): HeaderState {
+    return {
+      sorted: this.#sortState !== null && this.#sortState.column === column ? this.#sortState.direction : false,
+      filtered: false
+    };
+  }
+
+  /**
+   * Applies a default header's `toggle-sort`: cycles asc/desc via
+   * `nextSortDirection` — never a third "restore original order" state,
+   * because a physical sort destroys the original order and only undo can
+   * recover it (ADR 0003 §3.4).
+   *
+   * Runs the sort *inline* rather than through `sortByColumn`. The caller is
+   * an interaction intent, which the mutation queue runs during its own
+   * drain, so `sortByColumn` would only queue the work behind this drain and
+   * return before it happened — leaving nothing here to report on.
+   *
+   * Returns whether the indicator moved. A DataSource that rejects the sort
+   * (no `reorderRows`, or no transaction support at all) reports an `error`
+   * event instead of throwing out of the pointer-routing pipeline, and
+   * leaves the indicator exactly where it was — which is only true because
+   * `#runSortByColumn` writes `#sortState` after the command commits.
+   */
+  #applyHeaderSort(column: number): boolean {
+    const direction = nextSortDirection(this.#sortState, column);
+    try {
+      return this.#runSortByColumn(column, direction);
+    } catch (error) {
+      this.#events.emit("error", { error, eventName: `interaction:toggle-sort:${column}` });
+      return false;
+    }
   }
 
   #routeHeaderSelection(

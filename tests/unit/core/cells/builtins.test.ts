@@ -63,6 +63,24 @@ describe("builtin cell types — boolean", () => {
       expect(type.parse?.(type.serialize?.(value, ctx) ?? "", ctx)).toBe(value);
     }
   });
+
+  it("orders by truthiness, which is not the order the raw values' strings give", () => {
+    const type = registry().resolve("boolean");
+    // A "boolean" column may hold any truthy/falsy value — format() and
+    // parse() both coerce — so sorting has to agree with what is drawn.
+    const values: unknown[] = [true, 0, false, 1];
+
+    const byString = [...values].sort((left, right) =>
+      String(left) < String(right) ? -1 : String(left) > String(right) ? 1 : 0
+    );
+    // Premise: string order really does disagree ("0" < "1" < "false").
+    expect(byString).toEqual([0, 1, false, true]);
+
+    expect([...values].sort((left, right) => type.compare?.(left, right) ?? 0))
+      .toEqual([0, false, true, 1]);
+    expect(type.compare?.(false, true)).toBeLessThan(0);
+    expect(type.compare?.(true, true)).toBe(0);
+  });
 });
 
 describe("builtin cell types — date", () => {
@@ -92,6 +110,37 @@ describe("builtin cell types — date", () => {
     const original = new Date(Date.UTC(2026, 0, 15));
     const parsed = type.parse?.(type.serialize?.(original, ctx) ?? "", ctx) as Date;
     expect(parsed.toISOString().slice(0, 10)).toBe("2026-01-15");
+  });
+
+  it("orders chronologically, which is not the order the raw Date strings give", () => {
+    const type = registry().resolve("date");
+    // String(date) starts with the weekday name, so the default string
+    // comparator orders these Mon < Sat < Wed. Noon UTC keeps the weekday
+    // the same in every plausible local timezone.
+    const wedJan01 = new Date(Date.UTC(2020, 0, 1, 12));
+    const monJan06 = new Date(Date.UTC(2020, 0, 6, 12));
+    const satJan11 = new Date(Date.UTC(2020, 0, 11, 12));
+    const chronological = [wedJan01, monJan06, satJan11];
+
+    const byString = [...chronological].sort((left, right) =>
+      String(left) < String(right) ? -1 : String(left) > String(right) ? 1 : 0
+    );
+    // Premise: the two orders genuinely disagree, so this test can only pass
+    // because of compare(), never by coincidence.
+    expect(byString).toEqual([monJan06, satJan11, wedJan01]);
+
+    expect([satJan11, wedJan01, monJan06].sort((left, right) => type.compare?.(left, right) ?? 0))
+      .toEqual(chronological);
+  });
+
+  it("groups values that are not valid dates ahead of the real ones", () => {
+    const type = registry().resolve("date");
+    const invalid = new Date(Number.NaN);
+    const real = new Date(Date.UTC(2020, 0, 1));
+
+    expect(type.compare?.(invalid, real)).toBeLessThan(0);
+    expect(type.compare?.(real, invalid)).toBeGreaterThan(0);
+    expect(type.compare?.(invalid, new Date("nope"))).toBe(0);
   });
 });
 

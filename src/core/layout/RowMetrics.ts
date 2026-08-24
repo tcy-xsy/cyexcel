@@ -1,3 +1,5 @@
+import { assertValidRowOrder } from "./rowOrder";
+
 const DENSE_LEAF_SIZE = 512;
 
 interface NodeBase {
@@ -506,6 +508,27 @@ export class RowMetrics {
     const values = new Float64Array(this.rowCount);
     appendDense(this.#root, values, 0);
     return values;
+  }
+
+  /**
+   * Applies a row permutation (`order[newPosition] = oldPosition`).
+   *
+   * Short-circuits when the whole tree is a single uniform leaf: every row
+   * has the same height, so any permutation of them is the same tree. That
+   * is the million-row default case, and without this check reordering would
+   * materialise an 8MB dense array to produce an identical result.
+   */
+  reorder(order: Int32Array): RowMetrics {
+    assertValidRowOrder(order, this.rowCount);
+    if (this.#root === null || this.#root.kind === "uniform") {
+      return this;
+    }
+    const current = this.exportDenseValues();
+    const next = new Float64Array(order.length);
+    for (let index = 0; index < order.length; index += 1) {
+      next[index] = current[order[index] as number] as number;
+    }
+    return RowMetrics.fromDenseValues(next);
   }
 
   #assertRange(start: number, count: number): void {

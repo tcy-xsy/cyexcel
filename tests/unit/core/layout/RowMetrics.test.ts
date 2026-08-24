@@ -118,3 +118,46 @@ describe("RowMetrics", () => {
     expectMatches(metrics, oracle);
   });
 });
+
+describe("RowMetrics.reorder", () => {
+  it("moves each row's height to its new position", () => {
+    const metrics = RowMetrics.create(3, 24, new Map([[0, 60], [2, 40]]));
+    const reordered = metrics.reorder(Int32Array.from([2, 0, 1]));
+
+    expect(reordered.heightAt(0)).toBe(40);
+    expect(reordered.heightAt(1)).toBe(60);
+    expect(reordered.heightAt(2)).toBe(24);
+  });
+
+  it("keeps the total height unchanged", () => {
+    const metrics = RowMetrics.create(3, 24, new Map([[0, 60], [2, 40]]));
+
+    expect(metrics.reorder(Int32Array.from([2, 0, 1])).totalHeight).toBe(metrics.totalHeight);
+  });
+
+  it("recomputes offsets in the new order", () => {
+    const metrics = RowMetrics.create(3, 24, new Map([[0, 60], [2, 40]]));
+    const reordered = metrics.reorder(Int32Array.from([2, 0, 1]));
+
+    expect(reordered.offsetAt(0)).toBe(0);
+    expect(reordered.offsetAt(1)).toBe(40);
+    expect(reordered.offsetAt(2)).toBe(100);
+  });
+
+  it("returns the same instance when every row is the default height", () => {
+    // The million-row common case: a uniform tree is permutation-invariant,
+    // so reordering must not materialise a dense array.
+    const rowCount = 1_000_000;
+    const metrics = RowMetrics.uniform(rowCount, 24);
+    const order = new Int32Array(rowCount);
+    for (let index = 0; index < rowCount; index += 1) {
+      order[index] = rowCount - 1 - index;
+    }
+
+    expect(metrics.reorder(order)).toBe(metrics);
+  });
+
+  it("rejects an order whose length does not match the row count", () => {
+    expect(() => RowMetrics.uniform(3, 24).reorder(Int32Array.from([1, 0]))).toThrow(/length/);
+  });
+});

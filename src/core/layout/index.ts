@@ -27,3 +27,4 @@ export {
   type StructureAxis,
   type StructureOperation
 } from "./structuralChange";
+export { applyRowOrder, assertValidRowOrder, invertRowOrder } from "./rowOrder";
