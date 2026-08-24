@@ -24,6 +24,23 @@
         return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       }
 
+      function buildRowsFromJSON(rowCount, columnCount) {
+        // Build rows via JSON.parse to produce fast-mode objects like real backend data
+        const rows = [];
+
+        // Build one row at a time via JSON.parse for fast-mode properties
+        for (let row = 0; row < rowCount; row++) {
+          const pairs = [];
+          for (let col = 0; col < columnCount; col++) {
+            pairs.push(`"c${col}":"${row},${col}"`);
+          }
+          const obj = JSON.parse(`{${pairs.join(',')}}`);
+          rows.push(obj);
+        }
+
+        return rows;
+      }
+
       async function run() {
         // Check gc() availability before measuring
         const gcAvailable = typeof gc === "function";
@@ -44,8 +61,12 @@
         let held;
         let occupied;
         if (shape === "rows") {
-          // 对照组：现有 ArrayDataSource 的形态（行对象数组）
+          // 对照组：现有 ArrayDataSource 的形态（行对象数组，循环赋值）
           held = buildBenchmarkRows(ROW_COUNT, COLUMN_COUNT);
+          occupied = ROW_COUNT * COLUMN_COUNT;
+        } else if (shape === "rows-json") {
+          // 对照组：JSON.parse 构造的行对象数组（快速模式）
+          held = buildRowsFromJSON(ROW_COUNT, COLUMN_COUNT);
           occupied = ROW_COUNT * COLUMN_COUNT;
         } else {
           const matrix = shape === "object"

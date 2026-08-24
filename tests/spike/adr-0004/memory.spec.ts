@@ -38,9 +38,9 @@ async function measure(page: Page, shape: string): Promise<MemoryResult> {
 
 // Spike：不断言阈值，只把数字打出来供 Task 6 的报告引用。
 // 断言会把一个"我们还不知道答案"的问题伪装成"我们知道答案且它没退化"。
-for (const shape of ["map", "object", "rows"] as const) {
+for (const shape of ["map", "object", "rows", "rows-json"] as const) {
   test(`ADR 0004 spike — heap for 100k x 50 (${shape}) — run 1`, async ({ page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(shape === "rows-json" ? 600_000 : 240_000);
     const result = await measure(page, shape);
     console.log(`[spike:memory] ${JSON.stringify(result)}`);
     if (result.deltaBytes === null) {
@@ -52,7 +52,7 @@ for (const shape of ["map", "object", "rows"] as const) {
   });
 
   test(`ADR 0004 spike — heap for 100k x 50 (${shape}) — run 2`, async ({ page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(shape === "rows-json" ? 600_000 : 240_000);
     const result = await measure(page, shape);
     console.log(`[spike:memory] ${JSON.stringify(result)}`);
     if (result.deltaBytes === null) {
@@ -64,7 +64,7 @@ for (const shape of ["map", "object", "rows"] as const) {
   });
 
   test(`ADR 0004 spike — heap for 100k x 50 (${shape}) — run 3`, async ({ page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(shape === "rows-json" ? 600_000 : 240_000);
     const result = await measure(page, shape);
     console.log(`[spike:memory] ${JSON.stringify(result)}`);
     if (result.deltaBytes === null) {
