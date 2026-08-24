@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ADR 0004 Spike — memory</title>
+  </head>
+  <body>
+    <script type="module">
+      import { MapCellMatrix } from "/tests/spike/adr-0004/MapCellMatrix.ts";
+      import { ObjectCellMatrix } from "/tests/spike/adr-0004/ObjectCellMatrix.ts";
+      import { fillBenchmarkMatrix } from "/tests/spike/adr-0004/buildMatrix.ts";
+      import { buildBenchmarkRows } from "/tests/performance/support/dataset.ts";
+
+      const ROW_COUNT = 100_000;
+      const COLUMN_COUNT = 50;
+
+      const shape = new URLSearchParams(location.search).get("shape") ?? "map";
+
+      function readHeap() {
+        return performance.memory?.usedJSHeapSize ?? null;
+      }
+
+      function nextFrame() {
+        return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }
+
+      async function run() {
+        await nextFrame();
+        const before = readHeap();
+
+        let held;
+        let occupied;
+        if (shape === "rows") {
+          // 对照组：现有 ArrayDataSource 的形态（行对象数组）
+          held = buildBenchmarkRows(ROW_COUNT, COLUMN_COUNT);
+          occupied = ROW_COUNT * COLUMN_COUNT;
+        } else {
+          const matrix = shape === "object"
+            ? new ObjectCellMatrix(ROW_COUNT, COLUMN_COUNT)
+            : new MapCellMatrix(ROW_COUNT, COLUMN_COUNT);
+          fillBenchmarkMatrix(matrix, ROW_COUNT, COLUMN_COUNT);
+          held = matrix;
+          occupied = matrix.occupiedCount();
+        }
+
+        await nextFrame();
+        const after = readHeap();
+
+        window.__spikeMemory = {
+          shape,
+          occupied,
+          beforeBytes: before,
+          afterBytes: after,
+          deltaBytes: before !== null && after !== null ? after - before : null,
+          bytesPerCell: before !== null && after !== null ? (after - before) / occupied : null
+        };
+        // 保持引用，防止读数前被回收
+        window.__spikeHeld = held;
+        window.__spikeReady = true;
+      }
+
+      void run();
+    </script>
+  </body>
+</html>
