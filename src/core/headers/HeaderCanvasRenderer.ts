@@ -7,6 +7,7 @@ import {
   HEADER_BACKGROUND_COLOR,
   HEADER_BORDER_COLOR,
   HEADER_FONT,
+  HEADER_SORT_INDICATOR_COLOR,
   TEXT_COLOR
 } from "../render/theme";
 import type { HeaderManager } from "./HeaderManager";
@@ -56,7 +57,16 @@ export const DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH = DEFAULT_HEADER_SORT_ZONE_WIDTH
 export function defaultHeaderHitTest(zone: {
   readonly rect: CellRect;
   readonly point: { readonly x: number; readonly y: number };
+  /**
+   * Omitted means sortable, matching `HeaderState.sortable`. A column that
+   * opted out claims no zone, so its whole header stays available for
+   * click-to-select — and there is no mark drawn there to click either.
+   */
+  readonly sortable?: boolean;
 }): HeaderAction | undefined {
+  if (zone.sortable === false) {
+    return undefined;
+  }
   if (zone.rect.width < DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH) {
     return undefined;
   }
@@ -66,19 +76,66 @@ export function defaultHeaderHitTest(zone: {
   return undefined;
 }
 
+/**
+ * Drawn on a sortable column that is not currently sorted. Without it the
+ * column advertises nothing: before this existed, a header stayed bare until
+ * *after* a sort, so the only way to discover that clicking sorted was to
+ * click and find out — and the click had to land in the trailing zone while
+ * the resulting ▲ appeared next to the title, at the other end of the cell.
+ */
+export const HEADER_SORT_NEUTRAL_GLYPH = "⇅";
+
+/** `undefined` when the column advertises no sort affordance at all. */
+function sortGlyph(state: HeaderState): string | undefined {
+  if (state.sortable === false) {
+    return undefined;
+  }
+  if (state.sorted === "asc") {
+    return "▲";
+  }
+  if (state.sorted === "desc") {
+    return "▼";
+  }
+  return HEADER_SORT_NEUTRAL_GLYPH;
+}
+
 function defaultHeaderText(title: string, state: HeaderState): string {
-  const sortSuffix = state.sorted === "asc" ? " ▲" : state.sorted === "desc" ? " ▼" : "";
-  const filterSuffix = state.filtered ? " ●" : "";
-  return `${title}${sortSuffix}${filterSuffix}`;
+  return state.filtered ? `${title} ●` : title;
 }
 
 function defaultHeaderPainter(context: HeaderRenderContext): void {
   const { ctx, rect, title, state } = context;
-  ctx.fillStyle = TEXT_COLOR;
+  const glyph = sortGlyph(state);
+  const middle = rect.y + rect.height / 2;
   ctx.font = HEADER_FONT;
   ctx.textBaseline = "middle";
+
+  // The title is clipped to whatever the sort mark does not occupy, so a long
+  // title cannot run underneath the mark. Nothing is reserved when the column
+  // has no mark, so a non-sortable column keeps the full width it always had.
+  const titleWidth = glyph === undefined
+    ? rect.width
+    : Math.max(0, rect.width - DEFAULT_HEADER_SORT_ZONE_WIDTH);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(rect.x, rect.y, titleWidth, rect.height);
+  ctx.clip();
+  ctx.fillStyle = TEXT_COLOR;
   ctx.textAlign = "left";
-  ctx.fillText(defaultHeaderText(title, state), rect.x + DEFAULT_PADDING, rect.y + rect.height / 2);
+  ctx.fillText(defaultHeaderText(title, state), rect.x + DEFAULT_PADDING, middle);
+  ctx.restore();
+
+  if (glyph === undefined) {
+    return;
+  }
+  // Right-aligned inside the same trailing strip `defaultHeaderHitTest`
+  // claims, so what you click and what you see are the same place.
+  ctx.fillStyle = state.sorted === "asc" || state.sorted === "desc"
+    ? TEXT_COLOR
+    : HEADER_SORT_INDICATOR_COLOR;
+  ctx.textAlign = "right";
+  ctx.fillText(glyph, rect.x + rect.width - DEFAULT_PADDING, middle);
+  ctx.textAlign = "left";
 }
 
 /**

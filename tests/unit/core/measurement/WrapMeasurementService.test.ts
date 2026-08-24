@@ -28,6 +28,7 @@ function textColumn(overrides: Partial<RuntimeColumn> = {}): RuntimeColumn {
     format: (value) => (value === undefined || value === null ? "" : String(value)),
     clipboard: { copy: true, paste: true },
     wrap: false,
+    sortable: true,
     version: 1,
     ...overrides
   };

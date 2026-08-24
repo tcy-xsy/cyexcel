@@ -49,7 +49,10 @@ const inStockRenderer = {
 // 字母和自定义标题二选一，不是两行堆叠。这里故意只给一半列配 header，让
 // playground 里同时看到两种效果。
 const COLUMNS = [
-  { id: "sku", field: "sku", width: 140, type: "text", label: "SKU", header: "SKU" },
+  // sortable:false on the column itself — demonstrates the per-column override.
+  // The "标签" (array) column is unsortable too, but by its *type*'s own
+  // declaration rather than here, which is the other half of the mechanism.
+  { id: "sku", field: "sku", width: 140, type: "text", label: "SKU", header: "SKU", sortable: false },
   { id: "name", field: "name", width: 200, type: "text", label: "产品名称", wrap: true },
   { id: "price", field: "price", width: 110, type: "money", label: "单价", header: "单价" },
   { id: "quantity", field: "quantity", width: 90, type: "number", label: "数量" },
@@ -281,9 +284,12 @@ let currentRowCount = 0;
 let statusBarDefaultText = "";
 let statusBarErrorTimeoutId = null;
 
-function populateColumnSelect(select) {
+function populateColumnSelect(select, accepts = () => true) {
   select.innerHTML = "";
   COLUMNS.forEach((column, index) => {
+    if (!accepts(index)) {
+      return;
+    }
     const option = document.createElement("option");
     option.value = String(index);
     option.textContent = `${column.label} (${column.id})`;
@@ -293,7 +299,16 @@ function populateColumnSelect(select) {
 
 function populateCellColumnSelect() {
   populateColumnSelect(cellColumn);
-  populateColumnSelect(sortColumn);
+}
+
+/**
+ * A host building its own sort UI asks the sheet rather than re-deriving the
+ * rule: `sortable` can come from the column *or* from its cell type (`array`
+ * and `json` declare themselves unsortable), and only the resolved
+ * RuntimeColumn knows which one won.
+ */
+function populateSortColumnSelect() {
+  populateColumnSelect(sortColumn, (index) => core.getColumn(index).sortable);
 }
 
 function readConfigFromForm() {
@@ -414,6 +429,9 @@ function rebuild() {
     cellRow.value = String(maxRow);
   }
   cellRow.max = String(maxRow);
+  // Only now: the answer comes off the resolved RuntimeColumn, which does not
+  // exist until this rebuild has constructed the sheet.
+  populateSortColumnSelect();
 }
 
 const shortcutHint = document.getElementById("shortcutHint");

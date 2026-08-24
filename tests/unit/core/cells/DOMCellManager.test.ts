@@ -84,6 +84,7 @@ function textColumn(id: string): RuntimeColumn {
     format: (v) => String(v ?? ""),
     clipboard: { copy: true, paste: true },
     wrap: false,
+    sortable: true,
     version: 1
   };
 }
@@ -97,6 +98,7 @@ function domColumn(id: string, factory: DomCellRendererFactory): RuntimeColumn {
     format: (v) => String(v ?? ""),
     clipboard: { copy: true, paste: true },
     wrap: false,
+    sortable: true,
     version: 1,
     renderer: factory
   };

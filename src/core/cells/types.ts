@@ -28,6 +28,13 @@ export interface CellType<T = unknown> {
   paint?(context: CellRenderContext<T>): void;
   parse?(text: string, context: CellFormatContext): T;
   compare?(left: T, right: T): number;
+  /**
+   * Whether values of this type have a meaningful order at all. Defaults to
+   * `true`; a type sets it `false` to opt out of sorting entirely, which is
+   * different from having no `compare` (that only means "string order is
+   * already right"). A column can override it either way.
+   */
+  readonly sortable?: boolean;
   createEditor?(context: CellFormatContext): CellEditor;
   serialize?(value: T, context: CellFormatContext): string;
   /** Metadata only — does not itself select an editor. See doc/progress.md's editor-pluggability patch. */
@@ -105,6 +112,14 @@ export interface DomCellRendererFactory<T = unknown> {
 export interface HeaderState {
   readonly sorted?: "asc" | "desc" | false;
   readonly filtered?: boolean;
+  /**
+   * Whether this column offers sorting at all. `false` removes the header's
+   * sort affordance and makes `defaultHeaderHitTest` refuse the trailing zone,
+   * so the column keeps its whole width for click-to-select. Omitted means
+   * sortable — a renderer used standalone, with no state supplied, still shows
+   * the affordance.
+   */
+  readonly sortable?: boolean;
 }
 
 /**
@@ -229,6 +244,13 @@ export interface ColumnDefinition<T = unknown> {
    * column field here.
    */
   readonly wrap?: boolean;
+  /**
+   * Overrides the cell type's own answer to "can this be sorted". Set it
+   * `false` to drop the header's sort affordance and refuse click-to-sort for
+   * this column; set it `true` to sort a type that opted out. Defaults to the
+   * type's `sortable`, which defaults to `true`.
+   */
+  readonly sortable?: boolean;
 }
 
 /**
@@ -243,6 +265,8 @@ export interface RuntimeColumn<T = unknown> extends CellType<T> {
   readonly renderer?: CanvasCellRenderer<T> | DomCellRendererFactory<T>;
   readonly clipboard: Required<ColumnClipboardPolicy>;
   readonly wrap: boolean;
+  /** Resolved from the column, then the cell type, then `true`. */
+  readonly sortable: boolean;
   /** Bumped only if columns are ever re-resolved; Step 8 resolves once at construction. */
   readonly version: number;
 }

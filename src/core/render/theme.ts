@@ -19,6 +19,8 @@ export const HEADER_FONT = `600 ${CELL_FONT}`;
 export const HEADER_BACKGROUND_COLOR = "#f3f4f6";
 export const HEADER_HOVER_BACKGROUND_COLOR = "#e5e7eb";
 export const HEADER_BORDER_COLOR = "#d1d5db";
+/** Muted, so an unsorted column's sort affordance reads as available rather than active. */
+export const HEADER_SORT_INDICATOR_COLOR = "#9ca3af";
 export const FROZEN_SEPARATOR_COLOR = "#9ca3af";
 export const FROZEN_SEPARATOR_THICKNESS = 2;
 export const SELECTION_STROKE_COLOR = "#3b82f6";

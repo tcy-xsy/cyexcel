@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import type { CanvasHeaderRenderer } from "../../../../src/core/cells";
+import type { CanvasHeaderRenderer, HeaderState } from "../../../../src/core/cells";
 import {
   DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH,
   DEFAULT_HEADER_SORT_ZONE_WIDTH,
   defaultHeaderHitTest,
+  HEADER_SORT_NEUTRAL_GLYPH,
   HeaderCanvasRenderer,
   HeaderManager
 } from "../../../../src/core/headers";
@@ -131,10 +132,12 @@ describe("HeaderCanvasRenderer — leaf headers (先写测试 #1: title/sort/fil
 
     renderer.paint();
 
-    const titles = ctx.calls.filter((call) => call.method === "fillText").map((call) => call.args[0]);
-    expect(titles.some((title) => typeof title === "string" && title.includes("A") && title !== "A")).toBe(
-      true
-    );
+    // The direction is its own draw now, not a suffix fused into the title —
+    // it has to land in the trailing zone the click happens in, and a fused
+    // string is left-aligned with the label at the other end of the cell.
+    const drawn = ctx.calls.filter((call) => call.method === "fillText").map((call) => call.args[0]);
+    expect(drawn).toContain("A");
+    expect(drawn).toContain("▲");
   });
 
   it("reflects filtered state in the default painter's output", () => {
@@ -556,5 +559,75 @@ describe("defaultHeaderHitTest", () => {
       .toEqual({ type: "toggle-sort" });
     expect(defaultHeaderHitTest({ rect: rect(floor), point: { x: 0, y: 10 } }))
       .toBeUndefined();
+  });
+});
+
+describe("HeaderCanvasRenderer — the sort affordance lives in the zone you click", () => {
+  const SORTABLE = { sortable: true } as const;
+
+  function paintOne(state: HeaderState): RecordingCanvasContext {
+    const ctx = new RecordingCanvasContext();
+    const headerManager = new HeaderManager({ columns: [{ id: "a", header: "A" }] });
+    const renderer = createRenderer({
+      ctx,
+      layout: createLayout(1),
+      headerManager,
+      columnHeaderHeight: 24,
+      getHeaderState: () => state
+    });
+    renderer.setViewport(VIEWPORT);
+    renderer.paint();
+    return ctx;
+  }
+
+  const texts = (ctx: RecordingCanvasContext): string[] =>
+    ctx.calls.filter((call) => call.method === "fillText").map((call) => String(call.args[0]));
+
+  it("marks an unsorted sortable column, so the column advertises that it can be sorted", () => {
+    // The bug this pins: previously nothing at all was drawn until *after* a
+    // sort, so a user had no way to discover the column was sortable — and the
+    // clickable zone was at the trailing edge while the only feedback appeared
+    // next to the title.
+    expect(texts(paintOne(SORTABLE))).toContain(HEADER_SORT_NEUTRAL_GLYPH);
+  });
+
+  it("draws nothing extra on a column that is not sortable", () => {
+    const drawn = texts(paintOne({ sortable: false }));
+
+    expect(drawn).toEqual(["A"]);
+  });
+
+  it("replaces the neutral mark with the direction once sorted, rather than adding to it", () => {
+    const ascending = texts(paintOne({ ...SORTABLE, sorted: "asc" }));
+
+    expect(ascending).toContain("▲");
+    expect(ascending).not.toContain(HEADER_SORT_NEUTRAL_GLYPH);
+  });
+
+  it("keeps the direction mark out of the title string", () => {
+    // It used to be appended to the label and left-aligned, which is why it
+    // never appeared where the click had to happen.
+    expect(texts(paintOne({ ...SORTABLE, sorted: "desc" }))).toContain("A");
+  });
+
+  it("paints the mark inside the trailing sort zone, not beside the title", () => {
+    const ctx = paintOne({ ...SORTABLE, sorted: "asc" });
+    const mark = ctx.calls
+      .filter((call) => call.method === "fillText")
+      .find((call) => String(call.args[0]) === "▲");
+    const columnWidth = 50; // createLayout's fixed column width
+
+    expect(mark).toBeDefined();
+    expect(Number(mark?.args[1])).toBeGreaterThan(columnWidth - DEFAULT_HEADER_SORT_ZONE_WIDTH);
+  });
+});
+
+describe("defaultHeaderHitTest — sortable columns only", () => {
+  it("refuses the sort zone on a column that is not sortable", () => {
+    expect(defaultHeaderHitTest({
+      rect: { x: 0, y: 0, width: 120, height: 24 },
+      point: { x: 119, y: 10 },
+      sortable: false
+    })).toBeUndefined();
   });
 });

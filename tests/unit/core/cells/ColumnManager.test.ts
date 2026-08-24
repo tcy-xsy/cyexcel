@@ -406,3 +406,44 @@ describe("ColumnManager prepared roots", () => {
   });
 
 });
+
+describe("ColumnManager — sortable resolution", () => {
+  it("treats an ordinary column as sortable without being told", () => {
+    const manager = new ColumnManager({ columns: [{ id: "name" }], registry: registryWithMoney() });
+
+    expect(manager.getColumn(0).sortable).toBe(true);
+  });
+
+  it("takes sortable from the cell type, so a type with no total order opts itself out", () => {
+    // `array`/`json` have no meaningful total order — sorting them would fall
+    // back to comparing their string previews, which is a fake sort.
+    const manager = new ColumnManager({
+      columns: [{ id: "tags", type: "array" }, { id: "meta", type: "json" }],
+      registry: registryWithMoney()
+    });
+
+    expect(manager.getColumn(0).sortable).toBe(false);
+    expect(manager.getColumn(1).sortable).toBe(false);
+  });
+
+  it("lets a column override the type's own answer in both directions", () => {
+    const manager = new ColumnManager({
+      columns: [
+        { id: "tags", type: "array", sortable: true },
+        { id: "name", sortable: false }
+      ],
+      registry: registryWithMoney()
+    });
+
+    expect(manager.getColumn(0).sortable).toBe(true);
+    expect(manager.getColumn(1).sortable).toBe(false);
+  });
+
+  it("inherits sortable through `extends`", () => {
+    const registry = registryWithMoney();
+    registry.register("tagList", { extends: "array" });
+    const manager = new ColumnManager({ columns: [{ id: "tags", type: "tagList" }], registry });
+
+    expect(manager.getColumn(0).sortable).toBe(false);
+  });
+});

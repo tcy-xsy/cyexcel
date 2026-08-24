@@ -590,3 +590,49 @@ test("a header-action listener reading sortState synchronously inside the callba
     { sortState: { column: 0, direction: "asc" }, topCell: "apple" }
   ]);
 });
+
+test("a column turned off with sortable:false does not sort when its header is clicked", async ({
+  page
+}) => {
+  // The "joined" column, x-range [200, 310) in sort.html.
+  const JOINED_COLUMN_RIGHT_X = 310;
+  await gotoFixture(page, "?unsortable=1");
+
+  const before = await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    return [0, 1, 2].map((row) => sheet.getCell(row, 2));
+  });
+
+  await clickHeaderSortZone(page, JOINED_COLUMN_RIGHT_X);
+
+  const after = await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    return {
+      column: [0, 1, 2].map((row) => sheet.getCell(row, 2)),
+      sortState: sheet.sortState
+    };
+  });
+
+  // Nothing moved, and no indicator claims a sort happened.
+  expect(after.column).toEqual(before);
+  expect(after.sortState).toBeNull();
+});
+
+test("a sortable neighbour still sorts, so sortable:false is per column and not a global switch", async ({
+  page
+}) => {
+  await gotoFixture(page, "?unsortable=1");
+
+  await clickHeaderSortZone(page, NAME_COLUMN_RIGHT_X);
+
+  const after = await page.evaluate(() => {
+    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
+    return {
+      column: [0, 1, 2].map((row) => sheet.getCell(row, 0)),
+      sortState: sheet.sortState
+    };
+  });
+
+  expect(after.column).toEqual([...after.column].sort());
+  expect(after.sortState).toEqual({ column: 0, direction: "asc" });
+});

@@ -77,7 +77,18 @@
           header: "Score",
           type: "number"
         },
-        { id: "joined", field: "joined", width: 110, header: "Joined", type: "date" },
+        {
+          id: "joined",
+          field: "joined",
+          width: 110,
+          header: "Joined",
+          type: "date",
+          // `?unsortable=1` turns this column off at the column level, which is
+          // the override that has to beat the type's own answer.
+          ...(new URLSearchParams(location.search).get("unsortable") === "1"
+            ? { sortable: false }
+            : {})
+        },
         {
           id: "priority",
           field: "priority",

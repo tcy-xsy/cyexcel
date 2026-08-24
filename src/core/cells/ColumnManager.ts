@@ -127,6 +127,11 @@ export class ColumnManager {
         paste: definition.clipboard?.paste ?? true
       },
       wrap: definition.wrap ?? false,
+      // Three layers, narrowest first: the column decides, else the cell type
+      // decides (a type with no total order opts itself out — see
+      // `builtins.ts`), else sortable. Same shape as `compare`: the type
+      // declares the capability, the column sets the policy.
+      sortable: definition.sortable ?? cellType.sortable ?? true,
       version: RESOLVED_VERSION
     };
 

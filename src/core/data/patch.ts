@@ -4,11 +4,12 @@ import type { Patch } from "../types";
  * Every patch variant whose identity fits in a short string. `row-reorder`
  * is deliberately not one of them: its identity *is* the whole permutation,
  * so a content key means joining an `Int32Array` with one element per row.
- * For a million-row sort that is ~190ms and ~6.9M chars per patch — and a
- * sort commit produces two (`TableStore` and the layout participant) — on
- * every commit and again on every undo/redo, to build a merged array
- * `#publishCommitReceipt` only ever tests for truthiness. `mergePatches`
- * compares those few permutations element-wise instead.
+ * For a million-row sort that is ~6.9M chars per patch, and a sort commit
+ * produces two (`TableStore` and the layout participant): measured at
+ * 63-114ms for the pair in Chromium (183-194ms in Node), on every commit and
+ * again on every undo/redo — to build a merged array `#publishCommitReceipt`
+ * only ever tests for truthiness. `mergePatches` compares those few
+ * permutations element-wise instead, which measured 1.3-5.0ms for the pair.
  */
 type KeyedPatch = Exclude<Patch, { readonly type: "row-reorder" }>;
 
@@ -87,8 +88,8 @@ export function mergePatches(patches: readonly Patch[]): Patch[] {
   const seen = new Set<string>();
   // A list rather than a key set, and scanned rather than hashed: see
   // `KeyedPatch`. One commit holds a handful of permutations at most, so a
-  // few element-wise scans cost ~1ms per million rows and allocate nothing,
-  // against ~340ms and ~14MB to key the same pair by content.
+  // few element-wise scans measured 1.3-5.0ms for a million-row sort's pair
+  // and allocate nothing, against 63-114ms and ~14MB to key it by content.
   const seenOrders: Int32Array[] = [];
   const merged: Patch[] = [];
 

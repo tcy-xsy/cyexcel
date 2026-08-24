@@ -2559,7 +2559,11 @@ export class CyExcelCore {
     if (renderer === undefined) {
       // No custom renderer -> the default painter's own reserved right-edge
       // strip is click-to-sort (see defaultHeaderHitTest's doc comment).
-      action = defaultHeaderHitTest({ rect: hit.rect, point: hit.localPoint });
+      action = defaultHeaderHitTest({
+        rect: hit.rect,
+        point: hit.localPoint,
+        sortable: this.#columnManager.getColumn(hit.column).sortable
+      });
     } else if (renderer.kind === "canvas" && renderer.hitTest) {
       try {
         action = renderer.hitTest({
@@ -2631,7 +2635,8 @@ export class CyExcelCore {
   #headerState(column: number): HeaderState {
     return {
       sorted: this.#sortState !== null && this.#sortState.column === column ? this.#sortState.direction : false,
-      filtered: false
+      filtered: false,
+      sortable: this.#columnManager.getColumn(column).sortable
     };
   }
 

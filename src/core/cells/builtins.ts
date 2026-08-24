@@ -87,6 +87,9 @@ export function registerBuiltinCellTypes(registry: CellTypeRegistry): void {
   });
 
   registry.register("array", {
+    // No total order exists for arrays, so sorting one could only compare the
+    // rendered previews — a sort that looks like it worked and means nothing.
+    sortable: false,
     format: (value) => {
       if (!Array.isArray(value)) {
         return "";
@@ -114,6 +117,8 @@ export function registerBuiltinCellTypes(registry: CellTypeRegistry): void {
   });
 
   registry.register("json", {
+    /** Same reasoning as `array`: no total order, so no honest sort. */
+    sortable: false,
     format: (value) => {
       const serialized = JSON.stringify(value);
       if (serialized === undefined) {
