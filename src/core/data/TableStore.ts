@@ -63,7 +63,6 @@ function changesForDataMutation(mutation: DataMutation, fallback: readonly Patch
     case "set-range":
       return [{ type: "range-value", range: mutation.range }];
     case "restore-cells":
-    case "restore-records":
       return fallback;
     case "insert-rows":
     case "insert-row-objects":
