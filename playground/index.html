@@ -35,9 +35,10 @@
           <button class="button" id="sortDescButton" type="button">降序</button>
           <span class="hint-inline" id="sortHint">
             调用 <code>sheet.sortByColumn(列, "asc" | "desc")</code>——物理重排行，行高跟着行走，
-            一次撤销同时还原顺序和行高。可排序的列在表头右端有一个淡色 ⇅，直接点它排序，
-            排完变成 ▲/▼ 表示当前方向；再点一次在升/降序间切换，不会回到原始顺序（要找回原顺序
-            只能撤销）。<code>⇅</code> 就画在可点击的那条窄带里，所以看到的位置就是要点的位置。
+            一次撤销同时还原顺序和行高。可排序的列在表头右端有一对上下小三角，直接点它排序；
+            当前方向的那个变成蓝色、另一个保持灰色（同 antd Table 的做法——留着灰的那个，才看得出
+            另一个方向还能再点一次）。再点一次在升/降序间切换，不会回到原始顺序（要找回原顺序
+            只能撤销）。三角就画在可点击的那条窄带里，所以看到的位置就是要点的位置。
             「标签」列没有 ⇅——<code>array</code>/<code>json</code> 没有全序，由类型自己声明
             <code>sortable: false</code>；「SKU」列则是在列上写了 <code>sortable: false</code>，
             演示列级覆盖

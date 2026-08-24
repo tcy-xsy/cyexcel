@@ -7,6 +7,7 @@ import {
   HEADER_BACKGROUND_COLOR,
   HEADER_BORDER_COLOR,
   HEADER_FONT,
+  HEADER_SORT_INDICATOR_ACTIVE_COLOR,
   HEADER_SORT_INDICATOR_COLOR,
   TEXT_COLOR
 } from "../render/theme";
@@ -76,27 +77,54 @@ export function defaultHeaderHitTest(zone: {
   return undefined;
 }
 
-/**
- * Drawn on a sortable column that is not currently sorted. Without it the
- * column advertises nothing: before this existed, a header stayed bare until
- * *after* a sort, so the only way to discover that clicking sorted was to
- * click and find out — and the click had to land in the trailing zone while
- * the resulting ▲ appeared next to the title, at the other end of the cell.
- */
-export const HEADER_SORT_NEUTRAL_GLYPH = "⇅";
+/** Caret geometry, in CSS pixels. Sized to read at a glance without competing with the title. */
+const CARET_WIDTH = 7;
+const CARET_HEIGHT = 4;
+/** Vertical gap between the two carets — kept tight so the pair reads as one control. */
+const CARET_GAP = 2;
 
-/** `undefined` when the column advertises no sort affordance at all. */
-function sortGlyph(state: HeaderState): string | undefined {
-  if (state.sortable === false) {
-    return undefined;
-  }
-  if (state.sorted === "asc") {
-    return "▲";
-  }
-  if (state.sorted === "desc") {
-    return "▼";
-  }
-  return HEADER_SORT_NEUTRAL_GLYPH;
+/**
+ * Draws one filled triangle pointing up or down, `tip` being the y of its
+ * apex. Explicit geometry rather than a "▲"/"▼" text glyph: at 7x4px a glyph's
+ * shape, weight and vertical centring are decided by whichever font resolves,
+ * which is exactly what made the first attempt at this look wrong.
+ */
+function paintCaret(
+  ctx: Canvas2DLike,
+  centerX: number,
+  tip: number,
+  direction: "up" | "down",
+  color: string
+): void {
+  const base = direction === "up" ? tip + CARET_HEIGHT : tip - CARET_HEIGHT;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(centerX, tip);
+  ctx.lineTo(centerX - CARET_WIDTH / 2, base);
+  ctx.lineTo(centerX + CARET_WIDTH / 2, base);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/**
+ * Both carets, always — the active direction is said in colour, never by
+ * removing the other one. Modelled on antd's Table sorter
+ * (`.ant-table-column-sorter-up/down`, `.active` → `colorPrimary`): keeping the
+ * inactive caret visible is what tells a user the opposite direction is one
+ * more click away.
+ */
+function paintSortCarets(ctx: Canvas2DLike, rect: CellRect, state: HeaderState): void {
+  const centerX = rect.x + rect.width - DEFAULT_PADDING - CARET_WIDTH / 2;
+  const middle = rect.y + rect.height / 2;
+  const upTip = middle - CARET_HEIGHT - CARET_GAP / 2;
+  const downTip = middle + CARET_HEIGHT + CARET_GAP / 2;
+
+  paintCaret(ctx, centerX, upTip, "up", state.sorted === "asc"
+    ? HEADER_SORT_INDICATOR_ACTIVE_COLOR
+    : HEADER_SORT_INDICATOR_COLOR);
+  paintCaret(ctx, centerX, downTip, "down", state.sorted === "desc"
+    ? HEADER_SORT_INDICATOR_ACTIVE_COLOR
+    : HEADER_SORT_INDICATOR_COLOR);
 }
 
 function defaultHeaderText(title: string, state: HeaderState): string {
@@ -105,37 +133,30 @@ function defaultHeaderText(title: string, state: HeaderState): string {
 
 function defaultHeaderPainter(context: HeaderRenderContext): void {
   const { ctx, rect, title, state } = context;
-  const glyph = sortGlyph(state);
-  const middle = rect.y + rect.height / 2;
+  const sortable = state.sortable !== false;
   ctx.font = HEADER_FONT;
   ctx.textBaseline = "middle";
 
-  // The title is clipped to whatever the sort mark does not occupy, so a long
-  // title cannot run underneath the mark. Nothing is reserved when the column
-  // has no mark, so a non-sortable column keeps the full width it always had.
-  const titleWidth = glyph === undefined
-    ? rect.width
-    : Math.max(0, rect.width - DEFAULT_HEADER_SORT_ZONE_WIDTH);
+  // The title is clipped to whatever the carets do not occupy, so a long title
+  // cannot run underneath them. Nothing is reserved when the column has no
+  // carets, so a non-sortable column keeps the full width it always had.
+  const titleWidth = sortable
+    ? Math.max(0, rect.width - DEFAULT_HEADER_SORT_ZONE_WIDTH)
+    : rect.width;
   ctx.save();
   ctx.beginPath();
   ctx.rect(rect.x, rect.y, titleWidth, rect.height);
   ctx.clip();
   ctx.fillStyle = TEXT_COLOR;
   ctx.textAlign = "left";
-  ctx.fillText(defaultHeaderText(title, state), rect.x + DEFAULT_PADDING, middle);
+  ctx.fillText(defaultHeaderText(title, state), rect.x + DEFAULT_PADDING, rect.y + rect.height / 2);
   ctx.restore();
 
-  if (glyph === undefined) {
-    return;
+  if (sortable) {
+    // Inside the same trailing strip `defaultHeaderHitTest` claims, so what
+    // you click and what you see are the same place.
+    paintSortCarets(ctx, rect, state);
   }
-  // Right-aligned inside the same trailing strip `defaultHeaderHitTest`
-  // claims, so what you click and what you see are the same place.
-  ctx.fillStyle = state.sorted === "asc" || state.sorted === "desc"
-    ? TEXT_COLOR
-    : HEADER_SORT_INDICATOR_COLOR;
-  ctx.textAlign = "right";
-  ctx.fillText(glyph, rect.x + rect.width - DEFAULT_PADDING, middle);
-  ctx.textAlign = "left";
 }
 
 /**

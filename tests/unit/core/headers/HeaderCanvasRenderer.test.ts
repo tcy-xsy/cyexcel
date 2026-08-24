@@ -5,11 +5,14 @@ import {
   DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH,
   DEFAULT_HEADER_SORT_ZONE_WIDTH,
   defaultHeaderHitTest,
-  HEADER_SORT_NEUTRAL_GLYPH,
   HeaderCanvasRenderer,
   HeaderManager
 } from "../../../../src/core/headers";
 import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "../../../../src/core/layout";
+import {
+  HEADER_SORT_INDICATOR_ACTIVE_COLOR,
+  HEADER_SORT_INDICATOR_COLOR
+} from "../../../../src/core/render/theme";
 import type { ViewportState } from "../../../../src/core/layout";
 import { SceneSnapshot } from "../../../../src/core/scene";
 import { RecordingCanvasContext } from "../../../helpers/RecordingCanvasContext";
@@ -132,12 +135,12 @@ describe("HeaderCanvasRenderer — leaf headers (先写测试 #1: title/sort/fil
 
     renderer.paint();
 
-    // The direction is its own draw now, not a suffix fused into the title —
+    // The direction is a painted caret now, not a suffix fused into the title:
     // it has to land in the trailing zone the click happens in, and a fused
     // string is left-aligned with the label at the other end of the cell.
     const drawn = ctx.calls.filter((call) => call.method === "fillText").map((call) => call.args[0]);
-    expect(drawn).toContain("A");
-    expect(drawn).toContain("▲");
+    expect(drawn).toEqual(["A"]);
+    expect(ctx.calls.some((call) => call.method === "fill")).toBe(true);
   });
 
   it("reflects filtered state in the default painter's output", () => {
@@ -562,7 +565,7 @@ describe("defaultHeaderHitTest", () => {
   });
 });
 
-describe("HeaderCanvasRenderer — the sort affordance lives in the zone you click", () => {
+describe("HeaderCanvasRenderer — the sort carets live in the zone you click", () => {
   const SORTABLE = { sortable: true } as const;
 
   function paintOne(state: HeaderState): RecordingCanvasContext {
@@ -580,45 +583,79 @@ describe("HeaderCanvasRenderer — the sort affordance lives in the zone you cli
     return ctx;
   }
 
-  const texts = (ctx: RecordingCanvasContext): string[] =>
-    ctx.calls.filter((call) => call.method === "fillText").map((call) => String(call.args[0]));
+  /**
+   * The colour each filled triangle was painted in, in paint order — the sort
+   * carets are the only `fill()`ed paths the header draws, and `set:fillStyle`
+   * immediately precedes each one.
+   */
+  function caretColors(ctx: RecordingCanvasContext): string[] {
+    const colors: string[] = [];
+    let pending: string | undefined;
+    for (const call of ctx.calls) {
+      if (call.method === "set:fillStyle") {
+        pending = String(call.args[0]);
+      } else if (call.method === "fill" && pending !== undefined) {
+        colors.push(pending);
+      }
+    }
+    return colors;
+  }
 
-  it("marks an unsorted sortable column, so the column advertises that it can be sorted", () => {
+  it("draws both carets on an unsorted sortable column, so the column advertises sorting", () => {
     // The bug this pins: previously nothing at all was drawn until *after* a
     // sort, so a user had no way to discover the column was sortable — and the
     // clickable zone was at the trailing edge while the only feedback appeared
     // next to the title.
-    expect(texts(paintOne(SORTABLE))).toContain(HEADER_SORT_NEUTRAL_GLYPH);
+    expect(caretColors(paintOne(SORTABLE)))
+      .toEqual([HEADER_SORT_INDICATOR_COLOR, HEADER_SORT_INDICATOR_COLOR]);
   });
 
-  it("draws nothing extra on a column that is not sortable", () => {
-    const drawn = texts(paintOne({ sortable: false }));
+  it("draws no carets at all on a column that is not sortable", () => {
+    expect(caretColors(paintOne({ sortable: false }))).toEqual([]);
+  });
+
+  it("colours only the ascending caret when sorted ascending, keeping the other visible", () => {
+    // Both stay drawn: the inactive caret is what says the opposite direction
+    // is one more click away. Removing it would lose that.
+    expect(caretColors(paintOne({ ...SORTABLE, sorted: "asc" })))
+      .toEqual([HEADER_SORT_INDICATOR_ACTIVE_COLOR, HEADER_SORT_INDICATOR_COLOR]);
+  });
+
+  it("colours only the descending caret when sorted descending", () => {
+    expect(caretColors(paintOne({ ...SORTABLE, sorted: "desc" })))
+      .toEqual([HEADER_SORT_INDICATOR_COLOR, HEADER_SORT_INDICATOR_ACTIVE_COLOR]);
+  });
+
+  it("keeps the direction out of the title string", () => {
+    // It used to be appended to the label and left-aligned, which is why it
+    // never appeared where the click had to happen.
+    const drawn = paintOne({ ...SORTABLE, sorted: "desc" }).calls
+      .filter((call) => call.method === "fillText")
+      .map((call) => String(call.args[0]));
 
     expect(drawn).toEqual(["A"]);
   });
 
-  it("replaces the neutral mark with the direction once sorted, rather than adding to it", () => {
-    const ascending = texts(paintOne({ ...SORTABLE, sorted: "asc" }));
-
-    expect(ascending).toContain("▲");
-    expect(ascending).not.toContain(HEADER_SORT_NEUTRAL_GLYPH);
-  });
-
-  it("keeps the direction mark out of the title string", () => {
-    // It used to be appended to the label and left-aligned, which is why it
-    // never appeared where the click had to happen.
-    expect(texts(paintOne({ ...SORTABLE, sorted: "desc" }))).toContain("A");
-  });
-
-  it("paints the mark inside the trailing sort zone, not beside the title", () => {
+  it("paints the carets inside the trailing sort zone, not beside the title", () => {
     const ctx = paintOne({ ...SORTABLE, sorted: "asc" });
-    const mark = ctx.calls
-      .filter((call) => call.method === "fillText")
-      .find((call) => String(call.args[0]) === "▲");
     const columnWidth = 50; // createLayout's fixed column width
+    const apexes = ctx.calls
+      .filter((call) => call.method === "moveTo")
+      .map((call) => Number(call.args[0]));
 
-    expect(mark).toBeDefined();
-    expect(Number(mark?.args[1])).toBeGreaterThan(columnWidth - DEFAULT_HEADER_SORT_ZONE_WIDTH);
+    expect(apexes).toHaveLength(2);
+    for (const x of apexes) {
+      expect(x).toBeGreaterThan(columnWidth - DEFAULT_HEADER_SORT_ZONE_WIDTH);
+    }
+  });
+
+  it("stacks the two carets, ascending above descending", () => {
+    const ctx = paintOne(SORTABLE);
+    const apexY = ctx.calls
+      .filter((call) => call.method === "moveTo")
+      .map((call) => Number(call.args[1]));
+
+    expect(apexY[0]).toBeLessThan(apexY[1] as number);
   });
 });
 

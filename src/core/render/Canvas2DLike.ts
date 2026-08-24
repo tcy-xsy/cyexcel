@@ -15,6 +15,15 @@ export interface Canvas2DLike {
   beginPath(): void;
   rect(x: number, y: number, width: number, height: number): void;
   clip(): void;
+  /**
+   * Arbitrary polygons, for marks whose shape matters at small sizes — the
+   * header's sort carets are 7x4px, a size at which a text glyph's shape and
+   * weight are at the mercy of whichever font resolves.
+   */
+  moveTo(x: number, y: number): void;
+  lineTo(x: number, y: number): void;
+  closePath(): void;
+  fill(): void;
   scale(x: number, y: number): void;
   setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;
   setLineDash(segments: readonly number[]): void;

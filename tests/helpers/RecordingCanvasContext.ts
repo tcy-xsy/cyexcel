@@ -69,6 +69,22 @@ export class RecordingCanvasContext implements Canvas2DLike {
     this.calls.push({ method: "clip", args: [] });
   }
 
+  moveTo(x: number, y: number): void {
+    this.calls.push({ method: "moveTo", args: [x, y] });
+  }
+
+  lineTo(x: number, y: number): void {
+    this.calls.push({ method: "lineTo", args: [x, y] });
+  }
+
+  closePath(): void {
+    this.calls.push({ method: "closePath", args: [] });
+  }
+
+  fill(): void {
+    this.calls.push({ method: "fill", args: [] });
+  }
+
   scale(x: number, y: number): void {
     this.calls.push({ method: "scale", args: [x, y] });
   }

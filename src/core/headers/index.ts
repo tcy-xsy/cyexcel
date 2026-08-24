@@ -8,8 +8,7 @@ export {
   type HeaderCanvasRendererOptions,
   DEFAULT_HEADER_SORT_ZONE_WIDTH,
   DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH,
-  defaultHeaderHitTest,
-  HEADER_SORT_NEUTRAL_GLYPH
+  defaultHeaderHitTest
 } from "./HeaderCanvasRenderer";
 export { RowHeaderCanvasRenderer, type RowHeaderCanvasRendererOptions } from "./RowHeaderCanvasRenderer";
 export { DomHeaderManager, type DomHeaderManagerOptions } from "./DomHeaderManager";
