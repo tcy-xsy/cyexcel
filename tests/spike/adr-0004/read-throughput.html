@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ADR 0004 Spike — read throughput</title>
+  </head>
+  <body>
+    <script type="module">
+      import { MapCellMatrix } from "/tests/spike/adr-0004/MapCellMatrix.ts";
+      import { ObjectCellMatrix } from "/tests/spike/adr-0004/ObjectCellMatrix.ts";
+      import { fillBenchmarkMatrix } from "/tests/spike/adr-0004/buildMatrix.ts";
+
+      const ROW_COUNT = 100_000;
+      const COLUMN_COUNT = 50;
+      const VIEWPORT_ROWS = 40;
+      const VIEWPORT_COLUMNS = 20;
+      const FRAMES = 600;
+
+      function buildMatrix(shape) {
+        const matrix = shape === "object"
+          ? new ObjectCellMatrix(ROW_COUNT, COLUMN_COUNT)
+          : new MapCellMatrix(ROW_COUNT, COLUMN_COUNT);
+        fillBenchmarkMatrix(matrix, ROW_COUNT, COLUMN_COUNT);
+        return matrix;
+      }
+
+      function readViewport(matrix, topRow) {
+        // sink 阻止引擎把整个读取循环优化掉
+        let sink = 0;
+        for (let row = topRow; row < topRow + VIEWPORT_ROWS; row += 1) {
+          for (let column = 0; column < VIEWPORT_COLUMNS; column += 1) {
+            const record = matrix.get(row, column);
+            if (record !== undefined) {
+              sink += 1;
+            }
+          }
+        }
+        return sink;
+      }
+
+      function measure(matrix) {
+        // 预热，让 JIT 稳定下来
+        for (let frame = 0; frame < 50; frame += 1) {
+          readViewport(matrix, frame * 7);
+        }
+        const samples = [];
+        let sink = 0;
+        for (let frame = 0; frame < FRAMES; frame += 1) {
+          // 每帧换一个 topRow，模拟滚动，避免只测到缓存命中
+          const topRow = (frame * 13) % (ROW_COUNT - VIEWPORT_ROWS);
+          const start = performance.now();
+          sink += readViewport(matrix, topRow);
+          samples.push(performance.now() - start);
+        }
+        samples.sort((a, b) => a - b);
+        return {
+          sink,
+          cellsPerFrame: VIEWPORT_ROWS * VIEWPORT_COLUMNS,
+          medianMs: samples[Math.floor(samples.length / 2)],
+          p95Ms: samples[Math.floor(samples.length * 0.95)],
+          maxMs: samples[samples.length - 1]
+        };
+      }
+
+      const shape = new URLSearchParams(location.search).get("shape") ?? "map";
+      const matrix = buildMatrix(shape);
+      window.__spikeRead = { shape, ...measure(matrix) };
+      window.__spikeReady = true;
+    </script>
+  </body>
+</html>
