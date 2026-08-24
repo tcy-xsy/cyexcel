@@ -9,7 +9,7 @@
       import { MapCellMatrix } from "/tests/spike/adr-0004/MapCellMatrix.ts";
       import { ObjectCellMatrix } from "/tests/spike/adr-0004/ObjectCellMatrix.ts";
       import { fillBenchmarkMatrix } from "/tests/spike/adr-0004/buildMatrix.ts";
-      import { buildBenchmarkRows } from "/tests/performance/support/dataset.ts";
+      import { buildBenchmarkRows, buildBenchmarkRow } from "/tests/performance/support/dataset.ts";
 
       const ROW_COUNT = 100_000;
       const COLUMN_COUNT = 50;
@@ -25,16 +25,16 @@
       }
 
       function buildRowsFromJSON(rowCount, columnCount) {
-        // Build rows via JSON.parse to produce fast-mode objects like real backend data
+        // Build rows carrying the SAME buildCellValue distribution as every
+        // other shape (buildBenchmarkRow), then round-trip each row through
+        // JSON.stringify/JSON.parse so the resulting object is fast-mode
+        // like real backend JSON, instead of fabricating unique per-cell
+        // strings that no other shape uses.
         const rows = [];
 
-        // Build one row at a time via JSON.parse for fast-mode properties
         for (let row = 0; row < rowCount; row++) {
-          const pairs = [];
-          for (let col = 0; col < columnCount; col++) {
-            pairs.push(`"c${col}":"${row},${col}"`);
-          }
-          const obj = JSON.parse(`{${pairs.join(',')}}`);
+          const rawRow = buildBenchmarkRow(row, columnCount);
+          const obj = JSON.parse(JSON.stringify(rawRow));
           rows.push(obj);
         }
 
