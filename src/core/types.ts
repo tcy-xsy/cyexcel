@@ -66,6 +66,23 @@ export type DataMutation =
   | { readonly type: "set-cell"; readonly row: number; readonly column: number; readonly value: unknown }
   | { readonly type: "set-range"; readonly range: CellRange; readonly values: readonly (readonly unknown[])[] }
   | { readonly type: "restore-cells"; readonly cells: readonly CellDescriptorSnapshot[] }
+  /**
+   * ADR 0004 spike: the record-native counterpart of `restore-cells`. A data
+   * source that owns its cells restores them by putting the whole record
+   * back, with no need to reproduce a property descriptor on somebody else's
+   * object. `record` is `unknown` rather than a concrete cell-record type
+   * because this module must not depend on a data source's internal shape —
+   * the implementation narrows it.
+   */
+  | {
+      readonly type: "restore-records";
+      readonly cells: readonly {
+        readonly row: number;
+        readonly column: number;
+        /** `undefined` means the cell was unoccupied: the inverse deletes it rather than writing `undefined`. */
+        readonly record: unknown;
+      }[];
+    }
   | { readonly type: "insert-rows"; readonly start: number; readonly rows: readonly (readonly unknown[])[] }
   | { readonly type: "insert-row-objects"; readonly start: number; readonly rows: readonly RowData[] }
   | { readonly type: "delete-rows"; readonly start: number; readonly count: number }
