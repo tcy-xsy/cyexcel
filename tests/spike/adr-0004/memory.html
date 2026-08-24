@@ -25,7 +25,20 @@
       }
 
       async function run() {
+        // Check gc() availability before measuring
+        const gcAvailable = typeof gc === "function";
+
         await nextFrame();
+
+        // Force GC before baseline measurement
+        if (gcAvailable) {
+          gc();
+          gc();
+          gc();
+          gc();
+          gc();
+        }
+
         const before = readHeap();
 
         let held;
@@ -44,6 +57,16 @@
         }
 
         await nextFrame();
+
+        // Force GC before after-measurement
+        if (gcAvailable) {
+          gc();
+          gc();
+          gc();
+          gc();
+          gc();
+        }
+
         const after = readHeap();
 
         window.__spikeMemory = {
@@ -52,7 +75,8 @@
           beforeBytes: before,
           afterBytes: after,
           deltaBytes: before !== null && after !== null ? after - before : null,
-          bytesPerCell: before !== null && after !== null ? (after - before) / occupied : null
+          bytesPerCell: before !== null && after !== null ? (after - before) / occupied : null,
+          gcAvailable
         };
         // 保持引用，防止读数前被回收
         window.__spikeHeld = held;

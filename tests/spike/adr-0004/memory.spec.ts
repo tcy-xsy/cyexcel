@@ -14,6 +14,7 @@ interface MemoryResult {
   readonly afterBytes: number | null;
   readonly deltaBytes: number | null;
   readonly bytesPerCell: number | null;
+  readonly gcAvailable: boolean;
 }
 
 interface FixtureWindow {
@@ -23,25 +24,9 @@ interface FixtureWindow {
 }
 
 async function measure(page: Page, shape: string): Promise<MemoryResult> {
-  // Verify gc() is available
-  const hasGc = await page.evaluate(() => typeof (window as unknown as FixtureWindow).gc === "function");
-  if (!hasGc) {
-    throw new Error("gc() unavailable — --js-flags=--expose-gc not working");
-  }
-
   await page.goto(`/tests/spike/adr-0004/memory.html?shape=${shape}`);
   await page.waitForFunction(() => (window as unknown as FixtureWindow).__spikeReady === true, undefined, {
     timeout: 180_000
-  });
-
-  // Force GC before reading to exclude transient allocation churn
-  await page.evaluate(() => {
-    const gc = (window as unknown as FixtureWindow).gc;
-    if (gc) {
-      gc();
-      gc();
-      gc();
-    }
   });
 
   const result = await page.evaluate(() => (window as unknown as FixtureWindow).__spikeMemory);
@@ -61,6 +46,9 @@ for (const shape of ["map", "object", "rows"] as const) {
     if (result.deltaBytes === null) {
       throw new Error("performance.memory unavailable — run this spec under --project=chrome");
     }
+    if (!result.gcAvailable) {
+      throw new Error("gc() unavailable — run with --js-flags=--expose-gc");
+    }
   });
 
   test(`ADR 0004 spike — heap for 100k x 50 (${shape}) — run 2`, async ({ page }) => {
@@ -70,6 +58,9 @@ for (const shape of ["map", "object", "rows"] as const) {
     if (result.deltaBytes === null) {
       throw new Error("performance.memory unavailable — run this spec under --project=chrome");
     }
+    if (!result.gcAvailable) {
+      throw new Error("gc() unavailable — run with --js-flags=--expose-gc");
+    }
   });
 
   test(`ADR 0004 spike — heap for 100k x 50 (${shape}) — run 3`, async ({ page }) => {
@@ -78,6 +69,9 @@ for (const shape of ["map", "object", "rows"] as const) {
     console.log(`[spike:memory] ${JSON.stringify(result)}`);
     if (result.deltaBytes === null) {
       throw new Error("performance.memory unavailable — run this spec under --project=chrome");
+    }
+    if (!result.gcAvailable) {
+      throw new Error("gc() unavailable — run with --js-flags=--expose-gc");
     }
   });
 }

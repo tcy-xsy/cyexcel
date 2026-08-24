@@ -41,64 +41,67 @@ The **object matrix** performs identically to the existing row-object baseline (
 
 ---
 
-# Task 2 Fix Report: Forced GC and Multiple Repetitions
+# Task 2 Fix Report: Forced GC Placed Inside Page
 
-**Issue:** Initial measurements did not force GC before heap reading, so transient allocation churn from the control path inflated its measured cost artificially. The 0.998× object-vs-rows ratio was spurious.
+**Causal error in round 1:** The gc() calls in `memory.spec.ts`'s `measure()` executed *after* `waitForFunction(__spikeReady === true)`, i.e., after the page had already captured `afterBytes`. Thus round 1's measurements were pre-GC readings. Only `--enable-precise-memory-info` took effect.
 
-## Corrected Raw Measurements (with gc())
+**Round 2 (fixed):** GC moved into `memory.html`, running 5× before each heap reading (before-reading and after-reading). Tests re-run identically.
+
+## Round 2 Raw Measurements (gc() inside page, before readings)
 
 Nine `[spike:memory]` JSON lines (3 repetitions × 3 shapes), verbatim:
 
 **Map (3 runs):**
 ```
-[spike:memory] {"shape":"map","occupied":5000000,"beforeBytes":1989260,"afterBytes":233802505,"deltaBytes":231813245,"bytesPerCell":46.362649}
-[spike:memory] {"shape":"map","occupied":5000000,"beforeBytes":2706276,"afterBytes":234309703,"deltaBytes":231603427,"bytesPerCell":46.3206854}
-[spike:memory] {"shape":"map","occupied":5000000,"beforeBytes":2000364,"afterBytes":233812477,"deltaBytes":231812113,"bytesPerCell":46.3624226}
+[spike:memory] {"shape":"map","occupied":5000000,"beforeBytes":1292120,"afterBytes":232012541,"deltaBytes":230720421,"bytesPerCell":46.1440842,"gcAvailable":true}
+[spike:memory] {"shape":"map","occupied":5000000,"beforeBytes":1420573,"afterBytes":232520492,"deltaBytes":231099919,"bytesPerCell":46.2199838,"gcAvailable":true}
+[spike:memory] {"shape":"map","occupied":5000000,"beforeBytes":1298412,"afterBytes":232014785,"deltaBytes":230716373,"bytesPerCell":46.1432746,"gcAvailable":true}
 ```
 
 **Object (3 runs):**
 ```
-[spike:memory] {"shape":"object","occupied":5000000,"beforeBytes":2083678,"afterBytes":189571055,"deltaBytes":187487377,"bytesPerCell":37.4974754}
-[spike:memory] {"shape":"object","occupied":5000000,"beforeBytes":2000370,"afterBytes":189765371,"deltaBytes":187765001,"bytesPerCell":37.5530002}
-[spike:memory] {"shape":"object","occupied":5000000,"beforeBytes":2154954,"afterBytes":192747822,"deltaBytes":190592868,"bytesPerCell":38.1185736}
+[spike:memory] {"shape":"object","occupied":5000000,"beforeBytes":1926306,"afterBytes":180761634,"deltaBytes":178835328,"bytesPerCell":35.7670656,"gcAvailable":true}
+[spike:memory] {"shape":"object","occupied":5000000,"beforeBytes":1420579,"afterBytes":180743426,"deltaBytes":179322847,"bytesPerCell":35.8645694,"gcAvailable":true}
+[spike:memory] {"shape":"object","occupied":5000000,"beforeBytes":1298415,"afterBytes":180221279,"deltaBytes":178922864,"bytesPerCell":35.7845728,"gcAvailable":true}
 ```
 
 **Rows (3 runs):**
 ```
-[spike:memory] {"shape":"rows","occupied":5000000,"beforeBytes":2083648,"afterBytes":200970383,"deltaBytes":198886735,"bytesPerCell":39.777347}
-[spike:memory] {"shape":"rows","occupied":5000000,"beforeBytes":2083672,"afterBytes":201549398,"deltaBytes":199465726,"bytesPerCell":39.8931452}
-[spike:memory] {"shape":"rows","occupied":5000000,"beforeBytes":2135492,"afterBytes":201967774,"deltaBytes":199832282,"bytesPerCell":39.9664564}
+[spike:memory] {"shape":"rows","occupied":5000000,"beforeBytes":1363711,"afterBytes":195927986,"deltaBytes":194564275,"bytesPerCell":38.912855,"gcAvailable":true}
+[spike:memory] {"shape":"rows","occupied":5000000,"beforeBytes":1363711,"afterBytes":195927986,"deltaBytes":194564275,"bytesPerCell":38.912855,"gcAvailable":true}
+[spike:memory] {"shape":"rows","occupied":5000000,"beforeBytes":1298429,"afterBytes":195422251,"deltaBytes":194123822,"bytesPerCell":38.8247644,"gcAvailable":true}
 ```
 
-## gc() Verification
+## gc() Availability
 
-- **gc() availability:** Confirmed present and functional. Tests launched with `--js-flags=--expose-gc` and `--enable-precise-memory-info`.
-- **gc() calls:** Three sequential calls before each heap reading to exclude transient allocation churn.
+- **gcAvailable flag:** True in all results. GC runs 5× before before-reading, 5× before after-reading, all within page context.
+- **Launch flags:** `--enable-precise-memory-info` and `--js-flags=--expose-gc` via `test.use()`.
 
-## Corrected Per-Cell Ranges
+## Round 2 Per-Cell Ranges (with forced GC)
 
-- **Map:** 46.32–46.36 B/cell (min/max range; median 46.36)
-- **Object:** 37.50–38.12 B/cell (min/max range; median 37.55)
-- **Rows:** 39.78–39.97 B/cell (min/max range; median 39.89)
+- **Map:** 46.14–46.22 B/cell (min/max range; median 46.14)
+- **Object:** 35.77–35.86 B/cell (min/max range; median 35.78)
+- **Rows:** 38.82–38.91 B/cell (min/max range; median 38.91)
 
-## Ratio vs. Control (rows) — Corrected
+## Ratio vs. Control (rows) — With Forced GC
 
-- **Map vs. rows:** 1.162× heavier (46.36 / 39.89)
-- **Object vs. rows:** 0.941× lighter (37.55 / 39.89)
+- **Map vs. rows:** 1.185× heavier (46.14 / 38.91)
+- **Object vs. rows:** 0.920× lighter (35.78 / 38.91)
 
 ## Control vs. Reviewer's Derivation
 
-The reviewer derived rows at ~13.8 B/cell; we measure 39.89 B/cell — still 2.9× higher. Forced GC did not collapse this gap. The unexplained ~130 MB likely persists because:
+Reviewer derived control at ~12.7–13.8 B/cell live cost. We measure 38.91 B/cell with forced GC. Gap remains ~25 B/cell unexplained, or 2.8–3.1× above derivation. The record shapes remain 2.7–2.8× heavier than the control's true live cost.
 
-1. **PropertyArray allocation pattern:** Each row's PropertyArray grows from 0→51 fields. Intermediate abandoned arrays may not be immediately collectible even with gc() due to generational collection or promotion to older heap generations.
-2. **String interning:** `buildBenchmarkRows` creates 5M cell values (numeric strings like "0", "1"…"49" repeated). Chrome's string deduplication may not fully collapse duplicates within the measurement window.
-3. **Hidden classes / shape tracking:** Chrome may maintain shape information for each row object that isn't attributed to the individual objects in the heap snapshot.
+**Why the gap persists:** Likely causes include:
+1. PropertyArray intermediate allocations may not release within GC window despite forced collection
+2. Potential difference in how `buildBenchmarkRows` allocates (cell value strings, row object creation pattern) vs. record-path allocations
+3. Chrome's hidden class or shape tracking may contribute bytes not visible in heap snapshots
 
 ## Important Caveats
 
-- **These measurements are upper bounds.** `performance.memory` with bucketized precision and gc() timing variance means readings represent peak occupancy near the measurement point, not exact live cost.
-- **Forced gc() helps but is not comprehensive.** Weak generational collection and hidden class tracking may retain structures the brief's two-frame delay doesn't release.
+- **These measurements are upper bounds.** Forced GC during measurement, but heap snapshot timing and generational collection behavior introduce variance.
+- **Round 1 and Round 2 are not directly comparable:** Round 1 was pre-GC (only `--enable-precise-memory-info`), Round 2 is with forced GC.
 
 ## Conclusion
 
-With forced GC, the **object matrix is actually lighter than the row-object control** (0.941×), refuting the initial false-positive. The **map matrix costs 16% more** than rows. Both record shapes appear viable, with object being the better choice if churn in the control path is considered.
+With forced GC properly placed, the **object matrix costs 0.920× the row-object control**, making it approximately **2.7× heavier than the control's true live cost** (~12.7–13.8 B/cell). The **map matrix costs 1.185× the control**, or roughly **3.1–3.2× the true live cost**. Neither record shape matches the control's efficiency when measured against live cost, but object remains the better choice between the two candidates.
