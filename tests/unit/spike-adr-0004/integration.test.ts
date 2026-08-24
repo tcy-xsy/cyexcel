@@ -239,11 +239,15 @@ describe("undo and redo through the real CommandManager and HistoryManager", () 
   });
 
   it.fails(
-    // FINDING (Q2). delete-rows' inverse must be a *single* DataMutation, and
-    // the only row-inserting variants in the union carry bare values
-    // (`insert-rows`, src/core/types.ts:86) or caller row objects
-    // (`insert-row-objects`, src/core/types.ts:87). Neither can carry a
-    // CellRecord, so `t` and `s` are dropped on the way through history.
+    // FINDING (Q2), and it is a DESIGN STANCE, not a type-level blocker.
+    // delete-rows' inverse must be a *single* DataMutation, and the only
+    // row-inserting variants are shaped for values (`insert-rows`,
+    // src/core/types.ts:86) or caller row objects (`insert-row-objects`,
+    // src/core/types.ts:87). A CellRecord would in fact fit through
+    // `insert-rows` - its payload is `unknown[][]` - but that gives one
+    // variant two meanings ("these are values" forward, "these are records"
+    // inverse) with nothing in the type to say which. This source refuses
+    // that, so `t` and `s` are dropped on the way through history.
     // Rollback inside the transaction keeps them (closures hold the records);
     // only the replayed-through-history path loses them.
     // To fix, src/core/types.ts:86-87 must gain a record-carrying variant
