@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ADR 0004 Spike — sort</title>
+  </head>
+  <body>
+    <button id="sort-trigger" type="button">sort</button>
+    <script type="module">
+      import { MapCellMatrix } from "/tests/spike/adr-0004/MapCellMatrix.ts";
+      import { ObjectCellMatrix } from "/tests/spike/adr-0004/ObjectCellMatrix.ts";
+      import { fillBenchmarkMatrix } from "/tests/spike/adr-0004/buildMatrix.ts";
+
+      const ROW_COUNT = 100_000;
+      const COLUMN_COUNT = 50;
+      // Column 1 is the plain-number column (buildMatrix's column % 5 === 1
+      // branch) — sorted here the same way tests/performance/sort.html picks
+      // its SORT_COLUMN, so this measures ordering/relocation cost, not a
+      // custom comparator's own overhead.
+      const SORT_COLUMN = 1;
+
+      const shape = new URLSearchParams(location.search).get("shape") ?? "map";
+      const matrix = shape === "object"
+        ? new ObjectCellMatrix(ROW_COUNT, COLUMN_COUNT)
+        : new MapCellMatrix(ROW_COUNT, COLUMN_COUNT);
+      // Matrix construction happens before the observer is armed and well
+      // before the click — it must never count toward either timed region
+      // or toward longTaskCount.
+      fillBenchmarkMatrix(matrix, ROW_COUNT, COLUMN_COUNT);
+
+      let longTaskCount = 0;
+      new PerformanceObserver((list) => {
+        longTaskCount += list.getEntries().length;
+      }).observe({ entryTypes: ["longtask"] });
+
+      function nextFrame() {
+        return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }
+
+      document.getElementById("sort-trigger").addEventListener("click", () => {
+        // Deliberately synchronous: computing the order and applying it via
+        // reorderRows both run inline in this one click-dispatched task, the
+        // same way a real header-click sort would put its work on the main
+        // thread in one task. That's what makes the longtask measurement
+        // below meaningful (see tests/performance/sort.spec.ts's top-of-file
+        // comment on why this must be a real page.click(), not
+        // page.evaluate()).
+        const orderStart = performance.now();
+        const indices = Array.from({ length: ROW_COUNT }, (_unused, row) => row);
+        indices.sort((left, right) => {
+          const a = matrix.get(left, SORT_COLUMN)?.v;
+          const b = matrix.get(right, SORT_COLUMN)?.v;
+          return a === b ? 0 : (a ?? 0) < (b ?? 0) ? -1 : 1;
+        });
+        const orderMs = performance.now() - orderStart;
+
+        const applyStart = performance.now();
+        matrix.reorderRows(Int32Array.from(indices));
+        const applyMs = performance.now() - applyStart;
+
+        // A PerformanceObserver's callback for "longtask" is delivered
+        // asynchronously once the browser yields past the observed task —
+        // not before this synchronous handler returns. Reading
+        // longTaskCount right here, in the same task that IS the candidate
+        // long task, would read it before that task has even finished
+        // (from the event loop's perspective) and would under-report it
+        // (frequently as 0) regardless of whether a long task actually
+        // occurred. tests/spike/adr-0004/memory.html's nextFrame() double
+        // requestAnimationFrame is the same idiom used here to let the
+        // event loop turn at least twice before the count is read, giving
+        // the observer's callback a chance to fire.
+        nextFrame().then(() => nextFrame()).then(() => {
+          window.__spikeSort = {
+            shape,
+            orderMs,
+            applyMs,
+            totalMs: orderMs + applyMs,
+            longTaskCount,
+            firstValue: matrix.get(0, SORT_COLUMN)?.v,
+            lastValue: matrix.get(ROW_COUNT - 1, SORT_COLUMN)?.v
+          };
+          window.__spikeSortDone = true;
+        });
+      });
+
+      window.__spikeReady = true;
+    </script>
+  </body>
+</html>
