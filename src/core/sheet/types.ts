@@ -1,6 +1,21 @@
 import type { CellRange } from "../types";
 
 /**
+ * # 别名规则（模块级，一条规则推出四条形态）
+ *
+ * 存储层一律**浅共享**：容器拷一层、值按引用共享。深拷贝任意插件 JSON 会把成本和
+ * 失败模式（函数、循环引用、宿主对象）转移到核心，所以不做。由此得到四条具体形态：
+ *
+ * 1. `CellRecord` 的值不可就地改；
+ * 2. `ResourceEntry.data` 的嵌套值不可就地改（`"none"` 除外，它**整体**是别名）；
+ * 3. `IndexedTable.read()` 交回的是**活容器**，核心会就地改它；
+ * 4. `WorkbookModel.resource()` 交回的是**拷贝**，写进去会丢，要写用 `resourceTable()`。
+ *
+ * 四条各自的理由写在各自的声明上，这里只保证它们读起来是同一条规则的四个面，
+ * 而不是四条互相独立、需要各背一遍的约定。
+ */
+
+/**
  * 一个单元格。`v` 是唯一必需字段（spec §11 不变量 2）。
  * 未占用的格子在 `cellData` 中不存在，不是存一条空记录（不变量 1）。
  *
@@ -32,6 +47,7 @@ export interface CellRecord {
 /** 行高来源。`default` 表示该行不出现在 `rowData` 里，故不是本类型的成员。 */
 export type RowHeightSource = "manual" | "auto";
 
+/** 一行的元数据。存在 `rowData` 表里，适用本文件顶部的别名规则（形态 3）。 */
 export interface RowMeta {
   /** 行高，逻辑像素 */
   readonly h?: number;
@@ -41,6 +57,7 @@ export interface RowMeta {
   readonly hd?: boolean;
 }
 
+/** 一列的元数据。存在 `columnData` 表里，适用本文件顶部的别名规则（形态 3）。 */
 export interface ColumnMeta {
   readonly w?: number;
   readonly hd?: boolean;
@@ -61,13 +78,22 @@ export interface ResourceEntry {
    */
   readonly indexedBy: "row" | "column" | "none";
   /**
-   * 资源数据。与 `CellRecord` 一样采用浅层共享的不可变契约：快照与活表之间只拷一层，
-   * 因此嵌套值为共享引用——由调用方原始条目、活表与转出的条目同时持有。嵌套值必须被
-   * 当作不可变对象，就地修改会通过这份共享引用污染原始条目和活表，且绕过 mutation，
-   * 违反 spec §11 不变量 9（`resources` 只承担 save/load 往返，可逆性一律走 mutation）。
-   * 不做深拷贝是有意的：深拷任意插件 JSON 会把成本和失败模式（函数、循环引用、宿主
-   * 对象）转移到核心；而且 `CellRecord` 已经是同一条契约，另立一套会让这个模型从
-   * 一条规则变成两条。
+   * 资源数据。别名的强度**按 `indexedBy` 分成两种**，不是一种——见本文件顶部的
+   * 别名规则形态 2。
+   *
+   * **`"row"` / `"column"`（拷一层）：** 与 `CellRecord` 一样的浅层共享契约。
+   * `resourceToTable` 把 `data` 展开进一张 `IndexedTable`，`tableToResource` 再展开
+   * 出来，所以顶层容器是各自独立的，**嵌套值是共享引用**——由调用方原始条目、活表
+   * 与转出的条目同时持有。嵌套值必须被当作不可变对象，就地修改会通过这份共享引用
+   * 污染原始条目和活表，且绕过 mutation，违反 spec §11 不变量 9（`resources` 只承担
+   * save/load 往返，可逆性一律走 mutation）。
+   *
+   * **`"none"`（整体别名，一层都没拷）：** `addResource` 存进去的 `data` 就是调用方
+   * 交进来的那个引用本身，`resource()` 交回存着它的那条条目，`toSnapshot()` 又把同
+   * 一条条目放进 `resources` 数组。三处的 `data` 自始至终是同一个对象，因此改动调用方
+   * 手里那份会**直接**改到快照里去。这里不加拷贝是有意的：
+   * `"none"` 的 `data` 可以是原始值、数组、任何东西，`{ ...data }` 对它不是"拷一层"
+   * 而是把它变成另一个形状。核心不碰不透明 blob（spec §7.2），也包括不替它拷贝。
    */
   readonly data: unknown;
 }

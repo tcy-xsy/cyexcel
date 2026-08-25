@@ -19,6 +19,16 @@ import {
 } from "./columnShift";
 import { validateAxisChange } from "../layout/structuralChange";
 
+/**
+ * extent（最大占用下标加一）换算成 `resolveCoordinateSpace` 要的 `maxOccupied`。
+ *
+ * 两者差一个"空的怎么表示"：extent 用 0，`maxOccupied` 用 `undefined`——后者必须
+ * 是 `undefined` 而不是 -1，否则空表的坐标空间会算成 `blank` 之外再少一格。
+ */
+function maxOccupiedFrom(extent: number): number | undefined {
+  return extent === 0 ? undefined : extent - 1;
+}
+
 export interface SheetModelOptions {
   readonly id?: string;
   readonly name?: string;
@@ -135,21 +145,51 @@ export class SheetModel {
     this.#matrix.delete(row, column);
   }
 
-  /** 坐标空间上界（spec §3.3）。 */
+  /**
+   * 坐标空间上界（spec §3.3：`rowCount = maxOccupiedRow + 1 + blankRows`）。
+   *
+   * 这里的 `maxOccupiedRow` 取的是**格子与每一张登记行表的并集**，与结构操作
+   * 用的是同一个数（`#rowExtentIncludingTables()`）。spec §3.3 没有直接回答
+   * "只有元数据的行算不算被占用"，但这个类不能对它给出两个答案：`reorderRows`
+   * 走的是并集那个答案，`rowCount()` 曾经只问矩阵。后果是实测出来的——
+   * `createEmpty({ blankRows: 0 })` 加一张在第 3 行有内容的行表，`rowCount()`
+   * 返回 0，于是 `validateAxisChange` 以轴长 0 拒掉每一个结构操作，整张表锁死。
+   * 默认的 1000 行空白平时把它盖住了，语义仍然是坏的。
+   */
   rowCount(): number {
-    return resolveCoordinateSpace(this.#matrix.maxOccupiedRow(), this.#blankRows);
+    return resolveCoordinateSpace(
+      maxOccupiedFrom(this.#rowExtentIncludingTables()),
+      this.#blankRows
+    );
   }
 
   columnCount(): number {
-    return resolveCoordinateSpace(this.#matrix.maxOccupiedColumn(), this.#blankColumns);
+    return resolveCoordinateSpace(
+      maxOccupiedFrom(this.#columnExtentIncludingTables()),
+      this.#blankColumns
+    );
   }
 
-  /** 最大占用行号加一——与 `rowCount()` 是两个不同的数（spec §3.3 后果 ④）。 */
+  /**
+   * 最大占用**行号**加一，**只算格子**——与 `rowCount()` 是两个不同的数
+   * （spec §3.3 后果 ④）。
+   *
+   * 它刻意不含侧表：名字说的就是"有多少行装着数据"，而"坐标空间该多大"是另一个
+   * 问题，由 `rowCount()` 回答。要含侧表的那个数见 `#rowExtentIncludingTables()`。
+   */
   occupiedRowCount(): number {
     const max = this.#matrix.maxOccupiedRow();
     return max === undefined ? 0 : max + 1;
   }
 
+  /**
+   * 序列化这一张 sheet。
+   *
+   * **只输出 `rowData` / `columnData`，经 `registerTable()` 登记的其它侧表不在这里
+   * 出现，这是有意的**：那些表的持久化形态是 workbook 级的 `resources` 条目
+   * （spec §3 把 `resources` 与 `sheets` 并列放在顶层），由 `WorkbookModel.toSnapshot()`
+   * 收拢。在这里顺手输出它们会让同一条数据在快照里出现两次。
+   */
   toSnapshot(): SheetSnapshot {
     return serializeSheet({
       id: this.#id,
@@ -183,17 +223,35 @@ export class SheetModel {
   /**
    * 行的"占用范围"是**格子与所有按行索引的侧表**的并集。
    *
-   * 这个 extent 同时驱动矩阵的搬运与每一张行表的重键，而侧表可以存在于没有任何
-   * 格子的行上（给空行设行高、给空行挂业务主键，都是正常状态）。只按格子算的话，
-   * 超出格子范围的那些条目会被每一次结构操作静默丢弃——阶段二里这个洞出现过四次。
+   * 名字里的 `IncludingTables` 是与公开的 `occupiedRowCount()` 划清界限用的：
+   * 那个只算格子，这个把登记的侧表也算进去，两者不可互换。
    *
-   * 现在它对**任意多张**登记在册的行表成立，不再是硬编码的两张：新表登记即入并集。
-   * ADR §9 不变量 4、spec §7.2。
+   * 这个 extent 同时驱动矩阵的搬运、每一张行表的重键与 `rowCount()` 的坐标空间，
+   * 而侧表可以存在于没有任何格子的行上（给空行设行高、给空行挂业务主键，都是正常
+   * 状态）。只按格子算的话，超出格子范围的那些条目会被每一次结构操作静默丢弃——
+   * 阶段二里这个洞出现过四次。
+   *
+   * 它对**任意多张**登记在册的行表成立，不再是硬编码的两张：登记了就自动入并集；
+   * 但**没有任何东西强制一张新侧表走登记处**——那一步仍然靠人。阶段四会用一个
+   * 只能产出已登记表的工厂收掉这个口子。ADR §9 不变量 4、spec §7.2。
    */
-  #occupiedRowExtent(): number {
+  #rowExtentIncludingTables(): number {
     const maxCellRow = this.#matrix.maxOccupiedRow();
     const cellExtent = maxCellRow === undefined ? 0 : maxCellRow + 1;
     return Math.max(cellExtent, this.#tables.rowExtent());
+  }
+
+  /**
+   * 列轴的同一个并集，只服务 `columnCount()`。
+   *
+   * 列的结构操作不需要它：`#remapColumns` 是逐个占用列过的纯算术、不以 extent
+   * 为界（见 `insertColumns` 上的注释）。但坐标空间需要——一张只有列元数据的表，
+   * 轴长必须盖得住那些列，否则 `validateAxisChange` 会挡掉合法操作。
+   */
+  #columnExtentIncludingTables(): number {
+    const maxCellColumn = this.#matrix.maxOccupiedColumn();
+    const cellExtent = maxCellColumn === undefined ? 0 : maxCellColumn + 1;
+    return Math.max(cellExtent, this.#tables.columnExtent());
   }
 
   #applyRowPlan(plan: Int32Array, sourceExtent: number): void {
@@ -222,14 +280,14 @@ export class SheetModel {
   insertRows(start: number, count: number): void {
     validateAxisChange({ axis: "row", operation: "insert", start, count }, this.rowCount());
     this.#assertNoMerges("insertRows");
-    const extent = this.#occupiedRowExtent();
+    const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildInsertRowsPlan(extent, start, count), extent);
   }
 
   deleteRows(start: number, count: number): void {
     validateAxisChange({ axis: "row", operation: "delete", start, count }, this.rowCount());
     this.#assertNoMerges("deleteRows");
-    const extent = this.#occupiedRowExtent();
+    const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildDeleteRowsPlan(extent, start, count), extent);
   }
 
@@ -239,13 +297,13 @@ export class SheetModel {
       this.rowCount()
     );
     this.#assertNoMerges("moveRows");
-    const extent = this.#occupiedRowExtent();
+    const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildMoveRowsPlan(extent, start, count, target), extent);
   }
 
   reorderRows(order: Int32Array): void {
     this.#assertNoMerges("reorderRows");
-    const extent = this.#occupiedRowExtent();
+    const extent = this.#rowExtentIncludingTables();
     if (extent > order.length) {
       throw new CyExcelError(
         CyExcelErrorCode.InvalidRange,
@@ -329,6 +387,11 @@ export class SheetModel {
    * 声明 `indexedBy` 的资源，重键由**核心**提供，不外包给插件作者）。
    *
    * 返回传入的那张表，调用方拿它读写；搬运不需要调用方参与。
+   *
+   * **它只管会话内的重键，不管持久化。** 上面那句 §7.2 读起来像插件入口，但经这里
+   * 登记的表**永远不进任何快照**——`toSnapshot()` 只序列化 `rowData` / `columnData`。
+   * 要一张表既被重键又被存下来，走 `WorkbookModel.addResource`：那条路先登记进这里，
+   * 再由 workbook 在 `resources` 里输出它。
    */
   registerTable<T>(table: IndexedTable<T>): IndexedTable<T> {
     return this.#tables.register(table);

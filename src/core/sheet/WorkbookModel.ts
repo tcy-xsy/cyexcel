@@ -105,6 +105,17 @@ export class WorkbookModel {
     this.#resourceOrder.push(entry.name);
   }
 
+  /**
+   * 取一条资源的**读视图**。
+   *
+   * 按下标索引的那种，交回的 `data` 是 `{ ...table.read() }`——**一份拷贝**，
+   * 每次调用都是新的。这与 `IndexedTable.read()`（那个交回的是活容器）说的**不是**
+   * 同一件事，容易读混：往这份拷贝里写等于写进一个随即被丢弃的对象，改动不会进快照、
+   * 也不会跟着结构操作走。要写请用 `resourceTable()`。见 `types.ts` 顶部的别名规则
+   * 形态 4。
+   *
+   * `indexedBy: "none"` 的那种交回的是存着的那条条目本身（形态 2 的第二种情况）。
+   */
   resource(name: string): ResourceEntry | undefined {
     const table = this.#indexedResources.get(name);
     if (table) {

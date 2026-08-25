@@ -96,6 +96,16 @@ describe("SheetModel — 侧表登记处", () => {
     expect(() => model.registerTable(new IndexedTable<string>("rowData", "row"))).toThrow(/rowData/);
   });
 
+  it("坐标空间把登记表算进去——否则一张只有资源的表会被自己的参数校验锁死", () => {
+    const model = SheetModel.createEmpty({ blankRows: 0, blankColumns: 0 });
+    model.registerTable(new IndexedTable<string>("k", "row", { 3: "x" }));
+    model.registerTable(new IndexedTable<string>("c", "column", { 2: "y" }));
+    expect(model.rowCount()).toBe(4);
+    expect(model.columnCount()).toBe(3);
+    // 锁死的证据：这一步在修复前会被 validateAxisChange 以轴长 0 拒绝
+    expect(() => model.insertRows(0, 1)).not.toThrow();
+  });
+
   it("registerTable 收不到一张键非法的表——校验在构造时就发生", () => {
     const model = SheetModel.createEmpty();
     expect(() =>

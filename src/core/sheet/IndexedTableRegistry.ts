@@ -56,6 +56,24 @@ export class IndexedTableRegistry {
     return extent;
   }
 
+  /**
+   * 所有**列**表的占用范围并集，与 `rowExtent()` 对称。
+   *
+   * 列轴的结构操作不以 extent 为界（`#remapColumns` 是逐个占用列过的纯算术），
+   * 所以这个数不参与搬运；它是 `SheetModel.columnCount()` 的坐标空间输入——
+   * 一张只有列元数据、没有格子的表，坐标空间必须把那些列算进去，否则
+   * `validateAxisChange` 会用一个盖不住实际内容的轴长去挡合法操作。
+   */
+  columnExtent(): number {
+    let extent = 0;
+    for (const table of this.#tables.values()) {
+      if (table.indexedBy === "column" && table.extent() > extent) {
+        extent = table.extent();
+      }
+    }
+    return extent;
+  }
+
   applyRowPlan(plan: Int32Array): void {
     for (const table of this.#tables.values()) {
       if (table.indexedBy === "row") {
