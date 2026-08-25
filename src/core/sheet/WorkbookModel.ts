@@ -89,6 +89,16 @@ export class WorkbookModel {
         `a resource named "${entry.name}" already exists`
       );
     }
+    // 撞上核心表名（rowData / columnData）对**两种**资源都要拒绝。只在登记那条路上
+    // 拒绝的话，{ name: "rowData", indexedBy: "none" } 今天会被接受，而插件哪天把
+    // indexedBy 从 "none" 改成 "row"，一份原本能加载的快照就突然加载失败——
+    // 名字的命名空间是共用的（spec §7.2 末段），归属不该随 indexedBy 变。
+    if (this.#sheet.tableNames().includes(entry.name)) {
+      throw new CyExcelError(
+        CyExcelErrorCode.InvalidOptions,
+        `a resource cannot be named "${entry.name}"; that name is taken by an index-addressed table on the sheet`
+      );
+    }
     if (entry.indexedBy === "none") {
       this.#opaqueResources.set(entry.name, {
         name: entry.name,
@@ -98,8 +108,8 @@ export class WorkbookModel {
       this.#resourceOrder.push(entry.name);
       return;
     }
-    // 重名（含撞上核心的 rowData / columnData）由登记处拒绝——registerTable 可能抛，
-    // 所以 push 必须在它之后，失败的一次不该在顺序表里留下痕迹
+    // resourceToTable / registerTable 都可能抛（键非法、登记处那一层的重名兜底），
+    // 所以 push 必须在它们之后，失败的一次不该在顺序表里留下痕迹
     const table = this.#sheet.registerTable(resourceToTable(entry));
     this.#indexedResources.set(entry.name, table);
     this.#resourceOrder.push(entry.name);

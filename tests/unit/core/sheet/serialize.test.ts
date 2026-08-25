@@ -139,6 +139,21 @@ describe("assertValidWorkbookSnapshot", () => {
     );
   });
 
+  it("rejects a sheets key that disagrees with the sheet's own id", () => {
+    // 不查这一条的后果是静默改键：sheetOrder 与 sheets 的键用外面那个 id，而
+    // WorkbookModel.toSnapshot() 输出的是 sheet 自己的 id，往返之后
+    // sheetOrder 从 ["alias"] 变成 ["renamed"]。
+    const sheet = serializeSheet(buildInput(new CellMatrix()));
+    expect(() =>
+      assertValidWorkbookSnapshot(
+        buildWorkbook({
+          sheetOrder: ["alias"],
+          sheets: { alias: { ...sheet, id: "renamed" } }
+        })
+      )
+    ).toThrow(CyExcelError);
+  });
+
   it("rejects a negative blankRows", () => {
     const sheet = serializeSheet(buildInput(new CellMatrix()));
     expect(() =>

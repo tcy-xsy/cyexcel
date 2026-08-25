@@ -149,6 +149,16 @@ export function assertValidWorkbookSnapshot(value: WorkbookSnapshot): void {
         `sheetOrder references "${id}" which is not present in sheets`
       );
     }
+    // 键与 `sheet.id` 不一致会静默改键：`sheetOrder` 与 `sheets` 的键都用外面这个
+    // id，而 `WorkbookModel.toSnapshot()` 输出的是 `sheet.toSnapshot().id`，即里面
+    // 那个。实测 { sheetOrder: ["alias"], sheets: { alias: { …, id: "renamed" } } }
+    // 往返之后 sheetOrder 变成 ["renamed"]——一份快照被加载再保存就换了 id。
+    if (sheet.id !== id) {
+      throw new CyExcelError(
+        CyExcelErrorCode.InvalidOptions,
+        `sheets["${id}"] has id "${sheet.id}"; the key and the sheet's own id must agree`
+      );
+    }
     assertValidBlankCount(sheet.blankRows, `sheets.${id}.blankRows`);
     assertValidBlankCount(sheet.blankColumns, `sheets.${id}.blankColumns`);
     assertValidSheetKeys(sheet, `sheets.${id}`);

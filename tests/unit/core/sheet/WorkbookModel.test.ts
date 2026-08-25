@@ -75,6 +75,16 @@ describe("WorkbookModel — resources 往返", () => {
     );
   });
 
+  it("indexedBy: none 也不能撞上核心表名——否则改一下 indexedBy 快照就加载不了了", () => {
+    const workbook = WorkbookModel.createEmpty();
+    expect(() => workbook.addResource({ name: "rowData", indexedBy: "none", data: 1 })).toThrow(
+      /rowData/
+    );
+    expect(() => workbook.addResource({ name: "columnData", indexedBy: "none", data: 1 })).toThrow(
+      /columnData/
+    );
+  });
+
   it("resources 数组按加入顺序往返，不按 indexedBy 分组", () => {
     const workbook = WorkbookModel.createEmpty();
     workbook.addResource({ name: "first", indexedBy: "none", data: 1 });
