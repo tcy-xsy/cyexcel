@@ -4,6 +4,9 @@ import type { CellRecord, ColumnMeta, RowMeta } from "./types";
 /** 一行的格子：列号 -> 记录。稀疏，未占用的列不出现（spec §11 不变量 1）。 */
 export type RowCells = Readonly<Record<number, CellRecord>>;
 
+/** 一列的格子：**行号** -> 记录。稀疏，未占用的行不出现。 */
+export type ColumnCells = Readonly<Record<number, CellRecord>>;
+
 /**
  * 本模型自己的变更类型。
  *
@@ -31,7 +34,7 @@ export type SheetMutation =
   | { readonly type: "reorder-rows"; readonly order: Int32Array }
   | { readonly type: "insert-columns"; readonly start: number; readonly count: number }
   | { readonly type: "delete-columns"; readonly start: number; readonly count: number }
-  | { readonly type: "restore-columns"; readonly start: number; readonly count: number; readonly cells: readonly RowCells[]; readonly meta: readonly (ColumnMeta | undefined)[] }
+  | { readonly type: "restore-columns"; readonly start: number; readonly count: number; readonly cells: readonly ColumnCells[]; readonly meta: readonly (ColumnMeta | undefined)[] }
   | { readonly type: "move-columns"; readonly start: number; readonly count: number; readonly target: number };
 
 const STRUCTURAL = new Set<SheetMutation["type"]>([

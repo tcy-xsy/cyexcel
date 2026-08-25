@@ -36,7 +36,8 @@ describe("SheetMutation — 行", () => {
       { type: "insert-rows", start: 0, rows: [] },
       { type: "delete-rows", start: 0, count: 1 },
       { type: "move-rows", start: 0, count: 1, target: 2 },
-      { type: "reorder-rows", order: Int32Array.from([0]) }
+      { type: "reorder-rows", order: Int32Array.from([0]) },
+      { type: "restore-rows", start: 0, rows: [], meta: [] }
     ];
     for (const m of rows) {
       expect(isStructuralSheetMutation(m)).toBe(true);
@@ -48,6 +49,10 @@ describe("SheetMutation — 列", () => {
   it("insert-columns 只要个数，不带 id/field（ADR §3.8.2 列不再有身份）", () => {
     const m: SheetMutation = { type: "insert-columns", start: 0, count: 2 };
     expect(m.count).toBe(2);
+    // 名字承诺的是"没有身份"，就得真的测到——多余属性检查会让这行编译失败
+    // @ts-expect-error 列不再有 id/field
+    const withIdentity: SheetMutation = { type: "insert-columns", start: 0, count: 1, id: "c1" };
+    expect(withIdentity.type).toBe("insert-columns");
   });
 
   it("delete-columns 的逆要带回被删列的格子与列元数据", () => {
@@ -65,7 +70,8 @@ describe("SheetMutation — 列", () => {
     const columns: SheetMutation[] = [
       { type: "insert-columns", start: 0, count: 1 },
       { type: "delete-columns", start: 0, count: 1 },
-      { type: "move-columns", start: 0, count: 1, target: 2 }
+      { type: "move-columns", start: 0, count: 1, target: 2 },
+      { type: "restore-columns", start: 0, count: 1, cells: [], meta: [] }
     ];
     for (const m of columns) {
       expect(isStructuralSheetMutation(m)).toBe(true);
