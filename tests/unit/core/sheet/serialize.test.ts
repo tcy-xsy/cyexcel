@@ -30,7 +30,9 @@ describe("serializeSheet", () => {
     const matrix = new CellMatrix();
     matrix.set(2, 1, { v: 42 });
     const snapshot = serializeSheet(buildInput(matrix));
-    expect(snapshot.cellData).toEqual({ 2: { 1: { v: 42 } } });
+    // toStrictEqual：稀疏性（spec §11 不变量 1）说的是"未占用的格子不出现"，
+    // 而 toEqual 把 `{ 3: undefined }` 当作与"没有键 3"相等，正好看不见它。
+    expect(snapshot.cellData).toStrictEqual({ 2: { 1: { v: 42 } } });
   });
 
   it("omits unoccupied rows entirely rather than writing empty buckets", () => {
@@ -44,9 +46,11 @@ describe("serializeSheet", () => {
     const matrix = new CellMatrix();
     matrix.set(0, 0, { v: "a" });
     const snapshot = serializeSheet(buildInput(matrix)) as unknown as Record<string, unknown>;
-    // spec §11 不变量 5：坐标空间是派生量，不得出现在快照里
-    expect(snapshot["rowCount"]).toBeUndefined();
-    expect(snapshot["columnCount"]).toBeUndefined();
+    // spec §11 不变量 5：坐标空间是派生量，不得出现在快照里。
+    // 断言"键不存在"而不是 toBeUndefined()——后者对 `rowCount: undefined`
+    // 也放行，那正是这条用例要抓的东西。
+    expect("rowCount" in snapshot).toBe(false);
+    expect("columnCount" in snapshot).toBe(false);
   });
 
   it("survives a JSON round trip unchanged", () => {
@@ -54,7 +58,9 @@ describe("serializeSheet", () => {
     matrix.set(0, 0, { v: "text" });
     matrix.set(1, 1, { v: 3.5, t: "money", s: "s7" });
     const snapshot = serializeSheet(buildInput(matrix));
-    expect(JSON.parse(JSON.stringify(snapshot))).toEqual(snapshot);
+    // JSON.stringify 恰好丢掉值为 undefined 的键，而 toEqual 也正好把那种键
+    // 当作不存在——两者叠加，这条断言对**往返唯一会改变的那件事**是瞎的。
+    expect(JSON.parse(JSON.stringify(snapshot))).toStrictEqual(snapshot);
   });
 });
 

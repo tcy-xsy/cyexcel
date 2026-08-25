@@ -51,7 +51,8 @@ describe("SheetModel", () => {
   it("setCell on an unoccupied cell creates a record with only v", () => {
     const model = SheetModel.createEmpty();
     model.setCell(0, 0, "fresh");
-    expect(model.getRecord(0, 0)).toEqual({ v: "fresh" });
+    // "only v" 要用 toStrictEqual 才测得到：toEqual 看不见 `{ v, t: undefined }`
+    expect(model.getRecord(0, 0)).toStrictEqual({ v: "fresh" });
   });
 
   it("round-trips through a snapshot", () => {
