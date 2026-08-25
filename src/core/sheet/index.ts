@@ -47,3 +47,4 @@ export {
   isCanonicalIndexKey
 } from "./indexKey";
 export { isStructuralSheetMutation, type ColumnCells, type RowCells, type SheetMutation } from "./mutation";
+export { invertSheetMutation } from "./invert";
