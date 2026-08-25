@@ -34,3 +34,4 @@ export {
 } from "./columnShift";
 export { IndexedTable, type IndexAxis } from "./IndexedTable";
 export { IndexedTableRegistry } from "./IndexedTableRegistry";
+export { assertValidResourceEntry, resourceToTable, tableToResource } from "./resources";

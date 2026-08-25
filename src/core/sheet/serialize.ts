@@ -4,6 +4,7 @@ import { assertValidBlankCount } from "./coordinateSpace";
 import { CellMatrix } from "./CellMatrix";
 import type { CellRecord, ColumnMeta, RowMeta, SheetSnapshot, WorkbookSnapshot } from "./types";
 import { SNAPSHOT_VERSION } from "./types";
+import { assertValidResourceEntry } from "./resources";
 
 export interface SerializeInput {
   readonly id: string;
@@ -164,4 +165,15 @@ export function assertValidWorkbookSnapshot(value: WorkbookSnapshot): void {
     assertValidBlankCount(sheet.blankColumns, `sheets.${id}.blankColumns`);
     assertValidSheetKeys(sheet, `sheets.${id}`);
   }
+  const seenResources = new Set<string>();
+  value.resources.forEach((entry, index) => {
+    assertValidResourceEntry(entry, `resources[${index}]`);
+    if (seenResources.has(entry.name)) {
+      throw new CyExcelError(
+        CyExcelErrorCode.InvalidOptions,
+        `resources[${index}] repeats the name "${entry.name}"; names identify resources in the snapshot`
+      );
+    }
+    seenResources.add(entry.name);
+  });
 }
