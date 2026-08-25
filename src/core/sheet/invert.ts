@@ -1,5 +1,5 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { invertRowOrder } from "../layout/rowOrder";
+import { assertValidRowOrder, invertRowOrder } from "../layout/rowOrder";
 import { validateAxisChange } from "../layout/structuralChange";
 import type { CellRange } from "../types";
 import type { ColumnCells, RowCells, SheetMutation } from "./mutation";
@@ -34,7 +34,7 @@ import type { CellRecord, ColumnMeta, RowMeta } from "./types";
  *    的数组）是这里新建的，不与模型共享。
  */
 export function invertSheetMutation(model: SheetModel, mutation: SheetMutation): SheetMutation {
-  assertAxisChangeIsValid(model, mutation);
+  assertMutationIsAppliable(model, mutation);
   switch (mutation.type) {
     case "set-cell":
       // 逆是"把这一格恢复成现在的样子"。现在是空格时 `record` 就是 `undefined`，
@@ -123,18 +123,45 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
  * 的逆，等到 commit 期间 `SheetModel.moveRows` 才抛——而那时这条垃圾逆已经进了撤销
  * 记录，且 commit 本该是不会失败的那一步。
  *
- * 复用 `../layout/structuralChange` 的 `validateAxisChange`——与 `SheetModel` 的六个
- * 结构方法是同一份校验、同一种失败方式（`RangeError`），不另写一份会分叉的。轴长按
- * 它那里的口径取 `rowCount()` / `columnCount()`（坐标空间，spec §3.3），不是占用范围。
+ * 六个轴向成员复用 `../layout/structuralChange` 的 `validateAxisChange`——与
+ * `SheetModel` 的六个结构方法是同一份校验、同一种失败方式（`RangeError`），不另写
+ * 一份会分叉的。轴长按它那里的口径取 `rowCount()` / `columnCount()`（坐标空间，
+ * spec §3.3），不是占用范围。
  *
- * **三个成员有意不在这里校验：**
- * - `restore-rows` / `restore-columns`：只作为逆变更出现，由本文件从一条已经校验过
- *   的 delete 产出，不接受外部构造。
- * - `reorder-rows`：它要的是"是不是一个排列"（`assertValidRowOrder`）与 extent 检查，
- *   `validateAxisChange` 表达不了；补它是另一个决定，留给 4B 接线时一并做。
+ * `reorder-rows` 套不进 `validateAxisChange`（它要判的是"是不是一个排列"，不是
+ * start/count/target），所以逐条对着 `SheetModel.reorderRows` 的 commit 期检查复制
+ * **顺序**、复用**同一批函数**——见下面那一支的注释。
+ *
+ * **有意不在这里校验的：**
+ * - `restore-rows` / `restore-columns`：这两个成员只作为逆变更出现（`mutation.ts`
+ *   的类型注释如此），由本文件从一条已经过上面校验的 delete 产出，不接受外部构造，
+ *   所以它们的 `start` / 行数按构造就是合法的。**4B 若开始从外部接收它们，这条前提
+ *   就没了，这里要补上 insert 形状的校验。**
+ * - `#assertNoMerges` 那一类**模型状态**前置条件：存在合并区时九个结构操作全都会在
+ *   commit 期被拒。这里一个都没复制——不是漏了 `reorder-rows` 一个，是九个一致地
+ *   不在 prepare 期查。要补该九个一起补，是另一个决定。
  */
-function assertAxisChangeIsValid(model: SheetModel, mutation: SheetMutation): void {
+function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): void {
   switch (mutation.type) {
+    case "reorder-rows": {
+      // 与 `SheetModel.reorderRows` **逐条对齐**，包括先后顺序：那里先查 extent
+      // 再进 `CellMatrix.reorderRows` 做排列检查，所以这里也是先 extent 后排列——
+      // 顺序反了，一个两种都不合法的 order 会在 prepare 与 commit 得到不同的错误。
+      //
+      // extent 取 `model.rowExtent()`，那是 `#rowExtentIncludingTables()` 的公开
+      // 出口，与 `reorderRows` 读的是同一个方法而不是它的一份复制；排列检查直接
+      // 复用 `assertValidRowOrder`，与 `CellMatrix.reorderRows` 调的是同一个函数。
+      // 两处因此不可能对"什么是合法 order"给出两个答案。
+      const extent = model.rowExtent();
+      if (extent > mutation.order.length) {
+        throw new CyExcelError(
+          CyExcelErrorCode.InvalidRange,
+          `occupied row ${extent - 1} >= order length ${mutation.order.length}, would be silently dropped`
+        );
+      }
+      assertValidRowOrder(mutation.order, mutation.order.length);
+      return;
+    }
     case "insert-rows":
       validateAxisChange(
         { axis: "row", operation: "insert", start: mutation.start, count: mutation.rows.length },

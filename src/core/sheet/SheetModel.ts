@@ -352,6 +352,23 @@ export class SheetModel {
     this.#tables.applyColumnShift(shift);
   }
 
+  /**
+   * 行的占用范围——**格子与每一张登记在册的行表的并集**，即
+   * `#rowExtentIncludingTables()` 的公开出口。与只算格子的 `occupiedRowCount()`
+   * 是两个不同的数，也与坐标空间 `rowCount()` 是两个不同的数。
+   *
+   * **为什么要公开它。** `reorderRows` 拿这个数判断一个 `order` 合不合法
+   * （`extent > order.length` 就会静默丢行），而求逆要在 `MutationCoordinator`
+   * 的 prepare 期做**同一个**判断——commit 期才发现不合法就晚了。外面算不出这个
+   * 数：`occupiedRowCount()` 不含侧表，`rowCount()` 掺了 `blankRows` 而 `blankRows`
+   * 又只在快照里露面；靠这两个反推等于把并集的算术抄第二份。抄第二份就会分叉，
+   * 而这里分叉的后果是 prepare 与 commit 对"什么是合法 order"给出两个答案。
+   * 所以公开的是同一个私有方法的出口，不是它的一份复制。
+   */
+  rowExtent(): number {
+    return this.#rowExtentIncludingTables();
+  }
+
   getRowMeta(row: number): RowMeta | undefined {
     return this.#rowData.get(row);
   }

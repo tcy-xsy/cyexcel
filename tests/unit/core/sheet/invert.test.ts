@@ -140,6 +140,16 @@ function expectExactRoundTrip(mutation: SheetMutation): void {
   expect(model.toSnapshot()).toStrictEqual(before);
 }
 
+/** 抓住抛出的错误本身——要比对类型与消息，`toThrow` 的正则做不到。 */
+function grabError(run: () => void): Error | undefined {
+  try {
+    run();
+  } catch (error) {
+    return error as Error;
+  }
+  return undefined;
+}
+
 function expectNonInvasive(mutation: SheetMutation): void {
   const model = fixture();
   const before = model.toSnapshot();
@@ -356,6 +366,32 @@ describe("invertSheetMutation — 参数校验前置到 prepare", () => {
     expect(() => invertSheetMutation(fixture(), { type: "move-columns", start: 0, count: 2, target: 1 })).toThrow(
       /move target cannot be inside the moved block/
     );
+  });
+
+  it("reorder：不合法的 order 在求逆时就抛，且与 commit 期抛的完全是同一个错", () => {
+    // 断言的不只是"抛了"，而是 prepare 与 commit 对"什么是合法 order"给出**同一个
+    // 答案**——这两处一旦分叉，撤销记录里就会躺着一条 commit 期才会炸的变更。
+    const orders = [
+      Int32Array.from([0, 0, 1, 2, 3]), // 长度够，但不是排列（0 出现两次）
+      Int32Array.from([2, 0, 1]), // 是排列，但盖不住占用范围（含只有元数据的第 4 行）
+      // 两种都不合法。**这一条才钉得住两个检查的先后**：前两条各只触发一个检查，
+      // 把顺序调过来它们仍然全绿；这一条在"先 extent"下抛 CyExcelError、在
+      // "先排列"下抛 RangeError，顺序一反就与 commit 期对不上。
+      Int32Array.from([0, 0, 5])
+    ];
+    for (const order of orders) {
+      const fromPrepare = grabError(() => invertSheetMutation(fixture(), { type: "reorder-rows", order }));
+      const fromCommit = grabError(() => {
+        fixture().reorderRows(order);
+      });
+      expect(fromCommit).toBeInstanceOf(Error);
+      expect(fromPrepare?.constructor).toBe(fromCommit?.constructor);
+      expect(fromPrepare?.message).toBe(fromCommit?.message);
+    }
+    // 合法的 order 一如既往地过
+    expect(() =>
+      invertSheetMutation(fixture(), { type: "reorder-rows", order: Int32Array.from([2, 0, 1, 4, 3]) })
+    ).not.toThrow();
   });
 });
 
