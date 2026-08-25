@@ -75,4 +75,17 @@ describe("SheetModel", () => {
   it("rejects a negative blank count at construction", () => {
     expect(() => SheetModel.createEmpty({ blankRows: -1 })).toThrow();
   });
+
+  it("round-trips freeze through toSnapshot and fromSnapshot", () => {
+    const model = SheetModel.createEmpty({ freeze: { rows: 2, columns: 3 } });
+    const restored = SheetModel.fromSnapshot(model.toSnapshot());
+    const snapshot = restored.toSnapshot();
+    expect(snapshot.freeze).toEqual({ rows: 2, columns: 3 });
+  });
+
+  it("does not add spurious freeze: undefined to snapshot when not set", () => {
+    const model = SheetModel.createEmpty();
+    const snapshot = model.toSnapshot();
+    expect("freeze" in snapshot).toBe(false);
+  });
 });

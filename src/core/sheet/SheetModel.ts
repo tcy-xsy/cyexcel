@@ -12,6 +12,7 @@ export interface SheetModelOptions {
   readonly blankColumns?: number;
   readonly defaultRowHeight?: number;
   readonly defaultColumnWidth?: number;
+  readonly freeze?: { readonly rows: number; readonly columns: number };
 }
 
 /**
@@ -30,6 +31,7 @@ export class SheetModel {
   readonly #blankColumns: number;
   readonly #defaultRowHeight: number;
   readonly #defaultColumnWidth: number;
+  readonly #freeze: { readonly rows: number; readonly columns: number } | undefined;
 
   private constructor(init: {
     matrix: CellMatrix;
@@ -42,6 +44,7 @@ export class SheetModel {
     blankColumns: number;
     defaultRowHeight: number;
     defaultColumnWidth: number;
+    freeze?: { readonly rows: number; readonly columns: number };
   }) {
     assertValidBlankCount(init.blankRows, "blankRows");
     assertValidBlankCount(init.blankColumns, "blankColumns");
@@ -55,6 +58,7 @@ export class SheetModel {
     this.#blankColumns = init.blankColumns;
     this.#defaultRowHeight = init.defaultRowHeight;
     this.#defaultColumnWidth = init.defaultColumnWidth;
+    this.#freeze = init.freeze ?? undefined;
   }
 
   static createEmpty(options: SheetModelOptions = {}): SheetModel {
@@ -68,7 +72,8 @@ export class SheetModel {
       blankRows: options.blankRows ?? DEFAULT_BLANK_ROWS,
       blankColumns: options.blankColumns ?? DEFAULT_BLANK_COLUMNS,
       defaultRowHeight: options.defaultRowHeight ?? 28,
-      defaultColumnWidth: options.defaultColumnWidth ?? 120
+      defaultColumnWidth: options.defaultColumnWidth ?? 120,
+      ...(options.freeze !== undefined && { freeze: options.freeze })
     });
   }
 
@@ -84,7 +89,8 @@ export class SheetModel {
       blankRows: restored.blankRows,
       blankColumns: restored.blankColumns,
       defaultRowHeight: restored.defaultRowHeight,
-      defaultColumnWidth: restored.defaultColumnWidth
+      defaultColumnWidth: restored.defaultColumnWidth,
+      ...(restored.freeze !== undefined ? { freeze: restored.freeze } : {})
     });
   }
 
@@ -137,7 +143,8 @@ export class SheetModel {
       matrix: this.#matrix,
       rowData: this.#rowData,
       columnData: this.#columnData,
-      mergeData: this.#mergeData
+      mergeData: this.#mergeData,
+      ...(this.#freeze !== undefined ? { freeze: this.#freeze } : {})
     });
   }
 }
