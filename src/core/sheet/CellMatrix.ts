@@ -1,4 +1,5 @@
 import { assertValidRowOrder } from "../layout/rowOrder";
+import { ROW_PLAN_HOLE, assertValidRowPlan } from "./rowPlan";
 import type { CellRecord } from "./types";
 
 type RowBucket = Record<number, CellRecord>;
@@ -85,7 +86,43 @@ export class CellMatrix {
     }
   }
 
-  /** `order[newPosition] = oldPosition`，仓库既有约定（ADR 0003）。 */
+  /**
+   * 行轴唯一的搬运原语（ADR §3.1）。`plan[newRow]` 是该行的旧下标，
+   * `ROW_PLAN_HOLE` 表示新空行；没有被提到的旧行被丢弃。
+   *
+   * insert / delete / move / reorder 全部经由这里，各自只负责算出 plan。
+   */
+  applyRowPlan(plan: Int32Array): void {
+    const currentExtent = this.#maxRow === undefined ? 0 : this.#maxRow + 1;
+    const extent = Math.max(currentExtent, plan.length);
+    assertValidRowPlan(plan, extent);
+    const next = Object.create(null) as Record<number, RowBucket>;
+    let maxRow: number | undefined = undefined;
+    let occupied = 0;
+    for (let newRow = 0; newRow < plan.length; newRow += 1) {
+      const source = plan[newRow] as number;
+      if (source === ROW_PLAN_HOLE) {
+        continue;
+      }
+      const bucket = this.#rows[source];
+      if (bucket) {
+        next[newRow] = bucket;
+        maxRow = newRow;
+        occupied += Object.keys(bucket).length;
+      }
+    }
+    this.#rows = next;
+    this.#maxRow = maxRow;
+    this.#occupied = occupied;
+    // 行可以被丢弃，所以最宽的那一行可能没了——列的最大值必须重算
+    this.#maxColumn = this.#largestColumn();
+  }
+
+  /**
+   * `order[newPosition] = oldPosition`，仓库既有约定（ADR 0003）。
+   * 这是 `applyRowPlan` 的一个更严格的特例：必须是严格排列，不许有洞、
+   * 不许丢行。
+   */
   reorderRows(order: Int32Array): void {
     assertValidRowOrder(order, order.length);
     if (this.#maxRow !== undefined && this.#maxRow >= order.length) {
@@ -93,18 +130,78 @@ export class CellMatrix {
         `occupied row ${this.#maxRow} >= order length ${order.length}, would be silently dropped`
       );
     }
+    this.applyRowPlan(order);
+  }
+
+  /**
+   * 列操作按行桶逐个重键。**不要按列数扫**——绝大多数列是空的，
+   * `rowCount × columnCount` 的稠密扫描正是 ADR §3.1 点名要避免的。
+   */
+  #remapColumns(remap: (column: number) => number | undefined): void {
     const next = Object.create(null) as Record<number, RowBucket>;
     let maxRow: number | undefined = undefined;
-    for (let newRow = 0; newRow < order.length; newRow += 1) {
-      const bucket = this.#rows[order[newRow] as number];
-      if (bucket) {
-        next[newRow] = bucket;
-        maxRow = newRow;
+    let maxColumn: number | undefined = undefined;
+    let occupied = 0;
+    for (const key of Object.keys(this.#rows)) {
+      const row = Number(key);
+      const bucket = this.#rows[row];
+      if (!bucket) {
+        continue;
+      }
+      let rebuilt: RowBucket | undefined = undefined;
+      for (const columnKey of Object.keys(bucket)) {
+        const column = Number(columnKey);
+        const target = remap(column);
+        if (target === undefined) {
+          continue;
+        }
+        if (!rebuilt) {
+          rebuilt = Object.create(null) as RowBucket;
+        }
+        rebuilt[target] = bucket[column] as CellRecord;
+        occupied += 1;
+        if (maxColumn === undefined || target > maxColumn) {
+          maxColumn = target;
+        }
+      }
+      if (rebuilt) {
+        next[row] = rebuilt;
+        if (maxRow === undefined || row > maxRow) {
+          maxRow = row;
+        }
       }
     }
     this.#rows = next;
     this.#maxRow = maxRow;
-    // 列不受行重排影响，#maxColumn 与 #occupied 保持不变
+    this.#maxColumn = maxColumn;
+    this.#occupied = occupied;
+  }
+
+  insertColumns(start: number, count: number): void {
+    this.#remapColumns((column) => (column < start ? column : column + count));
+  }
+
+  deleteColumns(start: number, count: number): void {
+    this.#remapColumns((column) => {
+      if (column < start) {
+        return column;
+      }
+      if (column < start + count) {
+        return undefined;
+      }
+      return column - count;
+    });
+  }
+
+  moveColumns(start: number, count: number, target: number): void {
+    const insertAt = target > start ? target - count : target;
+    this.#remapColumns((column) => {
+      if (column >= start && column < start + count) {
+        return insertAt + (column - start);
+      }
+      const withoutBlock = column > start ? column - count : column;
+      return withoutBlock >= insertAt ? withoutBlock + count : withoutBlock;
+    });
   }
 
   #largestRow(): number | undefined {
