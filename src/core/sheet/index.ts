@@ -35,3 +35,4 @@ export {
 export { IndexedTable, type IndexAxis } from "./IndexedTable";
 export { IndexedTableRegistry } from "./IndexedTableRegistry";
 export { assertValidResourceEntry, resourceToTable, tableToResource } from "./resources";
+export { WorkbookModel, type WorkbookModelOptions } from "./WorkbookModel";
