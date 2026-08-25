@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { IndexedTable } from "../../../../src/core/sheet/IndexedTable";
 import {
   assertValidResourceEntry,
   resourceToTable,
@@ -53,6 +52,18 @@ describe("assertValidResourceEntry", () => {
     expect(() =>
       assertValidResourceEntry({ name: "x", indexedBy: "row", data: { "01": "a" } }, "resources[0]")
     ).toThrow(/key/);
+    expect(() =>
+      assertValidResourceEntry({ name: "x", indexedBy: "row", data: { " 1": "a" } }, "resources[0]")
+    ).toThrow(/key/);
+    expect(() =>
+      assertValidResourceEntry({ name: "x", indexedBy: "row", data: { "1e3": "a" } }, "resources[0]")
+    ).toThrow(/key/);
+    expect(() =>
+      assertValidResourceEntry({ name: "x", indexedBy: "row", data: { "1.5": "a" } }, "resources[0]")
+    ).toThrow(/key/);
+    expect(() =>
+      assertValidResourceEntry({ name: "x", indexedBy: "row", data: { "": "a" } }, "resources[0]")
+    ).toThrow(/key/);
   });
 
   it("按行索引的资源，data 不能是 null", () => {
@@ -81,6 +92,15 @@ describe("resources ⇄ IndexedTable", () => {
 
   it("indexedBy: none 的资源不能转成表——核心不碰它", () => {
     expect(() => resourceToTable({ name: "k", indexedBy: "none", data: {} })).toThrow(/none/);
+  });
+
+  it("嵌套值在表与条目之间是共享引用——这是契约，不是疏漏", () => {
+    const nested = { tag: "t" };
+    const table = resourceToTable({ name: "k", indexedBy: "row", data: { 0: nested } });
+    const entry = tableToResource(table);
+    // 顶层是新对象，嵌套值是同一个引用（与 CellRecord 同一条不可变契约）
+    expect(entry.data).not.toBe(table.read());
+    expect((entry.data as Record<number, unknown>)[0]).toBe(nested);
   });
 });
 
