@@ -28,6 +28,12 @@ describe("buildInsertRowsPlan", () => {
   it("inserts at the very front", () => {
     expect([...buildInsertRowsPlan(2, 0, 1)]).toEqual([H, 0, 1]);
   });
+
+  it("reaches an insertion point that sits in the blank area", () => {
+    // 坐标空间比占用范围大（spec §3.3），插入点落在空白区是日常操作：
+    // 排列必须一直铺到落点，否则它根本没描述那一段。
+    expect([...buildInsertRowsPlan(2, 5, 1)]).toEqual([0, 1, 2, 3, 4, H]);
+  });
 });
 
 describe("buildDeleteRowsPlan", () => {
@@ -42,6 +48,24 @@ describe("buildDeleteRowsPlan", () => {
 
   it("deletes everything", () => {
     expect([...buildDeleteRowsPlan(3, 0, 3)]).toEqual([]);
+  });
+
+  it("only shrinks by the part of the range that lands inside the occupied extent", () => {
+    // 删除范围可以整段或部分落在占用范围之外——那是坐标空间里合法的空白区
+    // （spec §3.3）。按整个 count 收缩排列会把范围之外的行连带丢掉。
+    const cases: ReadonlyArray<readonly [number, number, number, readonly number[]]> = [
+      [5, 3, 10, [0, 1, 2]],
+      [5, 10, 2, [0, 1, 2, 3, 4]],
+      [5, 0, 5, []],
+      [5, 2, 2, [0, 1, 4]],
+      [5, 4, 1, [0, 1, 2, 3]],
+      [0, 0, 3, []]
+    ];
+    for (const [extent, start, count, expected] of cases) {
+      expect([...buildDeleteRowsPlan(extent, start, count)], `E=${extent} ${start}+${count}`).toEqual(
+        [...expected]
+      );
+    }
   });
 });
 
@@ -64,6 +88,23 @@ describe("buildMoveRowsPlan", () => {
 
   it("keeps the plan the same length as the extent", () => {
     expect(buildMoveRowsPlan(6, 1, 2, 4).length).toBe(6);
+  });
+
+  it("keeps the blank gap when the block or the landing point reaches past the occupied extent", () => {
+    // 只铺到 occupiedExtent 会把空白间隙压掉，被移动的数据落在错误的下标上。
+    const cases: ReadonlyArray<
+      readonly [number, number, number, number, readonly number[]]
+    > = [
+      [5, 0, 2, 8, [2, 3, 4, 5, 6, 7, 0, 1]],
+      [5, 3, 10, 0, [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 0, 1, 2]],
+      [5, 1, 2, 4, [0, 3, 1, 2, 4]]
+    ];
+    for (const [extent, start, count, target, expected] of cases) {
+      expect(
+        [...buildMoveRowsPlan(extent, start, count, target)],
+        `E=${extent} ${start}+${count}->${target}`
+      ).toEqual([...expected]);
+    }
   });
 });
 

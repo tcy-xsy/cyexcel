@@ -11,6 +11,7 @@ import {
   buildMoveRowsPlan
 } from "./rowPlan";
 import { remapByColumnShift, remapByRowPlan } from "./indexShift";
+import { validateAxisChange } from "../layout/structuralChange";
 
 export interface SheetModelOptions {
   readonly id?: string;
@@ -194,19 +195,43 @@ export class SheetModel {
     this.#rowData = remapByRowPlan(this.#rowData, plan);
   }
 
+  /**
+   * 六个结构方法共用的参数防线，复用被替换的 `ArrayDataSource` 那一份
+   * （`../layout/structuralChange`），不另写。三条口径：
+   *
+   * ① **放在 `#assertNoMerges` 之前**——参数非法与有没有合并区无关，
+   *    先报 `MutationNotSupported` 会误导调用方。
+   * ② **轴长取 `rowCount()` / `columnCount()`（坐标空间，spec §3.3），
+   *    不是占用范围**——"在空白区里选几行删掉"是 Excel 允许的合法操作，
+   *    用占用范围会把它误挡掉。
+   * ③ **抛的是 `RangeError` 而不是 `CyExcelError`，不包装**——与被替换的
+   *    `ArrayDataSource` 保持同一种失败方式，比与 `#assertNoMerges` 内部
+   *    一致更重要；错误类型的统一属于后续公开 API 收口。
+   *
+   * 没有这道防线时的静默后果：`insertRows(-2, 1)` 让 `newRow - count`
+   * 算出 `-1`，而 `-1` 就是 `ROW_PLAN_HOLE`——哨兵撞车，一行真数据变成
+   * 一个洞；`moveRows(0, 1, -1)` 走 `rest.splice(负数)` 从末尾倒插；
+   * `moveColumns(0, 2, 1)` 算出 `insertAt = -1`，产出负的列键。
+   */
   insertRows(start: number, count: number): void {
+    validateAxisChange({ axis: "row", operation: "insert", start, count }, this.rowCount());
     this.#assertNoMerges("insertRows");
     const extent = this.#occupiedRowExtent();
     this.#applyRowPlan(buildInsertRowsPlan(extent, start, count), extent);
   }
 
   deleteRows(start: number, count: number): void {
+    validateAxisChange({ axis: "row", operation: "delete", start, count }, this.rowCount());
     this.#assertNoMerges("deleteRows");
     const extent = this.#occupiedRowExtent();
     this.#applyRowPlan(buildDeleteRowsPlan(extent, start, count), extent);
   }
 
   moveRows(start: number, count: number, target: number): void {
+    validateAxisChange(
+      { axis: "row", operation: "move", start, count, target, targetSpace: "pre-removal" },
+      this.rowCount()
+    );
     this.#assertNoMerges("moveRows");
     const extent = this.#occupiedRowExtent();
     this.#applyRowPlan(buildMoveRowsPlan(extent, start, count, target), extent);
@@ -225,7 +250,16 @@ export class SheetModel {
     this.#rowData = remapByRowPlan(this.#rowData, order);
   }
 
+  /**
+   * 列轴对 A1 那一类"占用范围外丢数据"天然免疫：`#remapColumns` 是逐个
+   * **占用列**过的纯算术，不以 extent 为界——`deleteColumns(10, 2)` 在只占用
+   * 0–4 列时全部 `< 10`，原样不动。所以列轴只补上面那道参数校验。
+   */
   insertColumns(start: number, count: number): void {
+    validateAxisChange(
+      { axis: "column", operation: "insert", start, count },
+      this.columnCount()
+    );
     this.#assertNoMerges("insertColumns");
     this.#matrix.insertColumns(start, count);
     this.#columnData = remapByColumnShift(this.#columnData, (column) =>
@@ -234,6 +268,10 @@ export class SheetModel {
   }
 
   deleteColumns(start: number, count: number): void {
+    validateAxisChange(
+      { axis: "column", operation: "delete", start, count },
+      this.columnCount()
+    );
     this.#assertNoMerges("deleteColumns");
     this.#matrix.deleteColumns(start, count);
     this.#columnData = remapByColumnShift(this.#columnData, (column) => {
@@ -248,6 +286,10 @@ export class SheetModel {
   }
 
   moveColumns(start: number, count: number, target: number): void {
+    validateAxisChange(
+      { axis: "column", operation: "move", start, count, target, targetSpace: "pre-removal" },
+      this.columnCount()
+    );
     this.#assertNoMerges("moveColumns");
     this.#matrix.moveColumns(start, count, target);
     const insertAt = target > start ? target - count : target;

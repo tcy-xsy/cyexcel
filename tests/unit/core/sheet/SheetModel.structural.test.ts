@@ -84,6 +84,65 @@ describe("SheetModel row operations", () => {
     }).toThrow();
   });
 
+  it("deleteRows past the occupied extent keeps the rows it never covered", () => {
+    // 坐标空间是 maxOccupied + 1 + blankRows（spec §3.3），所以 start/count
+    // 落在占用范围之外是合法的日常操作，不能连带把范围内的行丢掉。
+    const model = SheetModel.createEmpty();
+    for (let row = 0; row < 5; row += 1) {
+      model.setCell(row, 0, `r${row}`);
+    }
+    model.deleteRows(3, 10);
+    expect([0, 1, 2].map((row) => model.getCell(row, 0))).toEqual(["r0", "r1", "r2"]);
+    expect(model.occupiedRowCount()).toBe(3);
+  });
+
+  it("deleteRows entirely inside the blank area is a no-op", () => {
+    const model = SheetModel.createEmpty();
+    for (let row = 0; row < 5; row += 1) {
+      model.setCell(row, 0, `r${row}`);
+    }
+    model.deleteRows(10, 2);
+    expect([0, 1, 2, 3, 4].map((row) => model.getCell(row, 0))).toEqual([
+      "r0",
+      "r1",
+      "r2",
+      "r3",
+      "r4"
+    ]);
+  });
+
+  it("moveRows into the blank area lands on the target index, gap intact", () => {
+    const model = SheetModel.createEmpty();
+    for (let row = 0; row < 5; row += 1) {
+      model.setCell(row, 0, `r${row}`);
+    }
+    model.moveRows(0, 2, 8);
+    expect(model.getCell(6, 0)).toBe("r0");
+    expect(model.getCell(7, 0)).toBe("r1");
+    expect([0, 1, 2].map((row) => model.getCell(row, 0))).toEqual(["r2", "r3", "r4"]);
+  });
+
+  it("moveRows of a block that reaches into the blank area keeps the gap", () => {
+    const model = SheetModel.createEmpty();
+    for (let row = 0; row < 5; row += 1) {
+      model.setCell(row, 0, `r${row}`);
+    }
+    model.moveRows(3, 10, 0);
+    expect(model.getCell(0, 0)).toBe("r3");
+    expect(model.getCell(1, 0)).toBe("r4");
+    expect(model.getCell(10, 0)).toBe("r0");
+    expect(model.getCell(12, 0)).toBe("r2");
+  });
+
+  it("insertRows at a point in the blank area leaves the occupied rows alone", () => {
+    const model = SheetModel.createEmpty();
+    model.setCell(0, 0, "a");
+    model.setCell(1, 0, "b");
+    model.insertRows(5, 1);
+    expect(model.getCell(0, 0)).toBe("a");
+    expect(model.getCell(1, 0)).toBe("b");
+  });
+
   it("reorderRows carries metadata to new index when order covers extent", () => {
     const model = SheetModel.createEmpty();
     model.setCell(0, 0, "a");
@@ -175,6 +234,62 @@ describe("SheetModel merge guard", () => {
     const model = SheetModel.createEmpty();
     model.setCell(0, 0, "a");
     expect(() => model.insertRows(0, 1)).not.toThrow();
+  });
+});
+
+describe("SheetModel structural argument validation", () => {
+  function populated(): SheetModel {
+    const model = SheetModel.createEmpty();
+    model.setCell(0, 0, "a");
+    model.setCell(1, 1, "b");
+    return model;
+  }
+
+  it("rejects every illegal argument shape with a RangeError", () => {
+    expect.hasAssertions();
+    const cases: ReadonlyArray<readonly [string, (m: SheetModel) => void]> = [
+      // start = -2、count = 1：`newRow - count` 会算出 -1，而 -1 就是
+      // ROW_PLAN_HOLE——哨兵撞车，把一行真数据变成一个洞
+      ["insertRows negative start", (m) => m.insertRows(-2, 1)],
+      ["insertRows zero count", (m) => m.insertRows(0, 0)],
+      ["deleteRows negative start", (m) => m.deleteRows(-1, 1)],
+      ["deleteRows zero count", (m) => m.deleteRows(0, 0)],
+      ["moveRows negative target", (m) => m.moveRows(0, 1, -1)],
+      ["moveRows target inside the block", (m) => m.moveRows(0, 2, 1)],
+      ["insertColumns negative start", (m) => m.insertColumns(-1, 1)],
+      ["deleteColumns zero count", (m) => m.deleteColumns(0, 0)],
+      // 落点在块内会算出 insertAt = -1，产出负的列键
+      ["moveColumns target inside the block", (m) => m.moveColumns(0, 2, 1)]
+    ];
+    for (const [name, run] of cases) {
+      expect(() => run(populated()), name).toThrow(RangeError);
+    }
+  });
+
+  it("rejects a delete that runs past the coordinate space", () => {
+    const model = SheetModel.createEmpty({ blankRows: 2 });
+    model.setCell(0, 0, "a"); // rowCount = 1 + 2 = 3
+    expect(() => model.deleteRows(2, 5)).toThrow(RangeError);
+  });
+
+  it("allows operations that only reach into the blank area", () => {
+    // 空白区里的行是坐标空间的一部分，删它们是合法的（Excel 也允许）——
+    // 用占用范围当轴长会把这类操作误挡掉。
+    const model = SheetModel.createEmpty();
+    model.setCell(0, 0, "a");
+    expect(() => model.deleteRows(10, 2)).not.toThrow();
+    expect(model.getCell(0, 0)).toBe("a");
+  });
+
+  it("validates arguments before the merge guard", () => {
+    // 参数非法与有没有合并区无关，先报 MutationNotSupported 会误导调用方
+    const base = SheetModel.createEmpty();
+    base.setCell(0, 0, "a");
+    const model = SheetModel.fromSnapshot({
+      ...base.toSnapshot(),
+      mergeData: [{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }]
+    });
+    expect(() => model.insertRows(-2, 1)).toThrow(RangeError);
   });
 });
 

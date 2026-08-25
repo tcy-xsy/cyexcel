@@ -19,7 +19,11 @@ export function buildInsertRowsPlan(
   start: number,
   count: number
 ): Int32Array {
-  const plan = new Int32Array(occupiedExtent + count);
+  // 插入点可以落在空白区——坐标空间是 `maxOccupied + 1 + blankRows`
+  // （spec §3.3），比占用范围大得多。排列必须一直铺到落点，否则它压根没
+  // 描述被插入的那一段。
+  const extent = Math.max(occupiedExtent, start);
+  const plan = new Int32Array(extent + count);
   for (let newRow = 0; newRow < plan.length; newRow += 1) {
     if (newRow < start) {
       plan[newRow] = newRow;
@@ -37,7 +41,11 @@ export function buildDeleteRowsPlan(
   start: number,
   count: number
 ): Int32Array {
-  const remaining = Math.max(0, occupiedExtent - count);
+  // 删除范围可以整段或部分落在占用范围之外——那是坐标空间里合法的空白区
+  // （spec §3.3）。只有落在占用范围**之内**的那一段才真的让行数变少；
+  // 按整个 `count` 收缩排列会把范围之外的行一起丢掉，而且是静默的。
+  const deletedWithin = Math.max(0, Math.min(count, occupiedExtent - start));
+  const remaining = occupiedExtent - deletedWithin;
   const plan = new Int32Array(remaining);
   for (let newRow = 0; newRow < remaining; newRow += 1) {
     plan[newRow] = newRow < start ? newRow : newRow + count;
@@ -51,9 +59,12 @@ export function buildMoveRowsPlan(
   count: number,
   target: number
 ): Int32Array {
+  // 块或落点可以伸进空白区（spec §3.3）——排列必须覆盖到那里，否则空白
+  // 间隙被压掉，被移动的数据会落到错误的下标上。
+  const extent = Math.max(occupiedExtent, start + count, target);
   const moved: number[] = [];
   const rest: number[] = [];
-  for (let row = 0; row < occupiedExtent; row += 1) {
+  for (let row = 0; row < extent; row += 1) {
     if (row >= start && row < start + count) {
       moved.push(row);
     } else {
