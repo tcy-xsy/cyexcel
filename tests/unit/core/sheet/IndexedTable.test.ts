@@ -18,6 +18,10 @@ describe("IndexedTable — 存取", () => {
     table.delete(1);
     expect(table.read()).toStrictEqual({ 2: 20 });
     expect(1 in table.read()).toBe(false);
+    // 删的不是最大值，extent 必须原地不动——回退扫描只该在删掉最大值时触发。
+    // 这一支不测的话，一个"每次删除都重算"的实现和一个"永远不重算"的实现
+    // 在本文件里长得一模一样。
+    expect(table.extent()).toBe(3);
   });
 
   it("构造时拷贝初始数据，之后改动不回写调用方的对象", () => {
@@ -88,13 +92,20 @@ describe("IndexedTable — 重键", () => {
 });
 
 describe("IndexedTable — 轴不匹配必须炸", () => {
+  // 断言必须锁住**两个轴各自的位置**。消息模板同时带着 `indexedBy` 与 `expected`，
+  // 所以任何一条不匹配的消息里 "row" 和 "column" 都会出现——只找单个词的正则
+  // 在两个插值被写反时照样通过，那时消息会把轴的关系说反而没人发现。
   it("行表拒绝列移位", () => {
     const table = new IndexedTable<number>("t", "row");
-    expect(() => table.applyColumnShift(buildInsertColumnsShift(0, 1))).toThrow(/row/);
+    expect(() => table.applyColumnShift(buildInsertColumnsShift(0, 1))).toThrow(
+      /indexed by row, cannot take a column rekey/
+    );
   });
 
   it("列表拒绝行排列", () => {
     const table = new IndexedTable<number>("t", "column");
-    expect(() => table.applyRowPlan(Int32Array.from([0]))).toThrow(/column/);
+    expect(() => table.applyRowPlan(Int32Array.from([0]))).toThrow(
+      /indexed by column, cannot take a row rekey/
+    );
   });
 });
