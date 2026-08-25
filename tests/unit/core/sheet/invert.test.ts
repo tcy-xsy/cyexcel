@@ -175,6 +175,67 @@ describe("invertSheetMutation — 精确性", () => {
   it("reorder：逆排列把行与行元数据一起搬回", () => {
     expectExactRoundTrip({ type: "reorder-rows", order: Int32Array.from([2, 0, 1, 4, 3]) });
   });
+
+  it("set-range 的 records 不齐时，逆仍按 range 的尺寸铺满", () => {
+    // 只给了 1×1 的 records，其余五格按空格处理（施加下去是删格）。逆若按 records
+    // 的尺寸算，那五格就永远回不来了——这条正是为盯住那个尺寸来源而存在。
+    expectExactRoundTrip({
+      type: "set-range",
+      range: { startRow: 0, startColumn: 0, endRow: 1, endColumn: 2 },
+      records: [[{ v: 1 }]]
+    });
+  });
+});
+
+/**
+ * 这四条只断言**形状**，不做模型往返。
+ *
+ * 它们对应的四个分支是对正变更自身字段的纯算术，一个字都不读模型，所以任何"往
+ * 施加/回滚里塞个错误再看测试红不红"的探针都碰不到它们——四个分支同时写错，
+ * 精确性与非侵入两组测试可以全绿。四条分开写而不是并成一条，是为了红的时候
+ * 失败信息直接点名是哪一条臂断了。
+ */
+describe("invertSheetMutation — 纯算术分支的形状", () => {
+  it("insert-rows 的逆是删掉同样多的行", () => {
+    expect(
+      invertSheetMutation(fixture(), {
+        type: "insert-rows",
+        start: 1,
+        rows: [{ 0: { v: "x" } }, {}]
+      })
+    ).toStrictEqual({ type: "delete-rows", start: 1, count: 2 });
+  });
+
+  it("restore-rows 的逆是删掉同样多的行", () => {
+    expect(
+      invertSheetMutation(fixture(), {
+        type: "restore-rows",
+        start: 2,
+        rows: [{ 1: { v: "y" } }, {}],
+        meta: [{ h: 30 }, undefined]
+      })
+    ).toStrictEqual({ type: "delete-rows", start: 2, count: 2 });
+  });
+
+  it("insert-columns 的逆是删掉同样多的列", () => {
+    expect(invertSheetMutation(fixture(), { type: "insert-columns", start: 1, count: 2 })).toStrictEqual({
+      type: "delete-columns",
+      start: 1,
+      count: 2
+    });
+  });
+
+  it("restore-columns 的逆是删掉同样多的列", () => {
+    expect(
+      invertSheetMutation(fixture(), {
+        type: "restore-columns",
+        start: 1,
+        count: 3,
+        cells: [{ 0: { v: "z" } }, {}, {}],
+        meta: [{ w: 80 }, undefined, undefined]
+      })
+    ).toStrictEqual({ type: "delete-columns", start: 1, count: 3 });
+  });
 });
 
 describe("invertSheetMutation — 非侵入", () => {
@@ -263,6 +324,38 @@ describe("invertSheetMutation — 边界", () => {
     // 列轴共用同一行算术（buildMoveColumnsShift），逆的口径因此也共用
     expectExactRoundTrip({ type: "move-columns", start: 0, count: 1, target: 3 });
     expectExactRoundTrip({ type: "move-columns", start: 2, count: 1, target: 0 });
+  });
+
+  it("块紧贴轴尾时，逆的 target 正好等于轴长——validateAxisChange 只挡 > 轴长", () => {
+    const model = fixture();
+    const axisLength = model.rowCount();
+    expect(axisLength).toBe(7);
+    // start + count === 轴长：块就在轴的最末尾，把它前移，逆要把它送回最末尾，
+    // 于是逆的 target === start + count === 轴长。差一格就会被 validateAxisChange
+    // 挡掉（它抛的条件是 target > axisLength），所以这条边界值得钉住。
+    expect(invertSheetMutation(model, { type: "move-rows", start: 5, count: 2, target: 0 })).toStrictEqual({
+      type: "move-rows",
+      start: 0,
+      count: 2,
+      target: axisLength
+    });
+    expectExactRoundTrip({ type: "move-rows", start: 5, count: 2, target: 0 });
+  });
+});
+
+describe("invertSheetMutation — 参数校验前置到 prepare", () => {
+  it("行：target 落在块内的 move，在求逆时就抛，不拖到 commit", () => {
+    // 不拦的话这里会返回一条形状合法、语义是垃圾的逆，等 SheetModel.moveRows 在
+    // commit 期间才抛——而那时垃圾逆已经进了撤销记录，且 commit 本该不会失败
+    expect(() => invertSheetMutation(fixture(), { type: "move-rows", start: 1, count: 2, target: 2 })).toThrow(
+      /move target cannot be inside the moved block/
+    );
+  });
+
+  it("列：target 落在块内的 move，同样在求逆时就抛", () => {
+    expect(() => invertSheetMutation(fixture(), { type: "move-columns", start: 0, count: 2, target: 1 })).toThrow(
+      /move target cannot be inside the moved block/
+    );
   });
 });
 

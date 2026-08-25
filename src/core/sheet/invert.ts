@@ -1,5 +1,6 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
 import { invertRowOrder } from "../layout/rowOrder";
+import { validateAxisChange } from "../layout/structuralChange";
 import type { CellRange } from "../types";
 import type { ColumnCells, RowCells, SheetMutation } from "./mutation";
 import type { SheetModel } from "./SheetModel";
@@ -22,8 +23,18 @@ import type { CellRecord, ColumnMeta, RowMeta } from "./types";
  *    先 prepare 全部参与者、再 commit：prepare 期间任一参与者抛错，模型必须原封
  *    不动。所以连本文件里抛错的那几条路径也必须在抛之前没有写过任何东西——这里
  *    的做法是根本不写，而不是"先写后回滚"。
+ *
+ *    **"非侵入"说的是不写，不是不别名。** 逆变更里的 `CellRecord` / `RowMeta` /
+ *    `ColumnMeta` 是模型里那几个对象**本身**（`inv.rows[0][0] === model.getRecord(…)`
+ *    按引用相等），不是拷贝。这是 `types.ts` 顶部那条模块级别名规则的直接后果——
+ *    "存储层一律**浅共享**：容器拷一层、值按引用共享"——而不是这里的疏漏：逐格
+ *    深拷贝正是这个数据模型要省掉的分配开销。代价是那条规则的第 1 形态必须成立：
+ *    "`CellRecord` 的值不可就地改"。谁就地改了一条记录，改动会同时出现在模型、
+ *    快照和已入栈的 undo 记录里。容器层（`RowCells` / `ColumnCells` / `records`
+ *    的数组）是这里新建的，不与模型共享。
  */
 export function invertSheetMutation(model: SheetModel, mutation: SheetMutation): SheetMutation {
+  assertAxisChangeIsValid(model, mutation);
   switch (mutation.type) {
     case "set-cell":
       // 逆是"把这一格恢复成现在的样子"。现在是空格时 `record` 就是 `undefined`，
@@ -99,6 +110,83 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
       const { start, count, target } = mutation;
       return { type: "move-columns", start: movedBlockLandsAt(start, count, target), count, target: inverseMoveTarget(start, count, target) };
     }
+  }
+}
+
+/**
+ * 参数校验前置到求逆这一步。
+ *
+ * **为什么不等 `SheetModel` 自己拦。** `MutationCoordinator` 的前提是"凡是能查出来
+ * 的都在 prepare 期间查出来，commit 因此不会失败"。求逆属于 prepare：它是在还没动
+ * 模型的时候算出撤销所需的那条变更。一条 `move-rows(1, 2, 2)`（target 落在块内）
+ * 若不在这里拦，`movedBlockLandsAt` 会照样算出一个数、返回一条形状合法但语义是垃圾
+ * 的逆，等到 commit 期间 `SheetModel.moveRows` 才抛——而那时这条垃圾逆已经进了撤销
+ * 记录，且 commit 本该是不会失败的那一步。
+ *
+ * 复用 `../layout/structuralChange` 的 `validateAxisChange`——与 `SheetModel` 的六个
+ * 结构方法是同一份校验、同一种失败方式（`RangeError`），不另写一份会分叉的。轴长按
+ * 它那里的口径取 `rowCount()` / `columnCount()`（坐标空间，spec §3.3），不是占用范围。
+ *
+ * **三个成员有意不在这里校验：**
+ * - `restore-rows` / `restore-columns`：只作为逆变更出现，由本文件从一条已经校验过
+ *   的 delete 产出，不接受外部构造。
+ * - `reorder-rows`：它要的是"是不是一个排列"（`assertValidRowOrder`）与 extent 检查，
+ *   `validateAxisChange` 表达不了；补它是另一个决定，留给 4B 接线时一并做。
+ */
+function assertAxisChangeIsValid(model: SheetModel, mutation: SheetMutation): void {
+  switch (mutation.type) {
+    case "insert-rows":
+      validateAxisChange(
+        { axis: "row", operation: "insert", start: mutation.start, count: mutation.rows.length },
+        model.rowCount()
+      );
+      return;
+    case "delete-rows":
+      validateAxisChange(
+        { axis: "row", operation: "delete", start: mutation.start, count: mutation.count },
+        model.rowCount()
+      );
+      return;
+    case "move-rows":
+      validateAxisChange(
+        {
+          axis: "row",
+          operation: "move",
+          start: mutation.start,
+          count: mutation.count,
+          target: mutation.target,
+          targetSpace: "pre-removal"
+        },
+        model.rowCount()
+      );
+      return;
+    case "insert-columns":
+      validateAxisChange(
+        { axis: "column", operation: "insert", start: mutation.start, count: mutation.count },
+        model.columnCount()
+      );
+      return;
+    case "delete-columns":
+      validateAxisChange(
+        { axis: "column", operation: "delete", start: mutation.start, count: mutation.count },
+        model.columnCount()
+      );
+      return;
+    case "move-columns":
+      validateAxisChange(
+        {
+          axis: "column",
+          operation: "move",
+          start: mutation.start,
+          count: mutation.count,
+          target: mutation.target,
+          targetSpace: "pre-removal"
+        },
+        model.columnCount()
+      );
+      return;
+    default:
+      return;
   }
 }
 
