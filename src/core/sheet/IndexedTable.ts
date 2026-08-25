@@ -1,5 +1,6 @@
 import { remapByColumnShift, remapByRowPlan } from "./indexShift";
 import type { ColumnShift } from "./columnShift";
+import { assertCanonicalIndexKeys, assertIndexIsNonNegativeInteger } from "./indexKey";
 import { CyExcelError, CyExcelErrorCode } from "../errors";
 
 export type IndexAxis = "row" | "column";
@@ -19,20 +20,26 @@ export class IndexedTable<T> {
   #data: Record<number, T>;
   #extent: number;
 
+  /**
+   * `initial` 的键在**展开之前**就要校验。
+   *
+   * 拥有存储的类才是该拒绝它搬不动的键的类：一个落在非规范键上的条目，`extent()`
+   * 算不进去（`Number("-1") + 1 === 0`），于是排列永远不会点名它，第一次结构操作
+   * 就把它静默丢掉——这正是 ADR §9 不变量 4 存在的那一类缺陷。校验此前只活在
+   * `WorkbookModel.addResource` 那条路上，而本类的构造函数是公开导出的，
+   * `SheetModel.registerTable()` 又照单全收，等于登记处自己重新生产了它要根除的缺陷。
+   */
   constructor(
     readonly name: string,
     readonly indexedBy: IndexAxis,
     initial?: Readonly<Record<number, T>>
   ) {
+    if (initial) {
+      assertCanonicalIndexKeys(initial, `table "${name}" initial data`);
+    }
     // 拷一层：调用方交进来的对象之后不该被我们改动
     this.#data = initial ? { ...initial } : {};
-    this.#extent = 0;
-    for (const key of Object.keys(this.#data)) {
-      const index = Number(key) + 1;
-      if (index > this.#extent) {
-        this.#extent = index;
-      }
-    }
+    this.#extent = this.#recomputeExtent();
   }
 
   /**
@@ -55,7 +62,13 @@ export class IndexedTable<T> {
     return this.#data[index];
   }
 
+  /**
+   * 下标必须是非负整数，理由同构造函数：负数或小数下标搬不动，会在第一次结构
+   * 操作里静默消失。校验放在这里而不是各个调用方，是因为拥有存储的类才是该拒绝
+   * 它搬不动的键的类——`SheetModel.setRowMeta` 之类的门面都委托到这里。
+   */
   set(index: number, value: T): void {
+    assertIndexIsNonNegativeInteger(index, `table "${this.name}" index`);
     this.#data[index] = value;
     if (index + 1 > this.#extent) {
       this.#extent = index + 1;

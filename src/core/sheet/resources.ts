@@ -1,9 +1,7 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
 import { IndexedTable } from "./IndexedTable";
+import { assertCanonicalIndexKeys } from "./indexKey";
 import type { ResourceEntry } from "./types";
-
-/** 规范形式的非负整数字符串："0" 或不带前导零的正整数。与 serialize.ts 同一条。 */
-const NON_NEGATIVE_INTEGER_KEY = /^(0|[1-9]\d*)$/;
 
 function invalid(message: string): CyExcelError {
   return new CyExcelError(CyExcelErrorCode.InvalidOptions, message);
@@ -15,9 +13,10 @@ function invalid(message: string): CyExcelError {
  * `indexedBy: "row" | "column"` 的资源，其 `data` **必须**是稀疏下标映射——
  * 核心要按下标重键它（§7.2），键不是规范的非负整数就无法重键，而 `Number()`
  * 对非法键不报错、产出 NaN 或垃圾值，会静默丢条目。`"none"` 是不透明 blob，
- * 核心不碰，因此 `data` 不作任何约束。`Object.keys()` 对符号键不可见，因此符号键
- * 绕过键值校验但仍被对象展开操作复制进表（与 `serialize.ts` 的 `assertValidIndexKeys`
- * 同一特性），惰性但不失效——JSON 无法产生符号键且重键永不触及它。
+ * 核心不碰，因此 `data` 不作任何约束。
+ *
+ * 键值规则本身在 `indexKey.ts`（含符号键的说明）：本文件此前抄了一份自己的正则，
+ * 而 `IndexedTable` 的公开构造函数根本没走到这条路——校验器造好了却从未到达容器。
  */
 export function assertValidResourceEntry(entry: ResourceEntry, label: string): void {
   if (typeof entry.name !== "string" || entry.name.length === 0) {
@@ -37,11 +36,7 @@ export function assertValidResourceEntry(entry: ResourceEntry, label: string): v
       `${label}.data must be a sparse index map because indexedBy is "${entry.indexedBy}"`
     );
   }
-  for (const key of Object.keys(data)) {
-    if (!NON_NEGATIVE_INTEGER_KEY.test(key)) {
-      throw invalid(`${label}.data key must be a non-negative integer, received "${key}"`);
-    }
-  }
+  assertCanonicalIndexKeys(data as Readonly<Record<number, unknown>>, `${label}.data key`);
 }
 
 /**

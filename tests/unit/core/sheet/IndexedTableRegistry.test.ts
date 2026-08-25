@@ -95,4 +95,11 @@ describe("SheetModel — 侧表登记处", () => {
     const model = SheetModel.createEmpty();
     expect(() => model.registerTable(new IndexedTable<string>("rowData", "row"))).toThrow(/rowData/);
   });
+
+  it("registerTable 收不到一张键非法的表——校验在构造时就发生", () => {
+    const model = SheetModel.createEmpty();
+    expect(() =>
+      model.registerTable(new IndexedTable<string>("bad", "row", { "-1": "x" } as never))
+    ).toThrow(/key/);
+  });
 });

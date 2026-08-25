@@ -2,6 +2,7 @@ import { CyExcelError, CyExcelErrorCode } from "../errors";
 import type { CellRange } from "../types";
 import { assertValidBlankCount } from "./coordinateSpace";
 import { CellMatrix } from "./CellMatrix";
+import { assertCanonicalIndexKeys } from "./indexKey";
 import type { CellRecord, ColumnMeta, RowMeta, SheetSnapshot, WorkbookSnapshot } from "./types";
 import { SNAPSHOT_VERSION } from "./types";
 import { assertValidResourceEntry } from "./resources";
@@ -105,38 +106,25 @@ export function deserializeSheet(snapshot: SheetSnapshot): DeserializeOutput {
   };
 }
 
-/** 规范形式的非负整数字符串："0" 或不带前导零的正整数。 */
-const NON_NEGATIVE_INTEGER_KEY = /^(0|[1-9]\d*)$/;
-
 /**
- * `cellData` / `rowData` / `columnData` 都按行号或列号做稀疏下标索引
- * （spec §3）。这些下标经 `JSON.parse` 读入后只是字符串键，`Number()` 强转
- * 对非法输入（非数字、负数、小数）不会报错而是产出 NaN 或垃圾值——继续用它
- * 索引矩阵会静默丢数据或产出负的 occupied 计数（spec §11 不变量 5 依赖的
- * 派生坐标空间算术因此被破坏）。所以键的合法性必须在这里显式校验。
+ * 校验一张 sheet 的 `cellData`/`rowData`/`columnData` 键（spec §3、§11 不变量 5）。
+ *
+ * 这些下标经 `JSON.parse` 读入后只是字符串键，`Number()` 强转对非法输入（非数字、
+ * 负数、小数）不会报错而是产出 NaN 或垃圾值——继续用它索引矩阵会静默丢数据或产出
+ * 负的 occupied 计数（spec §11 不变量 5 依赖的派生坐标空间算术因此被破坏）。
+ * 规则本身在 `indexKey.ts`：本文件此前有一份自己的正则，`resources.ts` 有另一份，
+ * 同一条规则写三遍而消息已经开始分叉。
  */
-function assertValidIndexKeys(record: Readonly<Record<number, unknown>>, label: string): void {
-  for (const key of Object.keys(record)) {
-    if (!NON_NEGATIVE_INTEGER_KEY.test(key)) {
-      throw new CyExcelError(
-        CyExcelErrorCode.InvalidOptions,
-        `${label} must be a non-negative integer key, received "${key}"`
-      );
-    }
-  }
-}
-
-/** 校验一张 sheet 的 `cellData`/`rowData`/`columnData` 键（spec §3、§11 不变量 5）。 */
 function assertValidSheetKeys(sheet: SheetSnapshot, label: string): void {
-  assertValidIndexKeys(sheet.cellData, `${label}.cellData row key`);
+  assertCanonicalIndexKeys(sheet.cellData, `${label}.cellData row key`);
   for (const rowKey of Object.keys(sheet.cellData)) {
     const bucket = sheet.cellData[Number(rowKey)];
     if (bucket) {
-      assertValidIndexKeys(bucket, `${label}.cellData[${rowKey}] column key`);
+      assertCanonicalIndexKeys(bucket, `${label}.cellData[${rowKey}] column key`);
     }
   }
-  assertValidIndexKeys(sheet.rowData, `${label}.rowData row key`);
-  assertValidIndexKeys(sheet.columnData, `${label}.columnData column key`);
+  assertCanonicalIndexKeys(sheet.rowData, `${label}.rowData row key`);
+  assertCanonicalIndexKeys(sheet.columnData, `${label}.columnData column key`);
 }
 
 export function assertValidWorkbookSnapshot(value: WorkbookSnapshot): void {

@@ -91,6 +91,22 @@ describe("IndexedTable — 重键", () => {
   });
 });
 
+describe("IndexedTable — 拒绝搬不动的键", () => {
+  it("构造时拒绝非规范键——否则第一次结构操作就静默丢掉它", () => {
+    // 终审实测：{"-1":"x"} 登记后 extent 为 0，insertRows 之后 read() 变成 {}
+    expect(() => new IndexedTable<string>("bad", "row", { "-1": "x" } as never)).toThrow(/key/);
+    expect(() => new IndexedTable<string>("bad", "row", { "1.5": "x" } as never)).toThrow(/key/);
+    expect(() => new IndexedTable<string>("bad", "row", { " 1": "x" } as never)).toThrow(/key/);
+    expect(() => new IndexedTable<string>("bad", "row", { "1e3": "x" } as never)).toThrow(/key/);
+  });
+
+  it("set 拒绝非整数或负下标", () => {
+    const table = new IndexedTable<string>("t", "row");
+    expect(() => table.set(-1, "x")).toThrow(/non-negative integer/);
+    expect(() => table.set(1.5, "x")).toThrow(/non-negative integer/);
+  });
+});
+
 describe("IndexedTable — 轴不匹配必须炸", () => {
   // 断言必须锁住**两个轴各自的位置**。消息模板同时带着 `indexedBy` 与 `expected`，
   // 所以任何一条不匹配的消息里 "row" 和 "column" 都会出现——只找单个词的正则
