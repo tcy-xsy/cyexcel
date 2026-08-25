@@ -78,6 +78,22 @@ export interface ResourceEntry {
    */
   readonly indexedBy: "row" | "column" | "none";
   /**
+   * 这条资源的下标属于**哪一张 sheet**。
+   *
+   * `indexedBy: "row" | "column"` 的资源，其下标是某一张 sheet 的行号/列号，
+   * 重键也发生在该 sheet 的结构操作上（spec §7.2）。当前
+   * `sheetOrder.length === 1`（不变量 6），缺省即那唯一一张，没有歧义。
+   *
+   * **现在就留这个字段，是照 §3.2 对 `sheets` / `sheetOrder` 的同一个理由**：
+   * 本类型进快照，M3 再加就是格式变更，要按 §3.1 升 `version` 并给存量快照
+   * 一条迁移路径。资源名是 workbook 唯一而表名是 sheet 唯一，多表下"两张 sheet
+   * 各挂一份同名资源"是正常场景，缺了这个字段表达不出来。
+   *
+   * `indexedBy: "none"` **不得**给出：它是 workbook 级的不透明 blob，没有轴，
+   * 也就没有所属的 sheet。
+   */
+  readonly sheetId?: string;
+  /**
    * 资源数据。别名的强度**按 `indexedBy` 分成两种**，不是一种——见本文件顶部的
    * 别名规则形态 2。
    *

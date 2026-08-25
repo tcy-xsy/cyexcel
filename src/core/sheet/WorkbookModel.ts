@@ -1,5 +1,10 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { assertValidResourceEntry, resourceToTable, tableToResource } from "./resources";
+import {
+  assertResourceSheetId,
+  assertValidResourceEntry,
+  resourceToTable,
+  tableToResource
+} from "./resources";
 import { assertValidWorkbookSnapshot } from "./serialize";
 import { SheetModel, type SheetModelOptions } from "./SheetModel";
 import type { IndexedTable } from "./IndexedTable";
@@ -19,8 +24,10 @@ export interface WorkbookModelOptions {
  * 之后由 `SheetModel` 的结构操作自动搬运（spec §7.2：核心统一提供，不外包给
  * 插件作者）；`indexedBy: "none"` 的留在这里当不透明 blob。
  *
- * 现在 `sheetOrder.length === 1`（不变量 6），"哪张 sheet"没有歧义。M3 放开
- * 多 Sheet 时按下标索引的资源需要带 sheet id——那时再改这里。
+ * `ResourceEntry.sheetId` 现在就存在（类型见 `types.ts`），但现在
+ * `sheetOrder.length === 1`（不变量 6），"哪张 sheet"本就没有歧义，所以缺省
+ * 合法、也不会被这里补上默认值——补了默认值就会让"没指定"和"指定了当前这
+ * 张"在快照里无法区分，而 M3 放开多 Sheet 后这两者含义不同。
  *
  * `styles` 本阶段是**不透明透传**：字段集属于 Step 24（spec §10），这里只保证往返。
  */
@@ -28,6 +35,15 @@ export class WorkbookModel {
   readonly #sheet: SheetModel;
   /** 按下标索引的资源：登记在 sheet 上，这里只留引用以便 toSnapshot 收拢 */
   readonly #indexedResources = new Map<string, IndexedTable<unknown>>();
+  /**
+   * 按下标索引的资源里，显式给出过的 `sheetId`（按资源名存）。`IndexedTable`
+   * 本身不存这个字段——它只管重键，不管条目原来长什么样——`resourceToTable`
+   * 把条目展开进表时也就把 `sheetId` 丢在了外面。收拢回 `ResourceEntry`
+   * （`resource()`）时要把它重新拼回去，才需要在这里另存一份；
+   * 缺省不给出的资源**不进这张表**，`resource()` 里查不到时传 `undefined`
+   * 给 `tableToResource`，对应"缺省不补默认值"（见 sheetId.test.ts 往返用例二）。
+   */
+  readonly #indexedResourceSheetIds = new Map<string, string>();
   /** indexedBy： "none"，核心不碰 */
   readonly #opaqueResources = new Map<string, ResourceEntry>();
   /**
@@ -83,6 +99,11 @@ export class WorkbookModel {
    */
   addResource(entry: ResourceEntry): void {
     assertValidResourceEntry(entry, `resource "${entry.name}"`);
+    // 形状校验之后再查引用完整性：这里手上有真实的 sheet 列表，`resourceToTable`
+    // （下面会调到）没有，因此这条检查在这里做，而不是塞进 resourceToTable
+    // 内部那次 assertValidResourceEntry（见 resources.ts 里 assertResourceSheetId
+    // 的文档注释）。
+    assertResourceSheetId(entry, `resource "${entry.name}"`, this.sheetIds());
     if (this.#indexedResources.has(entry.name) || this.#opaqueResources.has(entry.name)) {
       throw new CyExcelError(
         CyExcelErrorCode.InvalidOptions,
@@ -112,6 +133,9 @@ export class WorkbookModel {
     // 所以 push 必须在它们之后，失败的一次不该在顺序表里留下痕迹
     const table = this.#sheet.registerTable(resourceToTable(entry));
     this.#indexedResources.set(entry.name, table);
+    if (entry.sheetId !== undefined) {
+      this.#indexedResourceSheetIds.set(entry.name, entry.sheetId);
+    }
     this.#resourceOrder.push(entry.name);
   }
 
@@ -129,7 +153,7 @@ export class WorkbookModel {
   resource(name: string): ResourceEntry | undefined {
     const table = this.#indexedResources.get(name);
     if (table) {
-      return tableToResource(table);
+      return tableToResource(table, this.#indexedResourceSheetIds.get(name));
     }
     return this.#opaqueResources.get(name);
   }

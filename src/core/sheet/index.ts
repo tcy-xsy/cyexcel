@@ -41,3 +41,4 @@ export {
   assertIndexIsNonNegativeInteger,
   isCanonicalIndexKey
 } from "./indexKey";
+export { assertResourceSheetId } from "./resources";

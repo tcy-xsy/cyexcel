@@ -5,7 +5,7 @@ import { CellMatrix } from "./CellMatrix";
 import { assertCanonicalIndexKeys } from "./indexKey";
 import type { CellRecord, ColumnMeta, RowMeta, SheetSnapshot, WorkbookSnapshot } from "./types";
 import { SNAPSHOT_VERSION } from "./types";
-import { assertValidResourceEntry } from "./resources";
+import { assertResourceSheetId, assertValidResourceEntry } from "./resources";
 
 export interface SerializeInput {
   readonly id: string;
@@ -166,6 +166,9 @@ export function assertValidWorkbookSnapshot(value: WorkbookSnapshot): void {
   const seenResources = new Set<string>();
   value.resources.forEach((entry, index) => {
     assertValidResourceEntry(entry, `resources[${index}]`);
+    // 形状校验之后再查引用完整性：sheetId 指向的 sheet 必须在 sheetOrder 里，
+    // 否则下标失去所指就是静默错位（spec §7.2"Sheet 作用域"一段）。
+    assertResourceSheetId(entry, `resources[${index}]`, value.sheetOrder);
     if (seenResources.has(entry.name)) {
       throw new CyExcelError(
         CyExcelErrorCode.InvalidOptions,
