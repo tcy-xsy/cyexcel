@@ -30,6 +30,13 @@ export class WorkbookModel {
   readonly #indexedResources = new Map<string, IndexedTable<unknown>>();
   /** indexedBy: "none",核心不碰 */
   readonly #opaqueResources = new Map<string, ResourceEntry>();
+  /**
+   * 资源加入的顺序,横跨两个 Map。`toSnapshot()` 的 `resources` 数组按这个顺序
+   * 输出,而不是先输出全部 indexed 再输出全部 opaque——否则同一份快照
+   * 交叉排列两种资源时,`fromSnapshot(s).toSnapshot().resources` 的顺序会
+   * 变成按种类分组,不再等于 `s.resources`,round trip 就不成立了。
+   */
+  readonly #resourceOrder: string[] = [];
   /** 本阶段不透明透传,没有 setter,故 readonly(字段集属 Step 24,spec §10) */
   readonly #styles: Readonly<Record<string, unknown>>;
 
@@ -88,11 +95,14 @@ export class WorkbookModel {
         indexedBy: "none",
         data: entry.data
       });
+      this.#resourceOrder.push(entry.name);
       return;
     }
-    // 重名(含撞上核心的 rowData / columnData)由登记处拒绝
+    // 重名(含撞上核心的 rowData / columnData)由登记处拒绝——registerTable 可能抛,
+    // 所以 push 必须在它之后,失败的一次不该在顺序表里留下痕迹
     const table = this.#sheet.registerTable(resourceToTable(entry));
     this.#indexedResources.set(entry.name, table);
+    this.#resourceOrder.push(entry.name);
   }
 
   resource(name: string): ResourceEntry | undefined {
@@ -104,18 +114,23 @@ export class WorkbookModel {
   }
 
   resourceNames(): readonly string[] {
-    return [...this.#indexedResources.keys(), ...this.#opaqueResources.keys()];
+    return [...this.#resourceOrder];
   }
 
   toSnapshot(): WorkbookSnapshot {
     const sheetSnapshot = this.#sheet.toSnapshot();
-    const resources: ResourceEntry[] = [];
-    for (const table of this.#indexedResources.values()) {
-      resources.push(tableToResource(table));
-    }
-    for (const entry of this.#opaqueResources.values()) {
-      resources.push(entry);
-    }
+    const resources: ResourceEntry[] = this.#resourceOrder.map((name) => {
+      const entry = this.resource(name);
+      if (!entry) {
+        // #resourceOrder 只在 addResource 成功记录之后才追加,查不到对应条目
+        // 说明两处状态被绕过登记处直接改过,是编程错误,必须炸出来
+        throw new CyExcelError(
+          CyExcelErrorCode.InvalidOptions,
+          `resource "${name}" is in the insertion order but has no entry in either resource map`
+        );
+      }
+      return entry;
+    });
     return {
       version: SNAPSHOT_VERSION,
       sheetOrder: [sheetSnapshot.id],

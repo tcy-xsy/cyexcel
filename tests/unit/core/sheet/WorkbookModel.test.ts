@@ -74,6 +74,24 @@ describe("WorkbookModel — resources 往返", () => {
       /rowData/
     );
   });
+
+  it("resources 数组按加入顺序往返，不按 indexedBy 分组", () => {
+    const workbook = WorkbookModel.createEmpty();
+    workbook.addResource({ name: "first", indexedBy: "none", data: 1 });
+    workbook.addResource({ name: "second", indexedBy: "row", data: { 0: "a" } });
+    workbook.addResource({ name: "third", indexedBy: "none", data: 3 });
+    const snapshot = workbook.toSnapshot();
+    expect(snapshot.resources.map((r) => r.name)).toEqual(["first", "second", "third"]);
+    // 往返之后顺序必须还是这个——否则 fromSnapshot(s).toSnapshot() 不等于 s
+    const restored = WorkbookModel.fromSnapshot(snapshot).toSnapshot();
+    expect(restored.resources.map((r) => r.name)).toEqual(["first", "second", "third"]);
+  });
+
+  it("跨 indexedBy 的重名也被拒绝", () => {
+    const workbook = WorkbookModel.createEmpty();
+    workbook.addResource({ name: "dup", indexedBy: "none", data: 1 });
+    expect(() => workbook.addResource({ name: "dup", indexedBy: "row", data: {} })).toThrow(/dup/);
+  });
 });
 
 describe("spec §7.2 的重键契约 —— 两个消费者，一套机制", () => {
