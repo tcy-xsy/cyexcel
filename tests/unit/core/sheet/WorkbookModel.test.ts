@@ -87,6 +87,29 @@ describe("WorkbookModel — resources 往返", () => {
     expect(restored.resources.map((r) => r.name)).toEqual(["first", "second", "third"]);
   });
 
+  it("加载回来之后仍能写自己的资源——spec §7.1 要的是维护主键，不只是往返", () => {
+    const source = WorkbookModel.createEmpty();
+    source.addResource({ name: "rowKeys", indexedBy: "row", data: { 0: "pk-0" } });
+    const workbook = WorkbookModel.fromSnapshot(source.toSnapshot());
+
+    // 经 resource() 写是写进副本，丢掉——这正是为什么需要 resourceTable()
+    (workbook.resource("rowKeys")?.data as Record<number, string>)[1] = "pk-1";
+    expect(workbook.resource("rowKeys")?.data).toStrictEqual({ 0: "pk-0" });
+
+    workbook.resourceTable("rowKeys")?.set(1, "pk-1");
+    expect(workbook.resource("rowKeys")?.data).toStrictEqual({ 0: "pk-0", 1: "pk-1" });
+
+    // 而且新写进去的这条也跟着结构操作走
+    workbook.sheet().insertRows(0, 1);
+    expect(workbook.resource("rowKeys")?.data).toStrictEqual({ 1: "pk-0", 2: "pk-1" });
+  });
+
+  it("indexedBy: none 的资源没有表形态", () => {
+    const workbook = WorkbookModel.createEmpty();
+    workbook.addResource({ name: "blob", indexedBy: "none", data: 1 });
+    expect(workbook.resourceTable("blob")).toBeUndefined();
+  });
+
   it("跨 indexedBy 的重名也被拒绝", () => {
     const workbook = WorkbookModel.createEmpty();
     workbook.addResource({ name: "dup", indexedBy: "none", data: 1 });

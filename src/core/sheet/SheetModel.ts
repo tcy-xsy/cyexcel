@@ -340,6 +340,16 @@ export class SheetModel {
   }
 
   /**
+   * 取一张已登记的侧表的**活句柄**，用于读写。
+   *
+   * 与 `tableNames()` 不同，这个是给写路径用的：spec §7.1 的业务主键要在新建行时
+   * 写入，光能往返不够。返回的就是登记处里那一张，改动立即对结构操作可见。
+   */
+  table(name: string): IndexedTable<unknown> | undefined {
+    return this.#tables.table(name);
+  }
+
+  /**
    * 这张表的 id。
    *
    * `#id` 一直是私有的、只在 `toSnapshot()` 里出现，于是"拿一下 id"要序列化整张

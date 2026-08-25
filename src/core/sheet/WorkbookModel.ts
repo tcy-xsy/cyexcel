@@ -113,6 +113,16 @@ export class WorkbookModel {
     return this.#opaqueResources.get(name);
   }
 
+  /**
+   * 取一条按下标索引的资源的**活句柄**。
+   *
+   * `resource()` 返回的是一份拷贝（见其注释），写进去会丢；要维护主键这类随行走的
+   * 事实，必须拿这个。`indexedBy: "none"` 的资源没有表形态，返回 `undefined`。
+   */
+  resourceTable(name: string): IndexedTable<unknown> | undefined {
+    return this.#indexedResources.get(name);
+  }
+
   resourceNames(): readonly string[] {
     return [...this.#resourceOrder];
   }
