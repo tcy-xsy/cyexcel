@@ -164,6 +164,23 @@ function grabError(run: () => void): Error | undefined {
   return undefined;
 }
 
+/**
+ * 断言 prepare 期与 commit 期对同一个非法输入抛出**同一个**错误。
+ *
+ * 两边都要先确认真的抛了：都不抛的话 `fromPrepare?.constructor` 与
+ * `fromCommit?.constructor` 双双是 `undefined`，`toBe` 会空过。
+ */
+function expectPrepareMatchesCommit(mutation: SheetMutation, commit: (model: SheetModel) => void): void {
+  const fromPrepare = grabError(() => invertSheetMutation(fixture(), mutation));
+  const fromCommit = grabError(() => {
+    commit(fixture());
+  });
+  expect(fromCommit).toBeInstanceOf(Error);
+  expect(fromPrepare).toBeInstanceOf(Error);
+  expect(fromPrepare?.constructor).toBe(fromCommit?.constructor);
+  expect(fromPrepare?.message).toBe(fromCommit?.message);
+}
+
 function expectNonInvasive(mutation: SheetMutation): void {
   const model = fixture();
   const before = model.toSnapshot();
@@ -380,6 +397,44 @@ describe("invertSheetMutation — 参数校验前置到 prepare", () => {
     expect(() => invertSheetMutation(fixture(), { type: "move-columns", start: 0, count: 2, target: 1 })).toThrow(
       /move target cannot be inside the moved block/
     );
+  });
+
+  /*
+   * 下面四条各盯一条臂。
+   *
+   * 它们此前是空白：先前那两条校验测试用的是"target 落在块内"，而 target 只有
+   * `move` 有——于是 insert / delete 四条臂拿到了校验却没有任何测试。把
+   * `validateAxisChange` 从这四条臂上整个删掉，1508 条测试全绿。
+   *
+   * 后果不是崩溃，是更坏的一种：`delete-rows(100, 5)` 在只有 7 行的表上不会炸，
+   * `captureRowCells` 与 `getRowMeta` 对越界下标平静地给出 `{}` 与 `undefined`，
+   * 于是求逆返回一条**形状合法、语义是垃圾**的 `restore-rows`，把失败推到 commit。
+   * 四条分开写，红的时候直接点名是哪条臂。
+   */
+  it("insert-rows：start 越过轴长，在求逆时就抛，且与 commit 期是同一个错", () => {
+    // 轴长 7（占用到第 4 行 + blankRows 2）
+    expectPrepareMatchesCommit({ type: "insert-rows", start: 8, rows: [{}] }, (m) => {
+      m.insertRows(8, 1);
+    });
+  });
+
+  it("delete-rows：start + count 越过轴长，在求逆时就抛，且与 commit 期是同一个错", () => {
+    expectPrepareMatchesCommit({ type: "delete-rows", start: 5, count: 3 }, (m) => {
+      m.deleteRows(5, 3);
+    });
+  });
+
+  it("insert-columns：start 越过轴长，在求逆时就抛，且与 commit 期是同一个错", () => {
+    // 列轴长 5（占用到第 2 列 + blankColumns 2）
+    expectPrepareMatchesCommit({ type: "insert-columns", start: 6, count: 1 }, (m) => {
+      m.insertColumns(6, 1);
+    });
+  });
+
+  it("delete-columns：start + count 越过轴长，在求逆时就抛，且与 commit 期是同一个错", () => {
+    expectPrepareMatchesCommit({ type: "delete-columns", start: 3, count: 3 }, (m) => {
+      m.deleteColumns(3, 3);
+    });
   });
 
   it("reorder：不合法的 order 在求逆时就抛，且与 commit 期抛的完全是同一个错", () => {
