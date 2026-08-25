@@ -17,3 +17,4 @@ export {
   type DeserializeOutput,
   type SerializeInput
 } from "./serialize";
+export { SheetModel, type SheetModelOptions } from "./SheetModel";
