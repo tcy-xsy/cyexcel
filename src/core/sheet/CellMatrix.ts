@@ -1,3 +1,4 @@
+import { assertValidRowOrder } from "../layout/rowOrder";
 import type { CellRecord } from "./types";
 
 type RowBucket = Record<number, CellRecord>;
@@ -77,12 +78,21 @@ export class CellMatrix {
   *rows(): Generator<[number, Readonly<RowBucket>]> {
     for (const key of Object.keys(this.#rows)) {
       const row = Number(key);
-      yield [row, this.#rows[row] as RowBucket];
+      const bucket = this.#rows[row];
+      if (bucket) {
+        yield [row, bucket];
+      }
     }
   }
 
   /** `order[newPosition] = oldPosition`，仓库既有约定（ADR 0003）。 */
   reorderRows(order: Int32Array): void {
+    assertValidRowOrder(order, order.length);
+    if (this.#maxRow !== undefined && this.#maxRow >= order.length) {
+      throw new RangeError(
+        `occupied row ${this.#maxRow} >= order length ${order.length}, would be silently dropped`
+      );
+    }
     const next = Object.create(null) as Record<number, RowBucket>;
     let maxRow: number | undefined = undefined;
     for (let newRow = 0; newRow < order.length; newRow += 1) {

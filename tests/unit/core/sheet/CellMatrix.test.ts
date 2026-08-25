@@ -135,4 +135,40 @@ describe("CellMatrix", () => {
     expect(matrix.maxOccupiedRow()).toBe(1);
     expect(matrix.get(1, 0)).toEqual({ v: "a" });
   });
+
+  it("rejects non-permutation row order", () => {
+    const matrix = new CellMatrix();
+    matrix.set(0, 0, { v: "a" });
+    const duplicateOrder = Int32Array.from([0, 0]);
+    expect(() => matrix.reorderRows(duplicateOrder)).toThrow(RangeError);
+  });
+
+  it("rejects row order too short to cover largest occupied row", () => {
+    const matrix = new CellMatrix();
+    matrix.set(5, 0, { v: "a" });
+    const tooShortOrder = Int32Array.from([0, 1, 2]);
+    expect(() => matrix.reorderRows(tooShortOrder)).toThrow(RangeError);
+  });
+
+  it("skips rows deleted mid-iteration and yields only surviving rows", () => {
+    const matrix = new CellMatrix();
+    matrix.set(0, 0, { v: "a" });
+    matrix.set(1, 0, { v: "b" });
+    matrix.set(2, 0, { v: "c" });
+    const rows: Array<[number, unknown]> = [];
+    for (const [row, bucket] of matrix.rows()) {
+      rows.push([row, bucket]);
+      if (row === 0) {
+        // Delete a not-yet-visited row mid-iteration
+        matrix.delete(2, 0);
+      }
+    }
+    const rowNumbers = rows.map(([row]) => row).sort((a, b) => a - b);
+    expect(rowNumbers).toEqual([0, 1]);
+    // Verify all buckets are valid (not undefined)
+    for (const [, bucket] of rows) {
+      expect(bucket).toBeDefined();
+      expect(typeof bucket).toBe("object");
+    }
+  });
 });
