@@ -1,9 +1,16 @@
 import type { CellRange } from "../types";
+import { CyExcelError, CyExcelErrorCode } from "../errors";
 import { CellMatrix } from "./CellMatrix";
 import { assertValidBlankCount, resolveCoordinateSpace } from "./coordinateSpace";
 import { deserializeSheet, serializeSheet } from "./serialize";
 import type { CellRecord, ColumnMeta, RowMeta, SheetSnapshot } from "./types";
 import { DEFAULT_BLANK_COLUMNS, DEFAULT_BLANK_ROWS } from "./types";
+import {
+  buildDeleteRowsPlan,
+  buildInsertRowsPlan,
+  buildMoveRowsPlan
+} from "./rowPlan";
+import { remapByColumnShift, remapByRowPlan } from "./indexShift";
 
 export interface SheetModelOptions {
   readonly id?: string;
@@ -22,8 +29,8 @@ export interface SheetModelOptions {
  */
 export class SheetModel {
   readonly #matrix: CellMatrix;
-  readonly #rowData: Readonly<Record<number, RowMeta>>;
-  readonly #columnData: Readonly<Record<number, ColumnMeta>>;
+  #rowData: Readonly<Record<number, RowMeta>>;
+  #columnData: Readonly<Record<number, ColumnMeta>>;
   #mergeData: readonly CellRange[];
   readonly #id: string;
   readonly #name: string;
@@ -147,5 +154,132 @@ export class SheetModel {
       mergeData: this.#mergeData,
       ...(this.#freeze !== undefined ? { freeze: this.#freeze } : {})
     });
+  }
+
+  /**
+   * 合并区跟着结构操作正确搬移是一整块 Excel 语义（跨插入点延展、被删范围
+   * 完全覆盖则消失、部分覆盖则收缩），属于阶段 5。在那之前**拒绝**而不是
+   * 错着搬——静默错搬比拒绝糟得多。仓库先例：headerGroups 同样挡住列结构变更。
+   */
+  #assertNoMerges(operation: string): void {
+    if (this.#mergeData.length > 0) {
+      throw new CyExcelError(
+        CyExcelErrorCode.MutationNotSupported,
+        `${operation} is not supported while merged ranges exist`
+      );
+    }
+  }
+
+  /**
+   * 行的"占用范围"必须取**格子与元数据的并集**，不能只看格子。
+   *
+   * 这个 extent 同时驱动两件事：矩阵的搬运，以及 `rowData` 的重键。而元数据
+   * 可以存在于没有任何格子的行上——用户给一个空行设了行高，是完全正常的状态。
+   * 只按格子算的话，超出格子范围的那些行高会被每一次结构操作静默丢弃。
+   */
+  #occupiedRowExtent(): number {
+    const maxCellRow = this.#matrix.maxOccupiedRow();
+    let extent = maxCellRow === undefined ? 0 : maxCellRow + 1;
+    for (const key of Object.keys(this.#rowData)) {
+      const row = Number(key);
+      if (row + 1 > extent) {
+        extent = row + 1;
+      }
+    }
+    return extent;
+  }
+
+  #applyRowPlan(plan: Int32Array, sourceExtent: number): void {
+    this.#matrix.applyRowPlan(plan, sourceExtent);
+    this.#rowData = remapByRowPlan(this.#rowData, plan);
+  }
+
+  insertRows(start: number, count: number): void {
+    this.#assertNoMerges("insertRows");
+    const extent = this.#occupiedRowExtent();
+    this.#applyRowPlan(buildInsertRowsPlan(extent, start, count), extent);
+  }
+
+  deleteRows(start: number, count: number): void {
+    this.#assertNoMerges("deleteRows");
+    const extent = this.#occupiedRowExtent();
+    this.#applyRowPlan(buildDeleteRowsPlan(extent, start, count), extent);
+  }
+
+  moveRows(start: number, count: number, target: number): void {
+    this.#assertNoMerges("moveRows");
+    const extent = this.#occupiedRowExtent();
+    this.#applyRowPlan(buildMoveRowsPlan(extent, start, count, target), extent);
+  }
+
+  reorderRows(order: Int32Array): void {
+    this.#assertNoMerges("reorderRows");
+    this.#matrix.reorderRows(order);
+    this.#rowData = remapByRowPlan(this.#rowData, order);
+  }
+
+  insertColumns(start: number, count: number): void {
+    this.#assertNoMerges("insertColumns");
+    this.#matrix.insertColumns(start, count);
+    this.#columnData = remapByColumnShift(this.#columnData, (column) =>
+      column < start ? column : column + count
+    );
+  }
+
+  deleteColumns(start: number, count: number): void {
+    this.#assertNoMerges("deleteColumns");
+    this.#matrix.deleteColumns(start, count);
+    this.#columnData = remapByColumnShift(this.#columnData, (column) => {
+      if (column < start) {
+        return column;
+      }
+      if (column < start + count) {
+        return undefined;
+      }
+      return column - count;
+    });
+  }
+
+  moveColumns(start: number, count: number, target: number): void {
+    this.#assertNoMerges("moveColumns");
+    this.#matrix.moveColumns(start, count, target);
+    const insertAt = target > start ? target - count : target;
+    this.#columnData = remapByColumnShift(this.#columnData, (column) => {
+      if (column >= start && column < start + count) {
+        return insertAt + (column - start);
+      }
+      const withoutBlock = column > start ? column - count : column;
+      return withoutBlock >= insertAt ? withoutBlock + count : withoutBlock;
+    });
+  }
+
+  getRowMeta(row: number): RowMeta | undefined {
+    return this.#rowData[row];
+  }
+
+  setRowMeta(row: number, meta: RowMeta): void {
+    this.#rowData = { ...this.#rowData, [row]: meta };
+  }
+
+  getColumnMeta(column: number): ColumnMeta | undefined {
+    return this.#columnData[column];
+  }
+
+  setColumnMeta(column: number, meta: ColumnMeta): void {
+    this.#columnData = { ...this.#columnData, [column]: meta };
+  }
+
+  merges(): readonly CellRange[] {
+    return this.#mergeData;
+  }
+
+  occupiedCount(): number {
+    return this.#matrix.occupiedCount();
+  }
+
+  /** 最大占用列号加一——与 `columnCount()`（坐标空间）是两个不同的数。 */
+  occupiedColumnCount(): number {
+    const max = this.#matrix.maxOccupiedColumn();
+    return max === undefined ? 0 : max + 1;
   }
 }

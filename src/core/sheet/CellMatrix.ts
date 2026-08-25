@@ -91,10 +91,14 @@ export class CellMatrix {
    * `ROW_PLAN_HOLE` 表示新空行；没有被提到的旧行被丢弃。
    *
    * insert / delete / move / reorder 全部经由这里，各自只负责算出 plan。
+   *
+   * `sourceExtent` is optional and used when the source data has knowledge of rows
+   * beyond what the matrix contains (e.g., rows with metadata but no cells).
+   * Defaults to the matrix's own extent if not provided.
    */
-  applyRowPlan(plan: Int32Array): void {
+  applyRowPlan(plan: Int32Array, sourceExtent?: number): void {
     const currentExtent = this.#maxRow === undefined ? 0 : this.#maxRow + 1;
-    const extent = Math.max(currentExtent, plan.length);
+    const extent = Math.max(currentExtent, plan.length, sourceExtent ?? 0);
     assertValidRowPlan(plan, extent);
     const next = Object.create(null) as Record<number, RowBucket>;
     let maxRow: number | undefined = undefined;
