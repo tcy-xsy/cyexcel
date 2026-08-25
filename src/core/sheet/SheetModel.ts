@@ -2,6 +2,8 @@ import type { CellRange } from "../types";
 import { CyExcelError, CyExcelErrorCode } from "../errors";
 import { CellMatrix } from "./CellMatrix";
 import { assertValidBlankCount, resolveCoordinateSpace } from "./coordinateSpace";
+import { IndexedTable } from "./IndexedTable";
+import { IndexedTableRegistry } from "./IndexedTableRegistry";
 import { deserializeSheet, serializeSheet } from "./serialize";
 import type { CellRecord, ColumnMeta, RowMeta, SheetSnapshot } from "./types";
 import { DEFAULT_BLANK_COLUMNS, DEFAULT_BLANK_ROWS } from "./types";
@@ -10,7 +12,6 @@ import {
   buildInsertRowsPlan,
   buildMoveRowsPlan
 } from "./rowPlan";
-import { remapByColumnShift, remapByRowPlan } from "./indexShift";
 import {
   buildDeleteColumnsShift,
   buildInsertColumnsShift,
@@ -35,8 +36,9 @@ export interface SheetModelOptions {
  */
 export class SheetModel {
   readonly #matrix: CellMatrix;
-  #rowData: Readonly<Record<number, RowMeta>>;
-  #columnData: Readonly<Record<number, ColumnMeta>>;
+  readonly #tables = new IndexedTableRegistry();
+  readonly #rowData: IndexedTable<RowMeta>;
+  readonly #columnData: IndexedTable<ColumnMeta>;
   #mergeData: readonly CellRange[];
   readonly #id: string;
   readonly #name: string;
@@ -62,8 +64,10 @@ export class SheetModel {
     assertValidBlankCount(init.blankRows, "blankRows");
     assertValidBlankCount(init.blankColumns, "blankColumns");
     this.#matrix = init.matrix;
-    this.#rowData = init.rowData;
-    this.#columnData = init.columnData;
+    this.#rowData = this.#tables.register(new IndexedTable<RowMeta>("rowData", "row", init.rowData));
+    this.#columnData = this.#tables.register(
+      new IndexedTable<ColumnMeta>("columnData", "column", init.columnData)
+    );
     this.#mergeData = init.mergeData;
     this.#id = init.id;
     this.#name = init.name;
@@ -155,8 +159,8 @@ export class SheetModel {
       defaultRowHeight: this.#defaultRowHeight,
       defaultColumnWidth: this.#defaultColumnWidth,
       matrix: this.#matrix,
-      rowData: this.#rowData,
-      columnData: this.#columnData,
+      rowData: this.#rowData.read(),
+      columnData: this.#columnData.read(),
       mergeData: this.#mergeData,
       ...(this.#freeze !== undefined ? { freeze: this.#freeze } : {})
     });
@@ -177,39 +181,24 @@ export class SheetModel {
   }
 
   /**
-   * 行的"占用范围"必须取**所有按行下标索引的表的并集**，不能只看格子。
+   * 行的"占用范围"是**格子与所有按行索引的侧表**的并集。
    *
-   * 这个 extent 驱动每一次结构操作：矩阵的搬运，以及每张侧表的重键。而侧表
-   * 可以有格子范围之外的条目——用户给一个没有任何格子的空行设了行高，是完全
-   * 正常的状态。漏掉一张表，超出格子范围的那部分就被**每一次**结构操作静默
-   * 丢弃。本分支上这件事已经出现过三次。
+   * 这个 extent 同时驱动矩阵的搬运与每一张行表的重键，而侧表可以存在于没有任何
+   * 格子的行上（给空行设行高、给空行挂业务主键，都是正常状态）。只按格子算的话，
+   * 超出格子范围的那些条目会被每一次结构操作静默丢弃——阶段二里这个洞出现过四次。
    *
-   * **当前参与并集的表，就是下面逐一列举的这些：**
-   * 1. `#matrix` 的格子（`maxOccupiedRow() + 1`）
-   * 2. `#rowData`（行高与行高 provenance，spec §5）
-   *
-   * **给后来者的义务：任何新增的按行下标索引的表都必须加进这个并集。**
-   * 阶段三的 `filteredRows` 与 spec §7.2 的按行索引插件资源区是第三、第四张，
-   * 什么都没有强制它们进来——**漏掉是默认结果，不是风险**。
-   * 依据：spec §11 不变量 8（声明 `indexedBy: "row"` 的资源，其重键由核心提供）
-   * 与 ADR 0004 §9 不变量 4（每新增一张按下标索引的侧表，必须同时为结构操作
-   * 提供重键与逆操作，做不到就不要新增这张表）。
+   * 现在它对**任意多张**登记在册的行表成立，不再是硬编码的两张：新表登记即入并集。
+   * ADR §9 不变量 4、spec §7.2。
    */
   #occupiedRowExtent(): number {
     const maxCellRow = this.#matrix.maxOccupiedRow();
-    let extent = maxCellRow === undefined ? 0 : maxCellRow + 1;
-    for (const key of Object.keys(this.#rowData)) {
-      const row = Number(key);
-      if (row + 1 > extent) {
-        extent = row + 1;
-      }
-    }
-    return extent;
+    const cellExtent = maxCellRow === undefined ? 0 : maxCellRow + 1;
+    return Math.max(cellExtent, this.#tables.rowExtent());
   }
 
   #applyRowPlan(plan: Int32Array, sourceExtent: number): void {
     this.#matrix.applyRowPlan(plan, sourceExtent);
-    this.#rowData = remapByRowPlan(this.#rowData, plan);
+    this.#tables.applyRowPlan(plan);
   }
 
   /**
@@ -264,7 +253,7 @@ export class SheetModel {
       );
     }
     this.#matrix.reorderRows(order);
-    this.#rowData = remapByRowPlan(this.#rowData, order);
+    this.#tables.applyRowPlan(order);
   }
 
   /**
@@ -278,11 +267,9 @@ export class SheetModel {
       this.columnCount()
     );
     this.#assertNoMerges("insertColumns");
+    const shift = buildInsertColumnsShift(start, count);
     this.#matrix.insertColumns(start, count);
-    this.#columnData = remapByColumnShift(
-      this.#columnData,
-      buildInsertColumnsShift(start, count)
-    );
+    this.#tables.applyColumnShift(shift);
   }
 
   deleteColumns(start: number, count: number): void {
@@ -291,11 +278,9 @@ export class SheetModel {
       this.columnCount()
     );
     this.#assertNoMerges("deleteColumns");
+    const shift = buildDeleteColumnsShift(start, count);
     this.#matrix.deleteColumns(start, count);
-    this.#columnData = remapByColumnShift(
-      this.#columnData,
-      buildDeleteColumnsShift(start, count)
-    );
+    this.#tables.applyColumnShift(shift);
   }
 
   moveColumns(start: number, count: number, target: number): void {
@@ -304,27 +289,25 @@ export class SheetModel {
       this.columnCount()
     );
     this.#assertNoMerges("moveColumns");
+    const shift = buildMoveColumnsShift(start, count, target);
     this.#matrix.moveColumns(start, count, target);
-    this.#columnData = remapByColumnShift(
-      this.#columnData,
-      buildMoveColumnsShift(start, count, target)
-    );
+    this.#tables.applyColumnShift(shift);
   }
 
   getRowMeta(row: number): RowMeta | undefined {
-    return this.#rowData[row];
+    return this.#rowData.get(row);
   }
 
   setRowMeta(row: number, meta: RowMeta): void {
-    this.#rowData = { ...this.#rowData, [row]: meta };
+    this.#rowData.set(row, meta);
   }
 
   getColumnMeta(column: number): ColumnMeta | undefined {
-    return this.#columnData[column];
+    return this.#columnData.get(column);
   }
 
   setColumnMeta(column: number, meta: ColumnMeta): void {
-    this.#columnData = { ...this.#columnData, [column]: meta };
+    this.#columnData.set(column, meta);
   }
 
   merges(): readonly CellRange[] {
@@ -339,5 +322,31 @@ export class SheetModel {
   occupiedColumnCount(): number {
     const max = this.#matrix.maxOccupiedColumn();
     return max === undefined ? 0 : max + 1;
+  }
+
+  /**
+   * 登记一张按下标索引的侧表，此后它跟着 7 个结构操作一起被重键（spec §7.2：
+   * 声明 `indexedBy` 的资源，重键由**核心**提供，不外包给插件作者）。
+   *
+   * 返回传入的那张表，调用方拿它读写；搬运不需要调用方参与。
+   */
+  registerTable<T>(table: IndexedTable<T>): IndexedTable<T> {
+    return this.#tables.register(table);
+  }
+
+  /** 已登记的侧表名，含核心自己的 `rowData` / `columnData`。 */
+  tableNames(): readonly string[] {
+    return this.#tables.names();
+  }
+
+  /**
+   * 这张表的 id。
+   *
+   * `#id` 一直是私有的、只在 `toSnapshot()` 里出现，于是"拿一下 id"要序列化整张
+   * 表。任务四的 `WorkbookModel.sheetIds()` 需要它，补一个访问器而不是让调用方
+   * 走 `toSnapshot().id`。
+   */
+  id(): string {
+    return this.#id;
   }
 }

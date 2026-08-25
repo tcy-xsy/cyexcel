@@ -32,3 +32,5 @@ export {
   buildMoveColumnsShift,
   type ColumnShift
 } from "./columnShift";
+export { IndexedTable, type IndexAxis } from "./IndexedTable";
+export { IndexedTableRegistry } from "./IndexedTableRegistry";
