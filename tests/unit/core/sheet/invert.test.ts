@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { CyExcelError } from "../../../../src/core/errors";
 import { IndexedTable } from "../../../../src/core/sheet/IndexedTable";
 import { invertSheetMutation } from "../../../../src/core/sheet/invert";
 import type { RowCells, SheetMutation } from "../../../../src/core/sheet/mutation";
@@ -138,6 +139,19 @@ function expectExactRoundTrip(mutation: SheetMutation): void {
   apply(model, mutation);
   apply(model, inverse);
   expect(model.toSnapshot()).toStrictEqual(before);
+}
+
+/**
+ * 同一张表，外加一个合并区。
+ *
+ * 只能走 `fromSnapshot`：`mergeData` 没有公开的写入口，`createEmpty` 建出来的表
+ * 永远是空的合并区列表。
+ */
+function mergedFixture(): SheetModel {
+  return SheetModel.fromSnapshot({
+    ...fixture().toSnapshot(),
+    mergeData: [{ startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }]
+  });
 }
 
 /** 抓住抛出的错误本身——要比对类型与消息，`toThrow` 的正则做不到。 */
@@ -392,6 +406,53 @@ describe("invertSheetMutation — 参数校验前置到 prepare", () => {
     expect(() =>
       invertSheetMutation(fixture(), { type: "reorder-rows", order: Int32Array.from([2, 0, 1, 4, 3]) })
     ).not.toThrow();
+  });
+
+  it("存在合并区时，九个结构变更在求逆时就被拒，且与 commit 期抛的是同一个错", () => {
+    // 每条配一个"施加它会走到的 SheetModel 方法"，逐对比较两处抛出的错误。
+    // restore-* 配的是 insertRows / insertColumns——apply 就是那么施加它们的。
+    const order = Int32Array.from([2, 0, 1, 4, 3]);
+    const pairs: readonly (readonly [SheetMutation, (model: SheetModel) => void])[] = [
+      [{ type: "insert-rows", start: 1, rows: [{}] }, (m) => m.insertRows(1, 1)],
+      [{ type: "delete-rows", start: 1, count: 1 }, (m) => m.deleteRows(1, 1)],
+      [{ type: "restore-rows", start: 1, rows: [{}], meta: [undefined] }, (m) => m.insertRows(1, 1)],
+      [{ type: "move-rows", start: 1, count: 2, target: 4 }, (m) => m.moveRows(1, 2, 4)],
+      [{ type: "reorder-rows", order }, (m) => m.reorderRows(order)],
+      [{ type: "insert-columns", start: 1, count: 1 }, (m) => m.insertColumns(1, 1)],
+      [{ type: "delete-columns", start: 1, count: 1 }, (m) => m.deleteColumns(1, 1)],
+      [{ type: "restore-columns", start: 1, count: 1, cells: [{}], meta: [undefined] }, (m) => m.insertColumns(1, 1)],
+      [{ type: "move-columns", start: 0, count: 1, target: 3 }, (m) => m.moveColumns(0, 1, 3)]
+    ];
+    for (const [mutation, commit] of pairs) {
+      const fromPrepare = grabError(() => invertSheetMutation(mergedFixture(), mutation));
+      const fromCommit = grabError(() => {
+        commit(mergedFixture());
+      });
+      expect(fromCommit).toBeInstanceOf(CyExcelError);
+      expect(fromPrepare?.constructor).toBe(fromCommit?.constructor);
+      expect(fromPrepare?.message).toBe(fromCommit?.message);
+    }
+
+    // 格子变更不受合并区阻拦——commit 期的 setRecord / deleteCell 也不查
+    expect(() =>
+      invertSheetMutation(mergedFixture(), { type: "set-cell", row: 0, column: 0, record: { v: 1 } })
+    ).not.toThrow();
+
+    // 先后顺序也要与 commit 期一致，而 SheetModel 在这一点上自己不统一：六个轴向
+    // 方法先查参数（"参数非法与有没有合并区无关"），reorderRows 先查合并区。
+    // 这两条各钉住一种，顺序抄错就红。
+    const paramsFirst = grabError(() => invertSheetMutation(mergedFixture(), { type: "move-rows", start: 1, count: 2, target: 2 }));
+    const paramsFirstCommit = grabError(() => mergedFixture().moveRows(1, 2, 2));
+    expect(paramsFirst).toBeInstanceOf(RangeError);
+    expect(paramsFirst?.message).toBe(paramsFirstCommit?.message);
+
+    const mergesFirst = grabError(() =>
+      invertSheetMutation(mergedFixture(), { type: "reorder-rows", order: Int32Array.from([0, 0, 5]) })
+    );
+    const mergesFirstCommit = grabError(() => mergedFixture().reorderRows(Int32Array.from([0, 0, 5])));
+    expect(mergesFirst).toBeInstanceOf(CyExcelError);
+    expect(mergesFirst?.message).toMatch(/merged ranges exist/);
+    expect(mergesFirst?.message).toBe(mergesFirstCommit?.message);
   });
 });
 

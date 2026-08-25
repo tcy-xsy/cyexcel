@@ -132,14 +132,14 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
  * start/count/target），所以逐条对着 `SheetModel.reorderRows` 的 commit 期检查复制
  * **顺序**、复用**同一批函数**——见下面那一支的注释。
  *
- * **有意不在这里校验的：**
- * - `restore-rows` / `restore-columns`：这两个成员只作为逆变更出现（`mutation.ts`
- *   的类型注释如此），由本文件从一条已经过上面校验的 delete 产出，不接受外部构造，
- *   所以它们的 `start` / 行数按构造就是合法的。**4B 若开始从外部接收它们，这条前提
- *   就没了，这里要补上 insert 形状的校验。**
- * - `#assertNoMerges` 那一类**模型状态**前置条件：存在合并区时九个结构操作全都会在
- *   commit 期被拒。这里一个都没复制——不是漏了 `reorder-rows` 一个，是九个一致地
- *   不在 prepare 期查。要补该九个一起补，是另一个决定。
+ * 合并区这条**模型状态**前置条件，九个结构成员一个不落地查，见 `assertNoMerges`。
+ *
+ * **有意不在这里校验的，只剩一条：** `restore-rows` / `restore-columns` 的**参数**。
+ * 这两个成员只作为逆变更出现（`mutation.ts` 的类型注释如此），由本文件从一条已经过
+ * 上面校验的 delete 产出，不接受外部构造，所以它们的 `start` / 行列数按构造就是合法
+ * 的。**4B 若开始从外部接收它们，这条前提就没了，这里要补上 insert 形状的校验**——
+ * 在那之前，一条参数就非法、同时又撞上合并区的 `restore-*` 会在这里先报合并区，
+ * 而 commit 期先报参数；对按构造合法的那些（也就是全部）两边一致。
  */
 function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): void {
   switch (mutation.type) {
@@ -152,6 +152,9 @@ function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): 
       // 出口，与 `reorderRows` 读的是同一个方法而不是它的一份复制；排列检查直接
       // 复用 `assertValidRowOrder`，与 `CellMatrix.reorderRows` 调的是同一个函数。
       // 两处因此不可能对"什么是合法 order"给出两个答案。
+      // **合并区这一条在 reorder 上是第一个查的**，与另外六个相反——见
+      // `assertNoMerges` 的注释。照抄的是 `SheetModel` 的现状，不是它的应然。
+      assertNoMerges(model, "reorderRows");
       const extent = model.rowExtent();
       if (extent > mutation.order.length) {
         throw new CyExcelError(
@@ -167,12 +170,14 @@ function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): 
         { axis: "row", operation: "insert", start: mutation.start, count: mutation.rows.length },
         model.rowCount()
       );
+      assertNoMerges(model, "insertRows");
       return;
     case "delete-rows":
       validateAxisChange(
         { axis: "row", operation: "delete", start: mutation.start, count: mutation.count },
         model.rowCount()
       );
+      assertNoMerges(model, "deleteRows");
       return;
     case "move-rows":
       validateAxisChange(
@@ -186,18 +191,21 @@ function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): 
         },
         model.rowCount()
       );
+      assertNoMerges(model, "moveRows");
       return;
     case "insert-columns":
       validateAxisChange(
         { axis: "column", operation: "insert", start: mutation.start, count: mutation.count },
         model.columnCount()
       );
+      assertNoMerges(model, "insertColumns");
       return;
     case "delete-columns":
       validateAxisChange(
         { axis: "column", operation: "delete", start: mutation.start, count: mutation.count },
         model.columnCount()
       );
+      assertNoMerges(model, "deleteColumns");
       return;
     case "move-columns":
       validateAxisChange(
@@ -211,9 +219,50 @@ function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): 
         },
         model.columnCount()
       );
+      assertNoMerges(model, "moveColumns");
       return;
-    default:
+    // `restore-*` 的参数不在这里校验（见上），但合并区这一条要查：施加它们走的是
+    // `insertRows` / `insertColumns`，合并区存在时正是那两个方法在 commit 期拒绝。
+    case "restore-rows":
+      assertNoMerges(model, "insertRows");
       return;
+    case "restore-columns":
+      assertNoMerges(model, "insertColumns");
+      return;
+    // 格子变更：`setRecord` / `deleteCell` 在 commit 期不查合并区，这里也不查。
+    case "set-cell":
+    case "set-range":
+      return;
+  }
+}
+
+/**
+ * 合并区存在时，九个结构操作在 commit 期全都会被 `SheetModel.#assertNoMerges` 拒掉
+ * （"合并区跟着结构操作正确搬移是一整块 Excel 语义……属于阶段 5。在那之前**拒绝**
+ * 而不是错着搬"）。这里把同一条前置条件提到 prepare 期。
+ *
+ * **为什么这是安全的等价，而不是一次抢跑。** `SheetMutation` 没有任何改合并区的
+ * 成员，所以合并区在一个 transaction 之内不会变——prepare 期看到的合并区状态与
+ * commit 期必然相同，提前拒绝与到时候拒绝是同一个判断。
+ *
+ * **错误码与消息逐字照抄 `#assertNoMerges`。** 那个方法是私有的，这里只能复制这行
+ * 消息；复制就会分叉，所以测试直接比对两处抛出的 constructor 与 message 是否相等，
+ * 把这份复制钉住（`occupied row … would be silently dropped` 那条同理）。
+ *
+ * **调用位置逐个跟着 `SheetModel` 走，因为 `SheetModel` 自己不统一：** 六个轴向方法
+ * 是先 `validateAxisChange` 后 `#assertNoMerges`，它们共用的注释把理由写作"① 放在
+ * `#assertNoMerges` 之前——参数非法与有没有合并区无关，先报 `MutationNotSupported`
+ * 会误导调用方"；而 `reorderRows` 把 `#assertNoMerges` 放在了第一位，与那条理由相反。
+ * 这里照抄现状而不是照抄那条理由——prepare 与 commit 必须给同一个输入同一个错误，
+ * 这比两边都"更整齐"重要。`reorderRows` 要不要改成与另外六个一致，是 `SheetModel`
+ * 自己的问题，不该由求逆这一侧偷偷决定。
+ */
+function assertNoMerges(model: SheetModel, operation: string): void {
+  if (model.merges().length > 0) {
+    throw new CyExcelError(
+      CyExcelErrorCode.MutationNotSupported,
+      `${operation} is not supported while merged ranges exist`
+    );
   }
 }
 
