@@ -29,10 +29,13 @@ describe("buildInsertRowsPlan", () => {
     expect([...buildInsertRowsPlan(2, 0, 1)]).toEqual([H, 0, 1]);
   });
 
-  it("reaches an insertion point that sits in the blank area", () => {
-    // 坐标空间比占用范围大（spec §3.3），插入点落在空白区是日常操作：
-    // 排列必须一直铺到落点，否则它根本没描述那一段。
-    expect([...buildInsertRowsPlan(2, 5, 1)]).toEqual([0, 1, 2, 3, 4, H]);
+  it("stays identity — and stays short — when the insertion point is in the blank area", () => {
+    // 坐标空间比占用范围大（spec §3.3），插入点落在空白区是日常操作。这种
+    // 情况下**没有任何占用行需要移动**，排列就该是恒等的；长度也不该跟着
+    // 落点走，否则分配量会随调用方配的 `blankRows`（无上限）走。
+    expect([...buildInsertRowsPlan(2, 5, 1)]).toEqual([0, 1, 2]);
+    // 界随占用范围走，不随落点走——这是 rowPlan.ts "排列长度的界"那条规则
+    expect(buildInsertRowsPlan(2, 1_000_000, 1)).toHaveLength(3);
   });
 });
 
