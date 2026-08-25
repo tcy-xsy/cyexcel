@@ -7,7 +7,7 @@ import {
   deserializeSheet,
   serializeSheet
 } from "../../../../src/core/sheet";
-import type { WorkbookSnapshot } from "../../../../src/core/sheet";
+import type { SheetSnapshot, WorkbookSnapshot } from "../../../../src/core/sheet";
 import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
 
 function buildInput(matrix: CellMatrix) {
@@ -99,6 +99,13 @@ describe("assertValidWorkbookSnapshot", () => {
     };
   }
 
+  // cellData 的键在真实输入里来自 JSON.parse，因此在类型层面就是 `any`。这里用
+  // 一次显式的双重断言构造带有非法键的测试夹具，模拟那条未经类型系统把关的路径，
+  // 而不是放宽 SheetSnapshot 的类型来迁就它。
+  function withMalformedCellData(sheet: SheetSnapshot, cellData: unknown): SheetSnapshot {
+    return { ...sheet, cellData } as unknown as SheetSnapshot;
+  }
+
   it("accepts a well-formed workbook", () => {
     expect(() => assertValidWorkbookSnapshot(buildWorkbook())).not.toThrow();
   });
@@ -135,11 +142,98 @@ describe("assertValidWorkbookSnapshot", () => {
     ).toThrow(CyExcelError);
   });
 
+  it("rejects a non-numeric row key in cellData", () => {
+    const sheet = serializeSheet(buildInput(new CellMatrix()));
+    expect(() =>
+      assertValidWorkbookSnapshot(
+        buildWorkbook({
+          sheets: { "sheet-1": withMalformedCellData(sheet, { abc: { 0: { v: 1 } } }) }
+        })
+      )
+    ).toThrow(CyExcelError);
+  });
+
+  it("rejects a negative row key in cellData", () => {
+    const sheet = serializeSheet(buildInput(new CellMatrix()));
+    expect(() =>
+      assertValidWorkbookSnapshot(
+        buildWorkbook({
+          sheets: { "sheet-1": withMalformedCellData(sheet, { "-3": { 0: { v: 1 } } }) }
+        })
+      )
+    ).toThrow(CyExcelError);
+  });
+
+  it("rejects a non-numeric column key in cellData", () => {
+    const sheet = serializeSheet(buildInput(new CellMatrix()));
+    expect(() =>
+      assertValidWorkbookSnapshot(
+        buildWorkbook({
+          sheets: { "sheet-1": withMalformedCellData(sheet, { 0: { abc: { v: 1 } } }) }
+        })
+      )
+    ).toThrow(CyExcelError);
+  });
+
+  it("rejects a fractional row key in cellData", () => {
+    const sheet = serializeSheet(buildInput(new CellMatrix()));
+    expect(() =>
+      assertValidWorkbookSnapshot(
+        buildWorkbook({
+          sheets: { "sheet-1": withMalformedCellData(sheet, { "1.5": { 0: { v: 1 } } }) }
+        })
+      )
+    ).toThrow(CyExcelError);
+  });
+
   it("reports InvalidOptions for every rejection", () => {
-    try {
-      assertValidWorkbookSnapshot(buildWorkbook({ version: 999 }));
-    } catch (error) {
-      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.InvalidOptions);
+    expect.hasAssertions();
+    const sheet = serializeSheet(buildInput(new CellMatrix()));
+    const rejections: Array<[string, WorkbookSnapshot]> = [
+      ["unknown version", buildWorkbook({ version: 999 })],
+      [
+        "more than one sheet",
+        buildWorkbook({
+          sheetOrder: ["sheet-1", "sheet-2"],
+          sheets: { "sheet-1": sheet, "sheet-2": { ...sheet, id: "sheet-2" } }
+        })
+      ],
+      ["sheetOrder entry with no matching sheet", buildWorkbook({ sheetOrder: ["missing"] })],
+      ["negative blankRows", buildWorkbook({ sheets: { "sheet-1": { ...sheet, blankRows: -1 } } })],
+      [
+        "non-numeric row key in cellData",
+        buildWorkbook({
+          sheets: { "sheet-1": withMalformedCellData(sheet, { abc: { 0: { v: 1 } } }) }
+        })
+      ],
+      [
+        "negative row key in cellData",
+        buildWorkbook({
+          sheets: { "sheet-1": withMalformedCellData(sheet, { "-3": { 0: { v: 1 } } }) }
+        })
+      ],
+      [
+        "non-numeric column key in cellData",
+        buildWorkbook({
+          sheets: { "sheet-1": withMalformedCellData(sheet, { 0: { abc: { v: 1 } } }) }
+        })
+      ],
+      [
+        "fractional row key in cellData",
+        buildWorkbook({
+          sheets: { "sheet-1": withMalformedCellData(sheet, { "1.5": { 0: { v: 1 } } }) }
+        })
+      ]
+    ];
+    for (const [label, workbook] of rejections) {
+      let threw = false;
+      try {
+        assertValidWorkbookSnapshot(workbook);
+      } catch (error) {
+        threw = true;
+        expect((error as CyExcelError).code, label).toBe(CyExcelErrorCode.InvalidOptions);
+      }
+      expect(threw, label).toBe(true);
     }
   });
 });

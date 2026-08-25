@@ -22,9 +22,9 @@ export interface SheetModelOptions {
  */
 export class SheetModel {
   readonly #matrix: CellMatrix;
-  readonly #rowData: Record<number, RowMeta>;
-  readonly #columnData: Record<number, ColumnMeta>;
-  #mergeData: CellRange[];
+  readonly #rowData: Readonly<Record<number, RowMeta>>;
+  readonly #columnData: Readonly<Record<number, ColumnMeta>>;
+  #mergeData: readonly CellRange[];
   readonly #id: string;
   readonly #name: string;
   readonly #blankRows: number;
@@ -35,9 +35,9 @@ export class SheetModel {
 
   private constructor(init: {
     matrix: CellMatrix;
-    rowData: Record<number, RowMeta>;
-    columnData: Record<number, ColumnMeta>;
-    mergeData: CellRange[];
+    rowData: Readonly<Record<number, RowMeta>>;
+    columnData: Readonly<Record<number, ColumnMeta>>;
+    mergeData: readonly CellRange[];
     id: string;
     name: string;
     blankRows: number;
@@ -81,9 +81,10 @@ export class SheetModel {
     const restored = deserializeSheet(snapshot);
     return new SheetModel({
       matrix: restored.matrix,
-      rowData: { ...restored.rowData },
-      columnData: { ...restored.columnData },
-      mergeData: [...restored.mergeData],
+      // deserializeSheet 已经拷贝过 rowData/columnData/mergeData，这里不需要再拷一层
+      rowData: restored.rowData,
+      columnData: restored.columnData,
+      mergeData: restored.mergeData,
       id: restored.id,
       name: restored.name,
       blankRows: restored.blankRows,
