@@ -25,3 +25,4 @@ export {
   buildInsertRowsPlan,
   buildMoveRowsPlan
 } from "./rowPlan";
+export { remapByColumnShift, remapByRowPlan } from "./indexShift";
