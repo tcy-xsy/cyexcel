@@ -11,6 +11,11 @@ import {
   buildMoveRowsPlan
 } from "./rowPlan";
 import { remapByColumnShift, remapByRowPlan } from "./indexShift";
+import {
+  buildDeleteColumnsShift,
+  buildInsertColumnsShift,
+  buildMoveColumnsShift
+} from "./columnShift";
 import { validateAxisChange } from "../layout/structuralChange";
 
 export interface SheetModelOptions {
@@ -262,8 +267,9 @@ export class SheetModel {
     );
     this.#assertNoMerges("insertColumns");
     this.#matrix.insertColumns(start, count);
-    this.#columnData = remapByColumnShift(this.#columnData, (column) =>
-      column < start ? column : column + count
+    this.#columnData = remapByColumnShift(
+      this.#columnData,
+      buildInsertColumnsShift(start, count)
     );
   }
 
@@ -274,15 +280,10 @@ export class SheetModel {
     );
     this.#assertNoMerges("deleteColumns");
     this.#matrix.deleteColumns(start, count);
-    this.#columnData = remapByColumnShift(this.#columnData, (column) => {
-      if (column < start) {
-        return column;
-      }
-      if (column < start + count) {
-        return undefined;
-      }
-      return column - count;
-    });
+    this.#columnData = remapByColumnShift(
+      this.#columnData,
+      buildDeleteColumnsShift(start, count)
+    );
   }
 
   moveColumns(start: number, count: number, target: number): void {
@@ -292,14 +293,10 @@ export class SheetModel {
     );
     this.#assertNoMerges("moveColumns");
     this.#matrix.moveColumns(start, count, target);
-    const insertAt = target > start ? target - count : target;
-    this.#columnData = remapByColumnShift(this.#columnData, (column) => {
-      if (column >= start && column < start + count) {
-        return insertAt + (column - start);
-      }
-      const withoutBlock = column > start ? column - count : column;
-      return withoutBlock >= insertAt ? withoutBlock + count : withoutBlock;
-    });
+    this.#columnData = remapByColumnShift(
+      this.#columnData,
+      buildMoveColumnsShift(start, count, target)
+    );
   }
 
   getRowMeta(row: number): RowMeta | undefined {

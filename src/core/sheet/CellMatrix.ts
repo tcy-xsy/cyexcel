@@ -1,4 +1,10 @@
 import { assertValidRowOrder } from "../layout/rowOrder";
+import {
+  buildDeleteColumnsShift,
+  buildInsertColumnsShift,
+  buildMoveColumnsShift,
+  type ColumnShift
+} from "./columnShift";
 import { ROW_PLAN_HOLE, assertValidRowPlan } from "./rowPlan";
 import type { CellRecord } from "./types";
 
@@ -141,7 +147,7 @@ export class CellMatrix {
    * 列操作按行桶逐个重键。**不要按列数扫**——绝大多数列是空的，
    * `rowCount × columnCount` 的稠密扫描正是 ADR §3.1 点名要避免的。
    */
-  #remapColumns(remap: (column: number) => number | undefined): void {
+  #remapColumns(remap: ColumnShift): void {
     const next = Object.create(null) as Record<number, RowBucket>;
     let maxRow: number | undefined = undefined;
     let maxColumn: number | undefined = undefined;
@@ -182,30 +188,15 @@ export class CellMatrix {
   }
 
   insertColumns(start: number, count: number): void {
-    this.#remapColumns((column) => (column < start ? column : column + count));
+    this.#remapColumns(buildInsertColumnsShift(start, count));
   }
 
   deleteColumns(start: number, count: number): void {
-    this.#remapColumns((column) => {
-      if (column < start) {
-        return column;
-      }
-      if (column < start + count) {
-        return undefined;
-      }
-      return column - count;
-    });
+    this.#remapColumns(buildDeleteColumnsShift(start, count));
   }
 
   moveColumns(start: number, count: number, target: number): void {
-    const insertAt = target > start ? target - count : target;
-    this.#remapColumns((column) => {
-      if (column >= start && column < start + count) {
-        return insertAt + (column - start);
-      }
-      const withoutBlock = column > start ? column - count : column;
-      return withoutBlock >= insertAt ? withoutBlock + count : withoutBlock;
-    });
+    this.#remapColumns(buildMoveColumnsShift(start, count, target));
   }
 
   #largestRow(): number | undefined {

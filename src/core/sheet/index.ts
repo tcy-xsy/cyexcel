@@ -26,3 +26,9 @@ export {
   buildMoveRowsPlan
 } from "./rowPlan";
 export { remapByColumnShift, remapByRowPlan } from "./indexShift";
+export {
+  buildDeleteColumnsShift,
+  buildInsertColumnsShift,
+  buildMoveColumnsShift,
+  type ColumnShift
+} from "./columnShift";
