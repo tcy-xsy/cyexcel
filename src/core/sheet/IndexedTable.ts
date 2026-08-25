@@ -35,6 +35,18 @@ export class IndexedTable<T> {
     }
   }
 
+  /**
+   * **返回的是活对象，不是快照。** 之后任何 `set` / `delete` / 重键都会就地改在
+   * 它上面——拿着它跨过一次写入，再读就是新值。
+   *
+   * 不在这里拷一份是有意的：`serializeSheet` 与 `tableToResource` 各自都会展开
+   * 一层，在这里再拷等于每条快照路径拷两遍，而少拷这一遍正是这个模型要省的开销。
+   * 需要一份稳定视图的调用方自己 `{ ...table.read() }`。
+   *
+   * 返回类型上的 `Readonly` 挡的是"往里写"，挡不住"它自己会变"——这是两件事，
+   * 而 `SheetModel.registerTable()` 把这个句柄交到了插件作者手里（spec §7.2），
+   * 所以这条必须写在这里而不是靠人猜。
+   */
   read(): Readonly<Record<number, T>> {
     return this.#data;
   }
