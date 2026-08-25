@@ -18,3 +18,10 @@ export {
   type SerializeInput
 } from "./serialize";
 export { SheetModel, type SheetModelOptions } from "./SheetModel";
+export {
+  ROW_PLAN_HOLE,
+  assertValidRowPlan,
+  buildDeleteRowsPlan,
+  buildInsertRowsPlan,
+  buildMoveRowsPlan
+} from "./rowPlan";
