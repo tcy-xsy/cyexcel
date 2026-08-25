@@ -102,8 +102,11 @@ describe("SheetModel — 侧表登记处", () => {
     model.registerTable(new IndexedTable<string>("c", "column", { 2: "y" }));
     expect(model.rowCount()).toBe(4);
     expect(model.columnCount()).toBe(3);
-    // 锁死的证据：这一步在修复前会被 validateAxisChange 以轴长 0 拒绝
-    expect(() => model.insertRows(0, 1)).not.toThrow();
+    // 锁死的证据必须落在**轴长之外**的下标上。`insertRows(0, 1)` 证明不了任何事：
+    // validateAxisChange 的 insert 分支只在 `start > axisLength` 时抛，而 `0 > 0`
+    // 为假，所以修复前后它都通过。改成 4：修复前轴长是 0（只看格子，而这张表没有
+    // 格子），`4 > 0` 抛；修复后轴长是 4（并集），`4 > 4` 为假，通过。
+    expect(() => model.insertRows(4, 1)).not.toThrow();
   });
 
   it("registerTable 收不到一张键非法的表——校验在构造时就发生", () => {
