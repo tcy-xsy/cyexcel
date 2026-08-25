@@ -214,6 +214,13 @@ export class SheetModel {
 
   reorderRows(order: Int32Array): void {
     this.#assertNoMerges("reorderRows");
+    const extent = this.#occupiedRowExtent();
+    if (extent > order.length) {
+      throw new CyExcelError(
+        CyExcelErrorCode.InvalidRange,
+        `occupied row ${extent - 1} >= order length ${order.length}, would be silently dropped`
+      );
+    }
     this.#matrix.reorderRows(order);
     this.#rowData = remapByRowPlan(this.#rowData, order);
   }

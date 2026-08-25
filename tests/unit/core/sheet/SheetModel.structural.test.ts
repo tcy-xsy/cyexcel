@@ -74,6 +74,24 @@ describe("SheetModel row operations", () => {
     model.insertRows(0, 5);
     expect(model.rowCount()).toBe(56);
   });
+
+  it("reorderRows refuses when order is too short for metadata extent", () => {
+    const model = SheetModel.createEmpty();
+    model.setCell(0, 0, "a");
+    model.setRowMeta(3, { h: 50 });
+    expect(() => {
+      model.reorderRows(Int32Array.from([0]));
+    }).toThrow();
+  });
+
+  it("reorderRows carries metadata to new index when order covers extent", () => {
+    const model = SheetModel.createEmpty();
+    model.setCell(0, 0, "a");
+    model.setRowMeta(1, { h: 60 });
+    model.reorderRows(Int32Array.from([1, 0]));
+    expect(model.getRowMeta(0)).toEqual({ h: 60 });
+    expect(model.getRowMeta(1)).toBeUndefined();
+  });
 });
 
 describe("SheetModel column operations", () => {
