@@ -9,3 +9,4 @@ export type {
 } from "./types";
 export { DEFAULT_BLANK_COLUMNS, DEFAULT_BLANK_ROWS, SNAPSHOT_VERSION } from "./types";
 export { assertValidBlankCount, resolveCoordinateSpace } from "./coordinateSpace";
+export { CellMatrix } from "./CellMatrix";
