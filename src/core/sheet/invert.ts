@@ -146,10 +146,25 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
  *
  * 合并区这条**模型状态**前置条件，九个结构成员一个不落地查，见 `assertNoMerges`。
  *
- * **有意不在这里校验的，只剩一条：** `restore-rows` / `restore-columns` 的**参数**。
- * 这两个成员只作为逆变更出现（`mutation.ts` 的类型注释如此），由本文件从一条已经过
- * 上面校验的 delete 产出，不接受外部构造，所以它们的 `start` / 行列数按构造就是合法
- * 的。**4B 若开始从外部接收它们，这条前提就没了，这里要补上 insert 形状的校验**——
+ * **有意不在这里校验的，只剩一条：** `restore-rows` / `restore-columns` 的**参数**，
+ * 现在还要加上它们的 `tables`。这两个成员只作为逆变更出现（`mutation.ts` 的类型注释
+ * 如此），由本文件从一条已经过上面校验的 delete 产出，不接受外部构造，所以它们的
+ * `start`、行列数、以及 `tables` 的形状按构造就是合法的。
+ *
+ * **4B 若开始从外部接收它们，这条前提就没了。** 届时要补的是 insert 形状的校验，
+ * 外加 `tables` 这三条今天没有任何地方强制的不变量：
+ *
+ * 1. `tables[name].length` 必须等于 `rows.length`（列轴则是 `count`）。一个偏长的
+ *    数组会顺着写路径越过被恢复的那一段，写进 insert 往下推的那几行——那是对**没被
+ *    碰过的数据**的静默破坏，比丢条目更糟。
+ * 2. `name` 必须是这张 sheet 上已登记的表。今天唯一的这类检查在测试的
+ *    `writeTables` 里（"点名了一张没登记的表就抛"），是测试专有的，产品代码里没有。
+ * 3. 那张表的 `indexedBy` 必须与被恢复的轴一致。行轴的 `restore` 拿着一张列表的
+ *    条目去写行下标，写进去不会报错，只会静默错位。
+ *
+ * 本任务不实现这三条：4A 里 `restore-*` 没有外部生产者，提前加校验等于给一条走不到
+ * 的路写分支。它们是 4B 的前置条件，不是可选项。
+ *
  * 在那之前，一条参数就非法、同时又撞上合并区的 `restore-*` 会在这里先报合并区，
  * 而 commit 期先报参数；对按构造合法的那些（也就是全部）两边一致。
  */
@@ -355,6 +370,19 @@ function inverseMoveTarget(start: number, count: number, target: number): number
  * 轴向匹配的表**一律**出现在结果里，哪怕它在被删区间里一条条目都没有（那时数组全是
  * `undefined`）。"出现与否"不带信息，省得消费者去分辨"这张表本来就没条目"和"求逆
  * 漏了这张表"。
+ *
+ * **容器是 `Object.create(null)`，不是 `{}`。** 表名由插件给，登记处只要求它是个非空
+ * 字符串（`resources.ts` 的 `assertValidResourceEntry`），底下又是 `Map`，所以
+ * `"__proto__"` 是一个能一路走到这里的**合法**表名。往对象字面量上写
+ * `tables["__proto__"] = entries` 不会建出自有属性，它会触发
+ * `Object.prototype.__proto__` 的 setter：键凭空消失，逆变更把那张表的条目整段丢掉，
+ * 而这正是本函数存在的理由——比任务三那道守卫还差，那道守卫至少会抛。同一条理由下
+ * `CellMatrix.#remapColumns` 也用 `Object.create(null)`，这里跟它一致。
+ * 修的是**这一类**名字（`constructor`、`toString` 同理），不是 `"__proto__"` 一个。
+ *
+ * 没有把这个名字挡在登记那一层，是因为那会改动校验面（`assertValidResourceEntry` 是
+ * 公开 API 的一部分），属于 4B 接线时连同资源名规约一起定的事；这里先把核心自己这
+ * 一段修干净。
  */
 function capturePluginTables(
   model: SheetModel,
@@ -363,7 +391,7 @@ function capturePluginTables(
   count: number
 ): SideTableEntries {
   const coreTable = axis === "row" ? "rowData" : "columnData";
-  const tables: Record<string, readonly unknown[]> = {};
+  const tables = Object.create(null) as Record<string, readonly unknown[]>;
   for (const name of model.tableNames()) {
     if (name === coreTable) {
       continue;

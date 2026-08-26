@@ -239,6 +239,28 @@ function assertBandHasPluginEntries(
   expect(outside, `区间外也必须有插件${axis}表的条目`).toBeGreaterThan(0);
 }
 
+/**
+ * 造一个与 `capturePluginTables` 产出**同形**的期望值：原型是 `null`。
+ *
+ * `toStrictEqual` 连原型一起比，而产出侧用的是 `Object.create(null)`——`invert.ts` 里
+ * 那段注释写明了为什么必须是它（`"__proto__"` 是一个能一路走到那里的合法表名）。
+ * 所以期望值这边不能图省事写对象字面量。
+ *
+ * **不要为了让它们过而把 `toStrictEqual` 降成 `toEqual`。** 那不是等价的写法：
+ * `writeTables` 里"跳过 `undefined`"那条稀疏性守卫，唯一的检出途径就是
+ * `toStrictEqual`（`tableToResource` 会把凭空造出来的键当作 `{ 2: undefined }` 一路
+ * 带进快照，只有它分得清"值是 undefined"和"根本没这个键"）。量过：同一个 bug，
+ * `toStrictEqual` 下 6 条红，换成 `toEqual` 只剩 1 条。
+ */
+function sideTables(entries: Record<string, readonly unknown[]>): Record<string, readonly unknown[]> {
+  return Object.assign(Object.create(null) as Record<string, readonly unknown[]>, entries);
+}
+
+/** 从一条 `restore-*` 里取出 `tables` 的表名，供只关心"有谁/没谁"的形状断言使用。 */
+function tableNamesOf(mutation: SheetMutation): string[] {
+  return Object.keys((mutation as { tables: Record<string, unknown> }).tables);
+}
+
 interface RoundTripOptions {
   /** 在取 `before` 之前往 workbook 里再加点东西（例如第二张插件行表） */
   readonly seed?: (workbook: WorkbookModel) => void;
@@ -685,8 +707,10 @@ describe("invertSheetMutation — 结构删除的逆带回插件侧表的条目"
       { seed, precondition: (model) => assertBandHasPluginEntries(model, "row", 1, 2) }
     );
 
-    // 快照相等已经把"不串位"包含在内（`resources` 按名字逐条比），这里再直接读
-    // 一遍两张表：红的时候能一眼看出是哪张表拿到了别人的条目。
+    // 下面这两条直接读表，**不只是**红灯时好定位的诊断——它们独立地扛着一段覆盖：
+    // 把 `writeTables` 里"跳过 undefined"那条稀疏性守卫拆掉，若同时有人把上面两条
+    // 往返断言从 `toStrictEqual` 降成 `toEqual`（那时 `{ 2: undefined }` 与"没有第 2
+    // 个键"就再也分不开），全场只剩这里还红。所以它不是可以顺手删掉的重复设置。
     const workbook = workbookFixture();
     seed(workbook);
     const model = workbook.sheet();
@@ -696,6 +720,38 @@ describe("invertSheetMutation — 结构删除的逆带回插件侧表的条目"
     apply(model, inverse);
     expect(model.table("com.acme.rowKeys")?.read()).toStrictEqual({ 1: "k1", 4: "k4" });
     expect(model.table("com.acme.rowFlags")?.read()).toStrictEqual({ 2: "f2" });
+  });
+
+  it("表名叫 __proto__ 的插件表，条目照样带得回来", () => {
+    // `"__proto__"` 是一条能一路走到 `capturePluginTables` 的**合法**表名：登记那层
+    // （`assertValidResourceEntry`）只要求非空字符串，底下的登记处是 `Map`，对它没有
+    // 任何特殊待遇。而往一个**对象字面量**上写这个键不会建出自有属性，它会打到
+    // `Object.prototype.__proto__` 的 setter：键凭空消失，这张表的条目被整段静默丢掉
+    // ——比任务三那道守卫还差，那道守卫至少会抛。
+    const seed = (workbook: WorkbookModel): void => {
+      workbook.addResource({ name: "__proto__", indexedBy: "row", data: { 1: "p1", 4: "p4" } });
+    };
+    expectExactRoundTrip(
+      { type: "delete-rows", start: 1, count: 2 },
+      { seed, precondition: (model) => assertBandHasPluginEntries(model, "row", 1, 2) }
+    );
+
+    const workbook = workbookFixture();
+    seed(workbook);
+    const model = workbook.sheet();
+    const tables = (
+      invertSheetMutation(model, { type: "delete-rows", start: 1, count: 2 }) as {
+        tables: Record<string, unknown>;
+      }
+    ).tables;
+
+    // 这里必须走 `getOwnPropertyDescriptor`，**不能**写 `tables["__proto__"]`：真出这个
+    // bug 时，那个读法拿回来的正是被顶上去的原型（也就是那个数组本身），断言会照样
+    // 变绿——一条读法就能让整条用例空过。
+    expect(Object.keys(tables)).toContain("__proto__");
+    expect(Object.getOwnPropertyDescriptor(tables, "__proto__")?.value).toStrictEqual(["p1", undefined]);
+    // 原型被换成数组的话，这条逆变更会带着一个 `length` 属性躺进历史栈
+    expect(Object.getPrototypeOf(tables)).toBeNull();
   });
 });
 
@@ -718,7 +774,7 @@ describe("invertSheetMutation — 任务三那道临时守卫已撤除", () => {
       start: 1,
       rows: [{ 0: { v: "a1" }, 2: { v: "c1", s: "s1" } }, { 1: { v: "b2", f: "=1+1" } }],
       meta: [{ h: 40 }, undefined],
-      tables: { "com.acme.rowKeys": ["k1", undefined] }
+      tables: sideTables({ "com.acme.rowKeys": ["k1", undefined] })
     });
 
     expect(invertSheetMutation(model, { type: "delete-columns", start: 0, count: 1 })).toStrictEqual({
@@ -727,15 +783,56 @@ describe("invertSheetMutation — 任务三那道临时守卫已撤除", () => {
       count: 1,
       cells: [{ 0: { v: "a0" }, 1: { v: "a1" }, 3: { v: "a3" } }],
       meta: [{ w: 100 }],
-      tables: { "com.acme.colTags": ["t0"] }
+      tables: sideTables({ "com.acme.colTags": ["t0"] })
     });
+  });
+});
 
-    // 核心自己的 rowData / columnData **不进** tables：它们已经由 meta 承载，
-    // 重复携带会在恢复时写两遍
-    const rowInverse = invertSheetMutation(model, { type: "delete-rows", start: 1, count: 2 });
-    expect(rowInverse.type).toBe("restore-rows");
-    expect(Object.keys((rowInverse as { tables: Record<string, unknown> }).tables)).toStrictEqual([
-      "com.acme.rowKeys"
-    ]);
+/**
+ * `capturePluginTables` 的两条过滤规则——**按轴过滤**、**跳过核心表**——各有一条用例
+ * 盯着，而且盯着它们的**只有**下面这两条。
+ *
+ * **为什么不能靠往返用例覆盖。** 这不是"还没写"，是**量过之后确认盖不住**：把任何一
+ * 条过滤删掉，六条往返用例**零条**变红。机制是这样的——行轴的变更根本不移动列表的
+ * 下标，于是一条被错抓的列表条目会被原样写回原下标，那是一次**精确的空操作**；
+ * `rowData` 同理，它那条条目 `writeRows` 已经按同一个值恢复过一遍了。捕获侧与写回侧
+ * 是**一起错的**，而"施加逆之后快照相等"这个判据在结构上就看不见一起错的两边。
+ *
+ * 所以：**将来重构时，不要因为"往返用例已经覆盖了"而删掉这两条。** 往返用例没有覆盖，
+ * 这句话是量出来的，不是猜的。这两条一旦没了，`capturePluginTables` 有一半函数体就
+ * 完全没有测试盯着，而且不会有任何一条用例变红来提醒。
+ */
+describe("invertSheetMutation — capturePluginTables 的两条过滤规则", () => {
+  it("轴向过滤：行删除的逆里只装行表，列表不进来（反向亦然）", () => {
+    const model = fixture();
+
+    const onRowDelete = tableNamesOf(invertSheetMutation(model, { type: "delete-rows", start: 1, count: 2 }));
+    // 正反两面都要断言：只断言"列表不在"的话，一个什么都不装的实现照样过
+    expect(onRowDelete).toContain("com.acme.rowKeys");
+    expect(onRowDelete).not.toContain("com.acme.colTags");
+
+    const onColumnDelete = tableNamesOf(
+      invertSheetMutation(model, { type: "delete-columns", start: 0, count: 1 })
+    );
+    expect(onColumnDelete).toContain("com.acme.colTags");
+    expect(onColumnDelete).not.toContain("com.acme.rowKeys");
+  });
+
+  it("核心表排除：rowData / columnData 一个都不进 tables", () => {
+    const model = fixture();
+
+    // 两张核心表是被**两套**机制挡住的：同轴那张（行删除时的 rowData）靠按名字跳过，
+    // 跨轴那张（行删除时的 columnData）靠轴向过滤。所以两个名字都要点到。
+    const onRowDelete = tableNamesOf(invertSheetMutation(model, { type: "delete-rows", start: 1, count: 2 }));
+    expect(onRowDelete).toContain("com.acme.rowKeys");
+    expect(onRowDelete).not.toContain("rowData");
+    expect(onRowDelete).not.toContain("columnData");
+
+    const onColumnDelete = tableNamesOf(
+      invertSheetMutation(model, { type: "delete-columns", start: 0, count: 1 })
+    );
+    expect(onColumnDelete).toContain("com.acme.colTags");
+    expect(onColumnDelete).not.toContain("columnData");
+    expect(onColumnDelete).not.toContain("rowData");
   });
 });

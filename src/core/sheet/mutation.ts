@@ -31,6 +31,12 @@ export type ColumnCells = Readonly<Record<number, CellRecord>>;
  *
  * **核心自己的 `rowData` / `columnData` 不进这里**：它们已经由 `meta` 字段承载，
  * 重复携带会在恢复时写两遍。
+ *
+ * **别名规则与 `CellRecord` 同一条**（`types.ts` 顶部那段规则的形态 2 与形态 3）：
+ * 这里装的是插件载荷对象**本身的引用**，不是拷贝——捕获走的是 `IndexedTable.get()`，
+ * 那是一次裸读。于是一条撤销记录会**别名到活的插件数据**：插件若在删除之后原地改了
+ * 那个载荷对象，历史栈里这条记录跟着变。这是本仓库的既定规则（容器复制一层、值按
+ * 引用共享），不是这里的疏漏；写在这儿是因为读者会先落到这个声明上。
  */
 export type SideTableEntries = Readonly<Record<string, readonly unknown[]>>;
 
