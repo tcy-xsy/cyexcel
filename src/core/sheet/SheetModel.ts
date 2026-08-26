@@ -18,6 +18,7 @@ import {
   buildMoveColumnsShift
 } from "./columnShift";
 import { validateAxisChange } from "../layout/structuralChange";
+import { assertValidRowOrder } from "../layout/rowOrder";
 
 /**
  * extent（最大占用下标加一）换算成 `resolveCoordinateSpace` 要的 `maxOccupied`。
@@ -301,8 +302,22 @@ export class SheetModel {
     this.#applyRowPlan(buildMoveRowsPlan(extent, start, count, target), extent);
   }
 
+  /**
+   * `reorderRows` 的参数防线不是 `validateAxisChange`（它判的是 start/count/target，
+   * 而这里要判的是"是不是一个排列"），但**顺序口径与上面六个方法一致**：先校验
+   * 参数、再查合并区。理由就是那六个共用的注释 ①——"参数非法与有没有合并区无关，
+   * 先报 `MutationNotSupported` 会误导调用方"——这条理由对一个不合法的排列同样
+   * 成立：`reorderRows([0, 0, 5])` 与有没有合并区毫无关系。
+   *
+   * 这里此前是反过来的（先查合并区），是阶段三补合并区防线时留下的不一致，
+   * `invert.ts` 只能逐成员镜像它；阶段 4A 任务四把它拉齐，两边一起改。
+   *
+   * `assertValidRowOrder` 因此要在这里**显式**调一次，而不是等 `CellMatrix.reorderRows`
+   * 里那次——那一次在合并区检查之后，顺序就又反了。`CellMatrix` 那一次照旧保留：
+   * 它是那个类自己的入口防线，对不经本方法的调用方仍然必要，而这个函数是纯校验、
+   * 幂等，多调一次没有副作用。
+   */
   reorderRows(order: Int32Array): void {
-    this.#assertNoMerges("reorderRows");
     const extent = this.#rowExtentIncludingTables();
     if (extent > order.length) {
       throw new CyExcelError(
@@ -310,6 +325,8 @@ export class SheetModel {
         `occupied row ${extent - 1} >= order length ${order.length}, would be silently dropped`
       );
     }
+    assertValidRowOrder(order, order.length);
+    this.#assertNoMerges("reorderRows");
     this.#matrix.reorderRows(order);
     this.#tables.applyRowPlan(order);
   }

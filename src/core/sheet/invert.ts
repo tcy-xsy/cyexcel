@@ -2,7 +2,7 @@ import { CyExcelError, CyExcelErrorCode } from "../errors";
 import { assertValidRowOrder, invertRowOrder } from "../layout/rowOrder";
 import { validateAxisChange } from "../layout/structuralChange";
 import type { CellRange } from "../types";
-import type { ColumnCells, RowCells, SheetMutation } from "./mutation";
+import type { ColumnCells, RowCells, SheetMutation, SideTableEntries } from "./mutation";
 import type { SheetModel } from "./SheetModel";
 import type { CellRecord, ColumnMeta, RowMeta } from "./types";
 
@@ -16,9 +16,10 @@ import type { CellRecord, ColumnMeta, RowMeta } from "./types";
  * 两条硬约束贯穿本文件：
  *
  * 1. **精确，不许近似。** 凡是当前 `SheetMutation` 表达不出来的逆，这里**拒绝**，
- *    不给一条会静默丢数据的近似——见 `assertNoPluginTablesOnAxis`。仓库先例是
- *    `SheetModel.#assertNoMerges`：合并区的正确搬移没实现之前，它拒绝而不是错着
- *    搬，理由写作"静默错搬比拒绝糟得多"。
+ *    不给一条会静默丢数据的近似。仓库先例是 `SheetModel.#assertNoMerges`：合并区
+ *    的正确搬移没实现之前，它拒绝而不是错着搬，理由写作"静默错搬比拒绝糟得多"。
+ *    删除对插件侧表曾经是这样一条拒绝（任务三），任务四给 `restore-*` 加上
+ *    `tables` 字段之后改成了**捕获并带回**——见 `capturePluginTables`。
  * 2. **非侵入。** 本文件只读模型，一个写方法都不调。理由是 `MutationCoordinator`
  *    先 prepare 全部参与者、再 commit：prepare 期间任一参与者抛错，模型必须原封
  *    不动。所以连本文件里抛错的那几条路径也必须在抛之前没有写过任何东西——这里
@@ -56,7 +57,6 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
       return { type: "delete-rows", start: mutation.start, count: mutation.rows.length };
 
     case "delete-rows": {
-      assertNoPluginTablesOnAxis(model, "row", "delete-rows");
       const rows: RowCells[] = [];
       const meta: (RowMeta | undefined)[] = [];
       // 抓满 `count` 行，而不是只抓落在占用范围内的那几行：删除范围可以整段或部分
@@ -68,7 +68,13 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
         rows.push(captureRowCells(model, row));
         meta.push(model.getRowMeta(row));
       }
-      return { type: "restore-rows", start: mutation.start, rows, meta };
+      return {
+        type: "restore-rows",
+        start: mutation.start,
+        rows,
+        meta,
+        tables: capturePluginTables(model, "row", mutation.start, mutation.count)
+      };
     }
 
     case "restore-rows":
@@ -89,7 +95,6 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
       return { type: "delete-columns", start: mutation.start, count: mutation.count };
 
     case "delete-columns": {
-      assertNoPluginTablesOnAxis(model, "column", "delete-columns");
       const cells: ColumnCells[] = [];
       const meta: (ColumnMeta | undefined)[] = [];
       for (let offset = 0; offset < mutation.count; offset += 1) {
@@ -100,7 +105,14 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
         cells.push(captureColumnCells(model, column));
         meta.push(model.getColumnMeta(column));
       }
-      return { type: "restore-columns", start: mutation.start, count: mutation.count, cells, meta };
+      return {
+        type: "restore-columns",
+        start: mutation.start,
+        count: mutation.count,
+        cells,
+        meta,
+        tables: capturePluginTables(model, "column", mutation.start, mutation.count)
+      };
     }
 
     case "restore-columns":
@@ -144,17 +156,14 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
 function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): void {
   switch (mutation.type) {
     case "reorder-rows": {
-      // 与 `SheetModel.reorderRows` **逐条对齐**，包括先后顺序：那里先查 extent
-      // 再进 `CellMatrix.reorderRows` 做排列检查，所以这里也是先 extent 后排列——
-      // 顺序反了，一个两种都不合法的 order 会在 prepare 与 commit 得到不同的错误。
+      // 与 `SheetModel.reorderRows` **逐条对齐**，包括先后顺序：那里先查 extent、
+      // 再校验排列、最后查合并区，所以这里也是这个顺序——顺序反了，一个两种都
+      // 不合法的 order 会在 prepare 与 commit 得到不同的错误。
       //
       // extent 取 `model.rowExtent()`，那是 `#rowExtentIncludingTables()` 的公开
       // 出口，与 `reorderRows` 读的是同一个方法而不是它的一份复制；排列检查直接
-      // 复用 `assertValidRowOrder`，与 `CellMatrix.reorderRows` 调的是同一个函数。
+      // 复用 `assertValidRowOrder`，与 `SheetModel.reorderRows` 调的是同一个函数。
       // 两处因此不可能对"什么是合法 order"给出两个答案。
-      // **合并区这一条在 reorder 上是第一个查的**，与另外六个相反——见
-      // `assertNoMerges` 的注释。照抄的是 `SheetModel` 的现状，不是它的应然。
-      assertNoMerges(model, "reorderRows");
       const extent = model.rowExtent();
       if (extent > mutation.order.length) {
         throw new CyExcelError(
@@ -163,6 +172,7 @@ function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): 
         );
       }
       assertValidRowOrder(mutation.order, mutation.order.length);
+      assertNoMerges(model, "reorderRows");
       return;
     }
     case "insert-rows":
@@ -249,13 +259,13 @@ function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): 
  * 消息；复制就会分叉，所以测试直接比对两处抛出的 constructor 与 message 是否相等，
  * 把这份复制钉住（`occupied row … would be silently dropped` 那条同理）。
  *
- * **调用位置逐个跟着 `SheetModel` 走，因为 `SheetModel` 自己不统一：** 六个轴向方法
- * 是先 `validateAxisChange` 后 `#assertNoMerges`，它们共用的注释把理由写作"① 放在
- * `#assertNoMerges` 之前——参数非法与有没有合并区无关，先报 `MutationNotSupported`
- * 会误导调用方"；而 `reorderRows` 把 `#assertNoMerges` 放在了第一位，与那条理由相反。
- * 这里照抄现状而不是照抄那条理由——prepare 与 commit 必须给同一个输入同一个错误，
- * 这比两边都"更整齐"重要。`reorderRows` 要不要改成与另外六个一致，是 `SheetModel`
- * 自己的问题，不该由求逆这一侧偷偷决定。
+ * **调用位置逐个跟着 `SheetModel` 走。** 七个方法现在口径一致：先校验参数、后查
+ * 合并区，理由是六个轴向方法共用的那条注释"① 放在 `#assertNoMerges` 之前——参数
+ * 非法与有没有合并区无关，先报 `MutationNotSupported` 会误导调用方"。任务三交付时
+ * `reorderRows` 是唯一的例外（它先查合并区），这里当时只能逐成员镜像那个例外；
+ * 任务四把 `SheetModel.reorderRows` 拉齐到那条理由上，两边一起改——**改的是
+ * `SheetModel`，不是让求逆这一侧偷偷与它分叉**，prepare 与 commit 仍然对同一个输入
+ * 给同一个错误。`restore-*` 走的是 `insertRows` / `insertColumns`，跟着那两个走。
  */
 function assertNoMerges(model: SheetModel, operation: string): void {
   if (model.merges().length > 0) {
@@ -319,43 +329,59 @@ function inverseMoveTarget(start: number, count: number, target: number): number
 }
 
 /**
- * 删除的逆当前只带得回**格子 + `rowData` / `columnData`**，带不回经
- * `SheetModel.registerTable()` 登记的其它按下标索引的侧表——`restore-rows` /
- * `restore-columns` 没有装它们的位置（任务二的类型如此）。
+ * 抓住被删的那几行/列在**每一张插件侧表**里的条目，装进 `restore-*` 的 `tables`。
  *
- * 而 spec §11 不变量 8 写的是"声明 `indexedBy: "row" | "column"` 的资源，其重键与
- * **逆操作**由核心提供并纳入同一 transaction，不外包给插件作者（§7.2）"。删除会把
- * 落在被删范围内的条目从这些表里搬走（`IndexedTableRegistry.applyRowPlan`），逆变更
- * 却没有任何字段能把它们带回来——重键做到了，逆操作没有。
+ * **为什么这是核心的义务而不是插件作者的。** spec §11 不变量 8：声明
+ * `indexedBy: "row" | "column"` 的资源，其重键与**逆操作**由核心提供并纳入同一
+ * transaction，不外包给插件作者（§7.2）。重键那一半早就在
+ * （`IndexedTableRegistry.applyRowPlan` / `applyColumnShift`），逆操作这一半在任务四
+ * 之前没有落脚点：`restore-*` 没有装它们的字段，于是任务三只能**拒绝**求逆——那让
+ * "注册了插件行表就不能删行"成立，到接线那一刻就是对 §7.2 的功能倒退，不是保守。
  *
- * 这个缺口**测不出来**：`SheetModel.toSnapshot()` 只序列化 `rowData` / `columnData`
- * （见该方法的注释），插件资源的持久化形态是 workbook 级的 `resources`。所以逐字段
- * 比较快照的精确性测试对它是瞎的。
+ * **删除对这些条目的语义是丢弃，不是搬去别处**——这一条是照着实现读出来的，不是
+ * 顺着描述假定的：行轴走 `remapByRowPlan`，它按行计划**逐位重建**一个新映射，被删
+ * 的下标根本不出现在计划里，于是不会被写进新映射；列轴走 `remapByColumnShift`，
+ * 被删列的 `remap` 返回 `undefined`，那一条直接跳过。两条路都是**原地消失**。所以
+ * 逆变更要做的是把原值按原下标写回去，不是把它从别处搬回来。
  *
- * 因此这里**拒绝**。给一条丢数据的逆等于让 undo 静默吃掉插件数据，而这正是
- * ADR §3.1 那条被 spec §7.2 称作"不变量第 4 条"的要求要防的：
- * "每增加一张按 `(row, column)` 索引的侧表，就要为这 7 个操作各写一遍重键逻辑、
- * 各写一遍逆操作，并全部纳入同一个 transaction。"补齐的办法是给 `restore-*` 加一个
- * 装侧表条目的字段——那是类型层面的改动，不在本任务范围内。
+ * **核心自己的 `rowData` / `columnData` 不进 `tables`**：它们承载的行/列元数据已经
+ * 由 `restore-*` 的 `meta` 字段带走，重复携带会在恢复时对同一条数据写两遍。
+ *
+ * **按表名装，不按顺序装。** 登记处是一个 `Map`，`tableNames()` 给的是登记顺序；
+ * 而恢复发生在另一次调用里，那时表的集合可能已经变了（插件完全可以后登记一张新
+ * 表）。按位置对齐的话，多一张表就整体串位——所以键是**表名**，位置只在同一张表
+ * 内部表示行/列偏移。
+ *
+ * 轴向匹配的表**一律**出现在结果里，哪怕它在被删区间里一条条目都没有（那时数组全是
+ * `undefined`）。"出现与否"不带信息，省得消费者去分辨"这张表本来就没条目"和"求逆
+ * 漏了这张表"。
  */
-function assertNoPluginTablesOnAxis(
+function capturePluginTables(
   model: SheetModel,
   axis: "row" | "column",
-  operation: string
-): void {
+  start: number,
+  count: number
+): SideTableEntries {
   const coreTable = axis === "row" ? "rowData" : "columnData";
+  const tables: Record<string, readonly unknown[]> = {};
   for (const name of model.tableNames()) {
     if (name === coreTable) {
       continue;
     }
-    if (model.table(name)?.indexedBy !== axis) {
+    const table = model.table(name);
+    if (table?.indexedBy !== axis) {
       continue;
     }
-    throw new CyExcelError(
-      CyExcelErrorCode.MutationNotSupported,
-      `${operation} cannot be inverted exactly: the registered ${axis}-indexed table "${name}" has no slot in restore-${axis}s`
-    );
+    const entries: unknown[] = [];
+    // 与 `captureRowCells` 同一条口径：抓满 `count` 项，含落在空白区的那几项（抓出来
+    // 是 `undefined`），这样第 i 项永远对应 `start + i`。少抓一项，整个数组就与
+    // `rows` / `count` 错位了。
+    for (let offset = 0; offset < count; offset += 1) {
+      entries.push(table.get(start + offset));
+    }
+    tables[name] = entries;
   }
+  return tables;
 }
 
 /**

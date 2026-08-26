@@ -46,5 +46,11 @@ export {
   assertIndexIsNonNegativeInteger,
   isCanonicalIndexKey
 } from "./indexKey";
-export { isStructuralSheetMutation, type ColumnCells, type RowCells, type SheetMutation } from "./mutation";
+export {
+  isStructuralSheetMutation,
+  type ColumnCells,
+  type RowCells,
+  type SheetMutation,
+  type SideTableEntries
+} from "./mutation";
 export { invertSheetMutation } from "./invert";

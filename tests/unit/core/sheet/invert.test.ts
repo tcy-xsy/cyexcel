@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { CyExcelError } from "../../../../src/core/errors";
-import { IndexedTable } from "../../../../src/core/sheet/IndexedTable";
 import { invertSheetMutation } from "../../../../src/core/sheet/invert";
 import type { RowCells, SheetMutation } from "../../../../src/core/sheet/mutation";
 import { SheetModel } from "../../../../src/core/sheet/SheetModel";
-import type { RowMeta } from "../../../../src/core/sheet/types";
+import { WorkbookModel } from "../../../../src/core/sheet/WorkbookModel";
+import type { RowMeta, WorkbookSnapshot } from "../../../../src/core/sheet/types";
 
 /**
  * 本地的 `apply`——**4A 没有 `applySheetMutation`，那是 4B**。
@@ -41,6 +41,7 @@ function apply(model: SheetModel, mutation: SheetMutation): void {
     case "restore-rows":
       model.insertRows(mutation.start, mutation.rows.length);
       writeRows(model, mutation.start, mutation.rows, mutation.meta);
+      writeTables(model, mutation.start, mutation.tables);
       return;
     case "delete-rows":
       model.deleteRows(mutation.start, mutation.count);
@@ -72,6 +73,7 @@ function apply(model: SheetModel, mutation: SheetMutation): void {
           model.setColumnMeta(mutation.start + offset, meta);
         }
       }
+      writeTables(model, mutation.start, mutation.tables);
       return;
     }
     case "move-columns":
@@ -111,13 +113,54 @@ function writeRows(
 }
 
 /**
+ * 把 `restore-*` 带回来的插件侧表条目写回原位。
+ *
+ * 用的仍然是既有的公开方法：`SheetModel.table(name)` 交回登记处里那张表的**活
+ * 句柄**（那个方法的注释写明它就是给写路径用的），与 `setRowMeta` /
+ * `setColumnMeta` 属同一类。
+ *
+ * `undefined` 的位置表示那一行/列在这张表里本来就没有条目，跳过不写——稀疏表
+ * 里"有没有这个键"就是"有没有这条条目"本身（spec §11 不变量 1 对格子的同一条
+ * 口径），写一个 `undefined` 进去等于凭空造一条。
+ */
+function writeTables(
+  model: SheetModel,
+  start: number,
+  tables: Readonly<Record<string, readonly unknown[]>>
+): void {
+  for (const name of Object.keys(tables)) {
+    const entries = tables[name] as readonly unknown[];
+    const table = model.table(name);
+    if (!table) {
+      // 逆变更点名了一张这张 sheet 上没有登记的表：不是断言失败，是构造错误
+      throw new Error(`restore names table "${name}", which is not registered on this sheet`);
+    }
+    for (let offset = 0; offset < entries.length; offset += 1) {
+      const value = entries[offset];
+      if (value !== undefined) {
+        table.set(start + offset, value);
+      }
+    }
+  }
+}
+
+/**
  * 第 4 行**只有元数据、没有任何格子**，是故意的：只按格子算占用范围的实现会把它
  * 整条漏掉（`SheetModel.#rowExtentIncludingTables` 的注释记着这个洞在阶段二出现过
  * 四次）。`blankRows` / `blankColumns` 取小值，好让"删除范围伸进空白区"这类边界
  * 用得上的数字都小。
+ *
+ * **这张表还挂着两张插件侧表**（spec §7.2 的 `indexedBy: "row" / "column"` 资源），
+ * 行轴与列轴各一张。它们在这里，是为了让两个对照物真正看得见插件表——只有
+ * `WorkbookModel.toSnapshot()` 序列化 `resources`，`SheetModel.toSnapshot()` 不。
+ *
+ * 条目的下标是挑过的：行表落在第 1、4 行，列表落在第 0、2 列，都没有越出格子与
+ * `rowData` / `columnData` 已有的占用范围，所以 `rowExtent()` 仍是 5、`rowCount()`
+ * 仍是 7、`columnCount()` 仍是 5——既有用例钉住的那几个数一个都没动。
  */
-function fixture(): SheetModel {
-  const model = SheetModel.createEmpty({ blankRows: 2, blankColumns: 2 });
+function workbookFixture(): WorkbookModel {
+  const workbook = WorkbookModel.createEmpty({ sheet: { blankRows: 2, blankColumns: 2 } });
+  const model = workbook.sheet();
   model.setRecord(0, 0, { v: "a0" });
   model.setRecord(0, 1, { v: "b0", t: "text" });
   model.setRecord(1, 0, { v: "a1" });
@@ -128,17 +171,93 @@ function fixture(): SheetModel {
   model.setRowMeta(4, { hd: true });
   model.setColumnMeta(0, { w: 100 });
   model.setColumnMeta(2, { w: 200, t: "number" });
-  return model;
+  workbook.addResource({ name: "com.acme.rowKeys", indexedBy: "row", data: { 1: "k1", 4: "k4" } });
+  workbook.addResource({ name: "com.acme.colTags", indexedBy: "column", data: { 0: "t0", 2: "t2" } });
+  return workbook;
 }
 
-/** 施加 `m`，再施加在施加之前求出的逆，逐字段比对 `toSnapshot()`。 */
-function expectExactRoundTrip(mutation: SheetMutation): void {
-  const model = fixture();
-  const before = model.toSnapshot();
+function fixture(): SheetModel {
+  return workbookFixture().sheet();
+}
+
+/**
+ * 对照物必须**看得见**插件侧表。
+ *
+ * 任务三的四条精确性用例比的是 `SheetModel.toSnapshot()`，而那个方法**不序列化
+ * 插件侧表**（它自己的注释写明理由：那些表的持久化形态是 workbook 级的
+ * `resources`）。于是"删除的逆有没有把插件表的条目带回来"这件事，它们**看不见**
+ * ——任务三那道拒绝守卫之所以必要，正是因为测试看不见它。spec §11 不变量 8 把
+ * **逆操作**也算进核心的义务，所以"逐字段相等"里的"逐字段"必须含 `resources`。
+ *
+ * 这条前置断言不是装饰：`resources` 为空的 workbook 比出来照样相等，于是**一个
+ * 空的守卫与一个有效的守卫长得一模一样**。任务三的评审在
+ * `expectPrepareMatchesCommit` 上抓到过同一个形状（两边都不抛时
+ * `undefined === undefined` 空过），所以这里写成断言，不写成注释。
+ */
+function assertOracleSeesPluginTables(snapshot: WorkbookSnapshot): void {
+  const indexed = snapshot.resources.filter((entry) => entry.indexedBy !== "none");
+  expect(indexed.length).toBeGreaterThan(0);
+  for (const entry of indexed) {
+    expect(Object.keys(entry.data as Record<string, unknown>).length).toBeGreaterThan(0);
+  }
+}
+
+/**
+ * 前置断言：被删区间**之内**与**之外**都真的有插件侧表的条目。
+ *
+ * 区间内的那条靠 `restore-*` 的 `tables` 字段带回来，区间外的那条靠
+ * `insertRows` / `insertColumns` 自己的重键移回去——两条路是两套代码，都要走到。
+ * 缺了这条断言，一条区间里没有任何条目的用例照样全绿，而它什么也没验证。
+ */
+function assertBandHasPluginEntries(
+  model: SheetModel,
+  axis: "row" | "column",
+  start: number,
+  count: number
+): void {
+  const coreTable = axis === "row" ? "rowData" : "columnData";
+  let inside = 0;
+  let outside = 0;
+  for (const name of model.tableNames()) {
+    if (name === coreTable) {
+      continue;
+    }
+    const table = model.table(name);
+    if (table?.indexedBy !== axis) {
+      continue;
+    }
+    for (const key of Object.keys(table.read())) {
+      const index = Number(key);
+      if (index >= start && index < start + count) {
+        inside += 1;
+      } else {
+        outside += 1;
+      }
+    }
+  }
+  expect(inside, `[${start}, ${start + count}) 区间内必须有插件${axis}表的条目`).toBeGreaterThan(0);
+  expect(outside, `区间外也必须有插件${axis}表的条目`).toBeGreaterThan(0);
+}
+
+interface RoundTripOptions {
+  /** 在取 `before` 之前往 workbook 里再加点东西（例如第二张插件行表） */
+  readonly seed?: (workbook: WorkbookModel) => void;
+  /** 施加之前的前置断言，用来挡掉"比两张空表"那种空过 */
+  readonly precondition?: (model: SheetModel) => void;
+}
+
+/** 施加 `m`，再施加在施加之前求出的逆，逐字段比对 `WorkbookModel.toSnapshot()`。 */
+function expectExactRoundTrip(mutation: SheetMutation, options: RoundTripOptions = {}): void {
+  const workbook = workbookFixture();
+  options.seed?.(workbook);
+  const model = workbook.sheet();
+  options.precondition?.(model);
+  const before = workbook.toSnapshot();
+  assertOracleSeesPluginTables(before);
   const inverse = invertSheetMutation(model, mutation);
   apply(model, mutation);
   apply(model, inverse);
-  expect(model.toSnapshot()).toStrictEqual(before);
+  expect(workbook.toSnapshot()).toStrictEqual(before);
 }
 
 /**
@@ -181,11 +300,18 @@ function expectPrepareMatchesCommit(mutation: SheetMutation, commit: (model: She
   expect(fromPrepare?.message).toBe(fromCommit?.message);
 }
 
+/**
+ * 求逆不得改动模型。对照物同样换成 `WorkbookModel.toSnapshot()`——理由见
+ * `assertOracleSeesPluginTables`：拿 `SheetModel.toSnapshot()` 比的话，"求逆的
+ * 过程写坏了插件表"这件事它也看不见。今天没有代码会写它，所以这道守卫是空的；
+ * 但**一个空的守卫与一个有效的守卫长得一模一样**，这正是它要换的理由。
+ */
 function expectNonInvasive(mutation: SheetMutation): void {
-  const model = fixture();
-  const before = model.toSnapshot();
-  invertSheetMutation(model, mutation);
-  expect(model.toSnapshot()).toStrictEqual(before);
+  const workbook = workbookFixture();
+  const before = workbook.toSnapshot();
+  assertOracleSeesPluginTables(before);
+  invertSheetMutation(workbook.sheet(), mutation);
+  expect(workbook.toSnapshot()).toStrictEqual(before);
 }
 
 describe("invertSheetMutation — 精确性", () => {
@@ -253,7 +379,8 @@ describe("invertSheetMutation — 纯算术分支的形状", () => {
         type: "restore-rows",
         start: 2,
         rows: [{ 1: { v: "y" } }, {}],
-        meta: [{ h: 30 }, undefined]
+        meta: [{ h: 30 }, undefined],
+        tables: {}
       })
     ).toStrictEqual({ type: "delete-rows", start: 2, count: 2 });
   });
@@ -273,7 +400,8 @@ describe("invertSheetMutation — 纯算术分支的形状", () => {
         start: 1,
         count: 3,
         cells: [{ 0: { v: "z" } }, {}, {}],
-        meta: [{ w: 80 }, undefined, undefined]
+        meta: [{ w: 80 }, undefined, undefined],
+        tables: {}
       })
     ).toStrictEqual({ type: "delete-columns", start: 1, count: 3 });
   });
@@ -470,12 +598,15 @@ describe("invertSheetMutation — 参数校验前置到 prepare", () => {
     const pairs: readonly (readonly [SheetMutation, (model: SheetModel) => void])[] = [
       [{ type: "insert-rows", start: 1, rows: [{}] }, (m) => m.insertRows(1, 1)],
       [{ type: "delete-rows", start: 1, count: 1 }, (m) => m.deleteRows(1, 1)],
-      [{ type: "restore-rows", start: 1, rows: [{}], meta: [undefined] }, (m) => m.insertRows(1, 1)],
+      [{ type: "restore-rows", start: 1, rows: [{}], meta: [undefined], tables: {} }, (m) => m.insertRows(1, 1)],
       [{ type: "move-rows", start: 1, count: 2, target: 4 }, (m) => m.moveRows(1, 2, 4)],
       [{ type: "reorder-rows", order }, (m) => m.reorderRows(order)],
       [{ type: "insert-columns", start: 1, count: 1 }, (m) => m.insertColumns(1, 1)],
       [{ type: "delete-columns", start: 1, count: 1 }, (m) => m.deleteColumns(1, 1)],
-      [{ type: "restore-columns", start: 1, count: 1, cells: [{}], meta: [undefined] }, (m) => m.insertColumns(1, 1)],
+      [
+        { type: "restore-columns", start: 1, count: 1, cells: [{}], meta: [undefined], tables: {} },
+        (m) => m.insertColumns(1, 1)
+      ],
       [{ type: "move-columns", start: 0, count: 1, target: 3 }, (m) => m.moveColumns(0, 1, 3)]
     ];
     for (const [mutation, commit] of pairs) {
@@ -493,47 +624,118 @@ describe("invertSheetMutation — 参数校验前置到 prepare", () => {
       invertSheetMutation(mergedFixture(), { type: "set-cell", row: 0, column: 0, record: { v: 1 } })
     ).not.toThrow();
 
-    // 先后顺序也要与 commit 期一致，而 SheetModel 在这一点上自己不统一：六个轴向
-    // 方法先查参数（"参数非法与有没有合并区无关"），reorderRows 先查合并区。
-    // 这两条各钉住一种，顺序抄错就红。
+    // 先后顺序也要与 commit 期一致。**任务四之前 `reorderRows` 是这里唯一的例外**
+    // ——七个方法里只有它先查合并区。任务四把它改成与另外六个同序（先校验参数、
+    // 再查合并区），理由就是那六个共用的注释 ①："参数非法与有没有合并区无关，
+    // 先报 `MutationNotSupported` 会误导调用方"，这条理由对排列同样成立。
+    // 下面三条各钉一段顺序，抄错就红。
     const paramsFirst = grabError(() => invertSheetMutation(mergedFixture(), { type: "move-rows", start: 1, count: 2, target: 2 }));
     const paramsFirstCommit = grabError(() => mergedFixture().moveRows(1, 2, 2));
     expect(paramsFirst).toBeInstanceOf(RangeError);
     expect(paramsFirst?.message).toBe(paramsFirstCommit?.message);
 
-    const mergesFirst = grabError(() =>
+    // reorder ①：order 盖不住占用范围，同时又有合并区——报的必须是 extent 那条
+    const extentFirst = grabError(() =>
       invertSheetMutation(mergedFixture(), { type: "reorder-rows", order: Int32Array.from([0, 0, 5]) })
     );
-    const mergesFirstCommit = grabError(() => mergedFixture().reorderRows(Int32Array.from([0, 0, 5])));
-    expect(mergesFirst).toBeInstanceOf(CyExcelError);
-    expect(mergesFirst?.message).toMatch(/merged ranges exist/);
-    expect(mergesFirst?.message).toBe(mergesFirstCommit?.message);
+    const extentFirstCommit = grabError(() => mergedFixture().reorderRows(Int32Array.from([0, 0, 5])));
+    expect(extentFirst).toBeInstanceOf(CyExcelError);
+    expect(extentFirst?.message).toMatch(/would be silently dropped/);
+    expect(extentFirst?.message).toBe(extentFirstCommit?.message);
+
+    // reorder ②：长度够但不是排列，同时又有合并区——报的必须是排列那条
+    const permutationFirst = grabError(() =>
+      invertSheetMutation(mergedFixture(), { type: "reorder-rows", order: Int32Array.from([0, 0, 1, 2, 3]) })
+    );
+    const permutationFirstCommit = grabError(() =>
+      mergedFixture().reorderRows(Int32Array.from([0, 0, 1, 2, 3]))
+    );
+    expect(permutationFirst).toBeInstanceOf(RangeError);
+    expect(permutationFirst?.message).toMatch(/not a permutation/);
+    expect(permutationFirst?.message).toBe(permutationFirstCommit?.message);
   });
 });
 
-describe("invertSheetMutation — 表达不出来的逆一律拒绝", () => {
-  it("删除的逆带不回插件登记的侧表，宁可拒绝也不给会丢数据的近似", () => {
+describe("invertSheetMutation — 结构删除的逆带回插件侧表的条目", () => {
+  it("删行：被删区间里的插件行表条目跟着逆回来", () => {
+    // 区间 [1, 3) 内有 rowKeys 的第 1 条，区间外有第 4 条：前者靠 restore-rows 的
+    // tables 带回，后者靠 insertRows 自己的重键移回，两条路都要走到。
+    expectExactRoundTrip(
+      { type: "delete-rows", start: 1, count: 2 },
+      { precondition: (model) => assertBandHasPluginEntries(model, "row", 1, 2) }
+    );
+  });
+
+  it("删列：被删区间里的插件列表条目跟着逆回来", () => {
+    // 列轴同理。ColumnCells 的键是行号而 tables 的下标是**列号**，两者不是一回事
+    expectExactRoundTrip(
+      { type: "delete-columns", start: 0, count: 2 },
+      { precondition: (model) => assertBandHasPluginEntries(model, "column", 0, 2) }
+    );
+  });
+
+  it("多张插件行表：条目各回各的表，不串位", () => {
+    const seed = (workbook: WorkbookModel): void => {
+      // 第二张行表，条目落在第 2 行——与 rowKeys 的第 1 条同在区间 [1, 3) 内，
+      // 于是"按表名装、按表名写回"一旦写成"按顺序装、按顺序写回"就会串位
+      workbook.addResource({ name: "com.acme.rowFlags", indexedBy: "row", data: { 2: "f2" } });
+    };
+    expectExactRoundTrip(
+      { type: "delete-rows", start: 1, count: 2 },
+      { seed, precondition: (model) => assertBandHasPluginEntries(model, "row", 1, 2) }
+    );
+
+    // 快照相等已经把"不串位"包含在内（`resources` 按名字逐条比），这里再直接读
+    // 一遍两张表：红的时候能一眼看出是哪张表拿到了别人的条目。
+    const workbook = workbookFixture();
+    seed(workbook);
+    const model = workbook.sheet();
+    const mutation: SheetMutation = { type: "delete-rows", start: 1, count: 2 };
+    const inverse = invertSheetMutation(model, mutation);
+    apply(model, mutation);
+    apply(model, inverse);
+    expect(model.table("com.acme.rowKeys")?.read()).toStrictEqual({ 1: "k1", 4: "k4" });
+    expect(model.table("com.acme.rowFlags")?.read()).toStrictEqual({ 2: "f2" });
+  });
+});
+
+/**
+ * 任务三在 `restore-*` 还没有装侧表条目的字段时，让 `delete-rows` / `delete-columns`
+ * 的求逆**拒绝**（`MutationNotSupported`），理由是"静默错搬比拒绝糟得多"。那是对的
+ * 临时处置，但它同时让 spec §7.2 承诺的"删行"在有插件资源时不可用——到接线那一刻
+ * 就是功能倒退。
+ *
+ * **一道临时守卫如果没有测试盯着它被撤除，它会一直活下去**，而后来的人只会看到
+ * "有插件资源就不能删行"，以为那是设计。这一条就是那双眼睛。
+ */
+describe("invertSheetMutation — 任务三那道临时守卫已撤除", () => {
+  it("注册了插件侧表时，删除的逆不再拒绝，而是把条目装进 restore-* 带走", () => {
     const model = fixture();
-    model.registerTable(new IndexedTable<string>("com.acme.rowKeys", "row", { 1: "k1" }));
-    model.registerTable(new IndexedTable<string>("com.acme.colTags", "column", { 0: "t0" }));
 
-    // restore-rows / restore-columns 没有装侧表条目的字段（任务二的类型），
-    // 而 SheetModel.toSnapshot() 又不序列化这些表，精确性测试对这个缺口是瞎的
-    expect(() => invertSheetMutation(model, { type: "delete-rows", start: 1, count: 1 })).toThrow(
-      /com\.acme\.rowKeys/
-    );
-    expect(() => invertSheetMutation(model, { type: "delete-columns", start: 0, count: 1 })).toThrow(
-      /com\.acme\.colTags/
-    );
+    // 只断言"不抛"是不够的：一条悄悄丢掉条目的实现也不抛。所以连形状一起钉住。
+    expect(invertSheetMutation(model, { type: "delete-rows", start: 1, count: 2 })).toStrictEqual({
+      type: "restore-rows",
+      start: 1,
+      rows: [{ 0: { v: "a1" }, 2: { v: "c1", s: "s1" } }, { 1: { v: "b2", f: "=1+1" } }],
+      meta: [{ h: 40 }, undefined],
+      tables: { "com.acme.rowKeys": ["k1", undefined] }
+    });
 
-    // 只挡对应轴：行表不该挡住列删除的求逆，反之亦然
-    const rowOnly = fixture();
-    rowOnly.registerTable(new IndexedTable<string>("com.acme.rowKeys", "row", { 1: "k1" }));
-    expect(() => invertSheetMutation(rowOnly, { type: "delete-columns", start: 0, count: 1 })).not.toThrow();
+    expect(invertSheetMutation(model, { type: "delete-columns", start: 0, count: 1 })).toStrictEqual({
+      type: "restore-columns",
+      start: 0,
+      count: 1,
+      cells: [{ 0: { v: "a0" }, 1: { v: "a1" }, 3: { v: "a3" } }],
+      meta: [{ w: 100 }],
+      tables: { "com.acme.colTags": ["t0"] }
+    });
 
-    // 拒绝也必须是非侵入的——抛错之前一个字都不许写
-    const before = model.toSnapshot();
-    expect(() => invertSheetMutation(model, { type: "delete-rows", start: 1, count: 1 })).toThrow();
-    expect(model.toSnapshot()).toStrictEqual(before);
+    // 核心自己的 rowData / columnData **不进** tables：它们已经由 meta 承载，
+    // 重复携带会在恢复时写两遍
+    const rowInverse = invertSheetMutation(model, { type: "delete-rows", start: 1, count: 2 });
+    expect(rowInverse.type).toBe("restore-rows");
+    expect(Object.keys((rowInverse as { tables: Record<string, unknown> }).tables)).toStrictEqual([
+      "com.acme.rowKeys"
+    ]);
   });
 });
