@@ -27,7 +27,8 @@
         createBooleanCellEditor,
         createDateCellEditor,
         createSelectCellEditor,
-        createTextAreaCellEditor
+        createTextAreaCellEditor,
+        rowsToWorkbookSnapshot
       } from "/src/core/index.ts";
 
       const container = document.getElementById("app");
@@ -47,6 +48,7 @@
         }
       }
 
+      const fields = ["active", "joinedAt", "status", "tags", "meta"];
       const columns = [
         // Explicitly opts into the checkbox editor — nothing about the
         // "boolean" type does this automatically.
@@ -92,7 +94,11 @@
         meta: { id: index, note: `row ${index}` }
       }));
 
-      const sheet = new CyExcelCore(container, { columns, data, rowHeight: 28 });
+      const sheet = new CyExcelCore(container, {
+        columns,
+        snapshot: rowsToWorkbookSnapshot(data, fields),
+        rowHeight: 28
+      });
 
       window.__sheet = sheet;
       window.__cyexcelTypedEditorsReady = true;

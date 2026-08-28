@@ -1,11 +1,14 @@
 import { createApp, defineComponent, h, onMounted, onUnmounted, ref } from "vue";
-import { CyExcelCore } from "../../dist/core.js";
+import { CyExcelCore, rowsToWorkbookSnapshot } from "../../dist/core.js";
 
 const columns = [
   { id: "sku", field: "sku", width: 140, header: "SKU" },
   { id: "name", field: "name", width: 240, header: "Name" },
   { id: "price", field: "price", width: 100, type: "number", header: "Price" }
 ];
+
+/** The i-th field is the i-th column — a parameter of the import, not of `columns`. */
+const fields = ["sku", "name", "price"];
 
 const data = [
   { sku: "A100", name: "Widget", price: 9.99 },
@@ -19,7 +22,12 @@ const CyExcelSheet = defineComponent({
     let sheet;
 
     onMounted(() => {
-      sheet = new CyExcelCore(host.value, { columns, data });
+      // Imported once, on mount. The snapshot is a value handed to the sheet,
+      // not a reactive binding — nothing flows back into `data` either way.
+      sheet = new CyExcelCore(host.value, {
+        columns,
+        snapshot: rowsToWorkbookSnapshot(data, fields)
+      });
     });
     onUnmounted(() => {
       sheet.dispose();

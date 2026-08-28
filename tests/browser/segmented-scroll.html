@@ -19,7 +19,7 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore } from "/src/core/index.ts";
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       // 800,000 rows x 20px = 16,000,000 logical px, which is past the
       // 15,000,000px safe native extent — so this fixture is segmented, while
@@ -27,21 +27,13 @@
       const ROW_COUNT = 800000;
       const ROW_HEIGHT = 20;
       const HEADER_HEIGHT = 24;
-      const columns = Array.from({ length: 4 }, (_unused, index) => ({
-        id: `c${index}`,
-        field: `c${index}`,
+      const fields = Array.from({ length: 4 }, (_unused, index) => `c${index}`);
+      const columns = fields.map((field, index) => ({
+        id: field,
+        field,
         width: 100,
         header: `C${index}`
       }));
-
-      // 800,000 empty rows, all sharing one object: this fixture only ever
-      // measures *where* the viewport is, never what a cell says (the probe
-      // renderer below paints nothing and reads only `context.row`), so the
-      // cheapest 800,000-row table is the right one. Sharing the object is
-      // safe now that the importer only reads it — 表格不再写回调用方的行对象
-      // （ADR 0004 §3.2，4B 设计 §3.3）。
-      const EMPTY_ROW = {};
-      const rows = new Array(ROW_COUNT).fill(EMPTY_ROW);
 
       // A paint probe, not a data probe: the canvas renderer runs for every
       // visible cell on every frame, so it reports exactly which rows are on
@@ -60,8 +52,13 @@
         column.renderer = probeRenderer;
       }
 
+      // 800,000 行、一个格子都没有：这个夹具只量*视口在哪*，从不问格子说了什么
+      // （上面的探针渲染器什么都不画，只读 `context.row`），所以最省的那张
+      // 800,000 行表就是对的那张。稀疏矩阵里它是一张空矩阵，行数整个来自
+      // `blankRows`——连 800,000 个行对象都不用造出来（ADR 0004 §3.3 的派生坐标
+      // 空间）。
       const sheet = new CyExcelCore(document.getElementById("app"), {
-        data: rows,
+        snapshot: rowsToWorkbookSnapshot([], fields, { blankRows: ROW_COUNT }),
         columns,
         rowHeight: ROW_HEIGHT,
         headerHeight: HEADER_HEIGHT

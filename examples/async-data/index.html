@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>cyexcel — async / remote-backed DataSource</title>
+    <title>cyexcel — loading data from an async source</title>
     <style>
       html,
       body {
@@ -29,17 +29,12 @@
   </head>
   <body>
     <p>
-      <strong>Scope note:</strong> <code>DataSource.getCell()</code> is
-      synchronous — it's called on every paint. <code>getRows()</code> is
-      declared on the interface as optionally returning a
-      <code>Promise</code>, but nothing in <code>CyExcelCore</code>/
-      <code>TableStore</code> actually calls it today, so there's no real
-      "fetch more rows as you scroll" behavior yet. What <em>is</em> real:
-      the <code>DataSource</code> itself can be populated from an async
-      source <strong>before</strong> the table mounts — a custom
-      <code>DataSource</code> below waits on a simulated network request,
-      then serves everything synchronously from an in-memory cache once
-      it's mounted.
+      <strong>Scope note:</strong> the sheet owns its data outright — there is
+      no pluggable storage layer to hand it, and no "fetch more rows as you
+      scroll" behavior. Async work happens on <em>your</em> side of the
+      boundary: await the request, then import the rows you got into a
+      snapshot and construct the table with it. <code>main.js</code> below
+      waits on a simulated network request, then mounts.
     </p>
     <div id="sheet">Loading…</div>
     <script type="module" src="./main.js"></script>

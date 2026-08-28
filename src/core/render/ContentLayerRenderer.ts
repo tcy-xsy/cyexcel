@@ -72,7 +72,7 @@ function isThenable(value: unknown): boolean {
 /**
  * Paints cell values onto a Canvas2DLike surface, clipped to whatever is
  * currently visible per SceneSnapshot. Never
- * depends on DataSource/TableStore directly — only a getCellValue callback
+ * depends on SheetModel/TableStore directly — only a getCellValue callback
  * — so it can be unit-tested without constructing a real data layer.
  */
 export class ContentLayerRenderer {

@@ -5,7 +5,7 @@ export interface InsertRowsCommandParams {
   readonly rows: readonly (readonly unknown[])[];
 }
 
-/** `rows` is column-ordered values, one array per new row (same convention as SetRangeCommand) — DataSource.insertRows() owns the field-name mapping. */
+/** `rows` is column-ordered values, one array per new row (same convention as SetRangeCommand) — the model addresses by column index, so there is no field-name mapping anywhere on this path. */
 export class InsertRowsCommand implements Command<"insert-rows", InsertRowsCommandParams> {
   readonly type = "insert-rows";
   readonly params: InsertRowsCommandParams;

@@ -18,7 +18,7 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore } from "/src/core/index.ts";
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       let failure = null;
       let reenterFromCell = false;
@@ -149,7 +149,10 @@
             }
           }
         },
-        data: [{ dom: "outer", wrapped: "short", "canvas-intent": "paint" }],
+        snapshot: rowsToWorkbookSnapshot(
+          [{ dom: "outer", wrapped: "short", "canvas-intent": "paint" }],
+          ["dom", "wrapped", "canvas-intent"]
+        ),
         rowHeight: 24,
         headerHeight: 24,
         rowHeaderWidth: 36,

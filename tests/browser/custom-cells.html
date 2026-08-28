@@ -32,7 +32,7 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore } from "/src/core/index.ts";
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       const container = document.getElementById("app");
 
@@ -142,6 +142,7 @@
         "span"
       );
 
+      const fields = ["name", "counter", "toggle", "price", "closedNative", "closedSurface"];
       const columns = [
         { id: "name", field: "name", width: 120 },
         { id: "counter", field: "counter", width: 100, renderer: counterRenderer },
@@ -165,7 +166,11 @@
 
       window.__canvasHitTestCalls = {};
 
-      const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+      const sheet = new CyExcelCore(container, {
+        columns,
+        snapshot: rowsToWorkbookSnapshot(data, fields),
+        rowHeight: 24
+      });
 
       window.__sheet = sheet;
       window.__cyexcelCustomCellsReady = true;

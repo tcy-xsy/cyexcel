@@ -113,13 +113,29 @@ function validateRowHeights(options: CyExcelCoreOptions): void {
 }
 
 /**
- * `data` 是唯一的数据入口了：`dataSource` 在 ADR 0004 阶段 4B 删除，数据层
- * 不再可替换（§3.2），所以这里也没有「鸭子类型校验一个外来对象」这件事，
- * 只剩下形状检查。
+ * `snapshot` 是唯一的数据入口了（ADR 0004 §3.2：数据层不可替换，对象数组走
+ * 独立的 `rowsToWorkbookSnapshot`）。
+ *
+ * 这里只查最外一层的形状，内部结构交给 `assertValidWorkbookSnapshot`——那是
+ * 快照格式自己的门禁，它同时守着「从磁盘读回来的快照」这条路，不该在入口再抄
+ * 一份。数组要单独挡：`Array.isArray` 之外它也是 `typeof === "object"`，而传
+ * 一个行对象数组进来（旧的 `data` 用法）恰恰是最可能出现的一种错，直接落到快照
+ * 校验里报出来的会是「缺少 sheetOrder」这种指不到病根的话。
  */
-function validateDataShape(options: CyExcelCoreOptions): void {
-  if (options.data !== undefined && !Array.isArray(options.data)) {
-    throw invalidOption("data", options.data, "expected an array");
+function validateSnapshotShape(options: CyExcelCoreOptions): void {
+  if (options.snapshot === undefined) {
+    return;
+  }
+  if (
+    typeof options.snapshot !== "object" ||
+    options.snapshot === null ||
+    Array.isArray(options.snapshot)
+  ) {
+    throw invalidOption(
+      "snapshot",
+      options.snapshot,
+      "expected a WorkbookSnapshot — build one from rows with rowsToWorkbookSnapshot()"
+    );
   }
 }
 
@@ -176,7 +192,7 @@ export function validateCyExcelCoreOptions(options: CyExcelCoreOptions): void {
     throw invalidOption("clipboard", options.clipboard, "expected an object");
   }
 
-  validateDataShape(options);
+  validateSnapshotShape(options);
   validatePlugins(options);
   validateColumnGeometry(options);
 
@@ -224,10 +240,10 @@ export function validateCyExcelCoreOptions(options: CyExcelCoreOptions): void {
 /**
  * 在建 DOM 之前校验模型报出的行列数与 `rowHeights` 的键。
  *
- * 数据层不可替换之后，前三条检查不再是「校验外来实现」而是核对导入的结果
- * ——`rowsToWorkbookSnapshot` 承诺 `rowCount === data.length`、
- * `columnCount === columns.length`，这里是那条承诺的门禁。留着而不是删掉，
- * 是因为它一旦破就会以「渲染少了一行」的形式静默出现（4B 设计 §4.2）。
+ * 入口收成 `snapshot` 之后，「列数对不上」重新变成一条**调用方造得出来的**
+ * 错误：快照的列数由建它的那次导入决定（`rowsToWorkbookSnapshot` 的 `fields`），
+ * 与这里配的 `columns` 是两处独立的输入。对不上而不拦，后果是渲染层按
+ * `columns.length` 画、存储按自己的列数存，多出来的那一列永远读不到值——静默。
  */
 export function validateCyExcelCoreDataDimensions(
   options: CyExcelCoreOptions,

@@ -20,14 +20,14 @@
     <div id="app"></div>
     <script type="module">
       import { CyExcelCore } from "/dist/core.js";
-      import { buildBenchmarkColumns, buildBenchmarkRows } from "/tests/performance/support/dataset.ts";
+      import { buildBenchmarkColumns, buildBenchmarkSnapshot } from "/tests/performance/support/dataset.ts";
 
       const COLUMN_COUNT = 10;
       const ROW_COUNT = 1000;
 
       const container = document.getElementById("app");
       const columns = buildBenchmarkColumns(COLUMN_COUNT);
-      const data = buildBenchmarkRows(ROW_COUNT, COLUMN_COUNT);
+      const snapshot = buildBenchmarkSnapshot(ROW_COUNT, COLUMN_COUNT);
 
       function nextFrame() {
         return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -41,7 +41,7 @@
       async function runLifecycle(iterations) {
         const heapSamples = [];
         for (let i = 0; i < iterations; i += 1) {
-          const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+          const sheet = new CyExcelCore(container, { columns, snapshot, rowHeight: 24 });
           await nextFrame();
           sheet.dispose();
           if (i % 5 === 0 || i === iterations - 1) {

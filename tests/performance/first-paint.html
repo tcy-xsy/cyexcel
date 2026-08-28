@@ -24,7 +24,7 @@
          for the precedent this fixture follows). -->
     <script type="module">
       import { CyExcelCore } from "/dist/core.js";
-      import { buildBenchmarkColumns, buildBenchmarkRows } from "/tests/performance/support/dataset.ts";
+      import { buildBenchmarkColumns, buildBenchmarkSnapshot } from "/tests/performance/support/dataset.ts";
 
       const ROW_COUNT = 1_000_000;
       const COLUMN_COUNT = 50;
@@ -40,10 +40,10 @@
         // "首屏可交互时间" (a real consumer already has their DataSource
         // ready before constructing the sheet) — left out of the timed
         // window on purpose.
-        const data = buildBenchmarkRows(ROW_COUNT, COLUMN_COUNT);
+        const snapshot = buildBenchmarkSnapshot(ROW_COUNT, COLUMN_COUNT);
 
         const constructStart = performance.now();
-        const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+        const sheet = new CyExcelCore(container, { columns, snapshot, rowHeight: 24 });
         const constructMs = performance.now() - constructStart;
 
         await nextFrame();

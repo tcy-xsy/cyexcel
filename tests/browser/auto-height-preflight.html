@@ -19,9 +19,10 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore } from "/src/core/index.ts";
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       const scenario = new URLSearchParams(location.search).get("scenario");
+      const fields = ["wrapped", "keeper"];
       const wrapColumn = { id: "wrapped", field: "wrapped", width: 70, wrap: true };
       const keeperColumn = { id: "keeper", field: "keeper", width: 80 };
       let columns;
@@ -92,7 +93,7 @@
 
       const sheet = new CyExcelCore(document.getElementById("app"), {
         columns,
-        data,
+        snapshot: rowsToWorkbookSnapshot(data, fields),
         rowHeight: 24,
         headerHeight: 20,
         rowHeaderWidth: 36,

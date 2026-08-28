@@ -19,15 +19,20 @@
     <div id="grid-b" class="grid" tabindex="0"></div>
     <script type="module">
       import {
-        CyExcelCore
+        CyExcelCore,
+        rowsToWorkbookSnapshot
       } from "/src/core/index.ts";
+
+      const fields = Array.from({ length: 10 }, (_unused, column) => `column-${column}`);
 
       function setup(containerId, globalName) {
         const container = document.getElementById(containerId);
         const sheet = new CyExcelCore(container, {
-          data: Array.from({ length: 20 }, () => ({})),
-          columns: Array.from({ length: 10 }, (_unused, column) => ({
-            id: `column-${column}`,
+          // 20 行 10 列，一个格子都没有值：稀疏矩阵里这就是一张空矩阵，
+          // 坐标空间整个来自 blank（派生坐标空间，ADR 0004 §3.3）。
+          snapshot: rowsToWorkbookSnapshot([], fields, { blankRows: 20 }),
+          columns: fields.map((field) => ({
+            id: field,
             width: 50
           })),
           rowHeight: 20,

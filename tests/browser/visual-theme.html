@@ -19,10 +19,11 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore } from "/src/core/index.ts";
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       const container = document.getElementById("app");
 
+      const fields = ["a", "b", "c", "d"];
       const columns = [
         { id: "a", field: "a", width: 100, header: "A" },
         { id: "b", field: "b", width: 100, header: "B" },
@@ -39,7 +40,7 @@
 
       const sheet = new CyExcelCore(container, {
         columns,
-        data,
+        snapshot: rowsToWorkbookSnapshot(data, fields),
         rowHeight: 24,
         headerHeight: 28,
         freeze: { rows: 1, columns: 1 }

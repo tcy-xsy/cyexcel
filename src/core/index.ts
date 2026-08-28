@@ -16,7 +16,7 @@ export {
 
 export { CyExcelError, CyExcelErrorCode } from "./errors";
 
-export type { CellRange, RowData, Command, Disposer } from "./types";
+export type { CellRange, Command, Disposer } from "./types";
 
 /**
  * 存储层的公开面：模型、快照与导入器。

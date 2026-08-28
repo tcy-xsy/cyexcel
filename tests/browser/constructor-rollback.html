@@ -19,7 +19,7 @@
   <body>
     <div id="app"><span data-constructor-sentinel></span></div>
     <script type="module">
-      import { CyExcelCore } from "/src/core/index.ts";
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       function captureError(error) {
         return {
@@ -94,7 +94,7 @@
         const result = runFailedConstruction((app) => {
           new CyExcelCore(app, {
             columns: [{ id: "value" }],
-            data: [{ value: "kept" }],
+            snapshot: rowsToWorkbookSnapshot([{ value: "kept" }], ["value"]),
             plugins: [
               {
                 name: "installed-first",
@@ -121,7 +121,7 @@
         const result = runFailedConstruction((app) => {
           new CyExcelCore(app, {
             columns: [{ id: "value", type: "missing-cell-type" }],
-            data: [{ value: "kept" }],
+            snapshot: rowsToWorkbookSnapshot([{ value: "kept" }], ["value"]),
             plugins: [
               {
                 name: "installed-before-column-resolution",

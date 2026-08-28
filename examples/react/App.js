@@ -1,12 +1,15 @@
 import React, { useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { CyExcelCore } from "../../dist/core.js";
+import { CyExcelCore, rowsToWorkbookSnapshot } from "../../dist/core.js";
 
 const columns = [
   { id: "sku", field: "sku", width: 140, header: "SKU" },
   { id: "name", field: "name", width: 240, header: "Name" },
   { id: "price", field: "price", width: 100, type: "number", header: "Price" }
 ];
+
+/** The i-th field is the i-th column — a parameter of the import, not of `columns`. */
+const fields = ["sku", "name", "price"];
 
 const data = [
   { sku: "A100", name: "Widget", price: 9.99 },
@@ -18,7 +21,13 @@ function CyExcelSheet() {
   const hostRef = useRef(null);
 
   useEffect(() => {
-    const sheet = new CyExcelCore(hostRef.current, { columns, data });
+    // Imported once, on mount. The snapshot is a value handed to the sheet,
+    // not a binding: React re-renders never flow back into it, and edits made
+    // in the sheet never touch `data`.
+    const sheet = new CyExcelCore(hostRef.current, {
+      columns,
+      snapshot: rowsToWorkbookSnapshot(data, fields)
+    });
     return () => sheet.dispose();
   }, []);
 

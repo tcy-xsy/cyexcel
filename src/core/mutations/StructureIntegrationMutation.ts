@@ -25,7 +25,7 @@ export interface StructureIntegrationOwner<TRoot, TPayload> {
 }
 
 /**
- * Keeps the non-DataSource owners of a structural edit in the same mutation
+ * Keeps the non-SheetModel owners of a structural edit in the same mutation
  * journal as the data participant. All expensive resolution happens in
  * prepare(); commit()/rollback() only publish an already-built root.
  */

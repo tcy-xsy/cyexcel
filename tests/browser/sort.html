@@ -19,7 +19,7 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore } from "/src/core/index.ts";
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       const container = document.getElementById("app");
 
@@ -61,6 +61,7 @@
       };
       const customHeaders = new URLSearchParams(location.search).get("header") === "custom";
 
+      const fields = ["name", "score", "joined", "priority"];
       const columns = [
         {
           id: "name",
@@ -141,7 +142,7 @@
       const sheet = new CyExcelCore(container, {
         columns,
         columnTypes,
-        data: rows,
+        snapshot: rowsToWorkbookSnapshot(rows, fields),
         rowHeight: 20,
         headerHeight: 20,
         rowHeaderWidth: 40

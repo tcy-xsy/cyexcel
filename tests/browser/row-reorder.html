@@ -19,17 +19,18 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore } from "/src/core/index.ts";
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       const container = document.getElementById("app");
-      const columns = Array.from({ length: 5 }, (_unused, index) => ({
-        id: `c${index}`,
-        field: `c${index}`,
+      const fields = Array.from({ length: 5 }, (_unused, index) => `c${index}`);
+      const columns = fields.map((field, index) => ({
+        id: field,
+        field,
         width: 60,
         header: `C${index}`
       }));
       const data = Array.from({ length: 30 }, (_unused, row) =>
-        Object.fromEntries(columns.map((column, index) => [column.field, `${row}-${index}`]))
+        Object.fromEntries(fields.map((field, index) => [field, `${row}-${index}`]))
       );
 
       let lastPointerId = null;
@@ -43,7 +44,7 @@
 
       const sheet = new CyExcelCore(container, {
         columns,
-        data,
+        snapshot: rowsToWorkbookSnapshot(data, fields),
         rowHeight: 20,
         headerHeight: 20,
         rowHeaderWidth: 40,

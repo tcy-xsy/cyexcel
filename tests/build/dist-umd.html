@@ -29,11 +29,17 @@
         { id: "a", field: "a", width: 60 },
         { id: "b", field: "b", width: 60 }
       ];
+      var fields = ["a", "b"];
       var data = Array.from({ length: 10 }, function (_unused, row) {
         return { a: row + "-a", b: row + "-b" };
       });
 
-      var sheet = new CyExcel.CyExcelCore(document.getElementById("app"), { columns: columns, data: data });
+      // 导入器也必须在这个全局包里：入口只吃快照之后，UMD 消费者少了它就装不进
+      // 任何数据（见 src/index.ts）。
+      var sheet = new CyExcel.CyExcelCore(document.getElementById("app"), {
+        columns: columns,
+        snapshot: CyExcel.rowsToWorkbookSnapshot(data, fields)
+      });
 
       window.__sheet = sheet;
       window.__cyexcelDistUmdReady = true;

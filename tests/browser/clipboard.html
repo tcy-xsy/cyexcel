@@ -27,9 +27,10 @@
     <div id="app"></div>
     <textarea id="scratch"></textarea>
     <script type="module">
-      import { CyExcelCore } from "/src/core/index.ts";
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       const container = document.getElementById("app");
+      const fields = ["name", "age", "secret", "locked", "tags"];
       const columns = [
         { id: "name", field: "name", width: 100 },
         { id: "age", field: "age", type: "number", width: 80 },
@@ -42,7 +43,11 @@
         { name: "Bob", age: 40, secret: "s2", locked: 200, tags: ["x"] }
       ];
 
-      const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+      const sheet = new CyExcelCore(container, {
+        columns,
+        snapshot: rowsToWorkbookSnapshot(data, fields),
+        rowHeight: 24
+      });
 
       window.__sheet = sheet;
       window.__cyexcelClipboardReady = true;

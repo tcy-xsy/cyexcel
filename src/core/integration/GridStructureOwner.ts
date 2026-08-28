@@ -98,7 +98,7 @@ function moveColumns(
   );
 }
 
-/** Composite owner for every non-DataSource root coupled to a structural edit. */
+/** Composite owner for every non-SheetModel root coupled to a structural edit. */
 export class GridStructureOwner
   implements StructureIntegrationOwner<GridStructureRoot, GridStructurePayload>
 {

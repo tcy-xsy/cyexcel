@@ -9,7 +9,7 @@
  * `@ts-expect-error`-assertion style as `tests/types/core-types.ts`, which
  * checks the source (not built) types instead.
  */
-import { CyExcelCore, DEFAULT_CYEXCEL_TAG_NAME } from "cyexcel";
+import { CyExcelCore, DEFAULT_CYEXCEL_TAG_NAME, rowsToWorkbookSnapshot } from "cyexcel";
 import type { CyExcelCoreOptions } from "cyexcel";
 import * as CoreApi from "cyexcel/core";
 import { defineCyExcel } from "cyexcel/register";
@@ -35,11 +35,14 @@ const internalRuntimeIsNotShipped: [
 ] = [false, false, false, false, false, false, false, false, false, false, false];
 void internalRuntimeIsNotShipped;
 
-// --- CyExcelCoreOptions: fixed shape, columns/data optional --------------
+// --- CyExcelCoreOptions: fixed shape, columns/snapshot optional ----------
+//
+// 顺带钉住「根入口自己就能装数据」：`rowsToWorkbookSnapshot` 必须从 "cyexcel"
+// 出得来，否则只 import `CyExcelCore` 的消费者只能开一张空表（见 src/index.ts）。
 
 const options: CyExcelCoreOptions = {
   columns: [{ id: "name", field: "name", width: 120 }],
-  data: [{ name: "Ada" }],
+  snapshot: rowsToWorkbookSnapshot([{ name: "Ada" }], ["name"]),
   rowHeight: 24
 };
 void options;

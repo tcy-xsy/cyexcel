@@ -19,26 +19,27 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore, createBasicContextMenuPlugin } from "/src/core/index.ts";
+      import { CyExcelCore, createBasicContextMenuPlugin, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       const container = document.getElementById("app");
       // Four 60px columns (a/b/c/d), each cell "<row><field>" so a
       // structural change is verifiable purely from getCell() values —
       // no pixel sampling needed except for the hide/show tests, which
       // genuinely need to observe LayoutEngine's painted width.
-      const columns = ["a", "b", "c", "d"].map((field) => ({
+      const fields = ["a", "b", "c", "d"];
+      const columns = fields.map((field) => ({
         id: field,
         field,
         width: 60,
         header: field.toUpperCase()
       }));
       const data = Array.from({ length: 3 }, (_unused, row) =>
-        Object.fromEntries(columns.map((column) => [column.field, `${row}${column.field}`]))
+        Object.fromEntries(fields.map((field) => [field, `${row}${field}`]))
       );
 
       const sheet = new CyExcelCore(container, {
         columns,
-        data,
+        snapshot: rowsToWorkbookSnapshot(data, fields),
         rowHeight: 24,
         headerHeight: 24,
         plugins: [createBasicContextMenuPlugin()]

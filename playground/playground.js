@@ -4,7 +4,8 @@ import {
   createBooleanCellEditor,
   createDateCellEditor,
   createSelectCellEditor,
-  createTextAreaCellEditor
+  createTextAreaCellEditor,
+  rowsToWorkbookSnapshot
 } from "/src/core/index.ts";
 
 const PRODUCTS = [
@@ -197,6 +198,23 @@ function buildRows(count) {
   return Array.from({ length: count }, (_unused, index) => buildRow(index));
 }
 
+/**
+ * 第 i 个字段就是第 i 列——导入那一刻的参数，不是列配置的一部分
+ * （ADR 0004 §3.2、§4.5）。顺序必须与 COLUMNS 一致。
+ */
+const FIELDS = [
+  "sku",
+  "name",
+  "price",
+  "quantity",
+  "region",
+  "inStock",
+  "restockedAt",
+  "status",
+  "tags",
+  "meta"
+];
+
 function clampNumber(value, min, max, fallback) {
   if (!Number.isFinite(value)) {
     return fallback;
@@ -349,7 +367,9 @@ function rebuild() {
   const start = performance.now();
   core = new CyExcelCore(sheetMount, {
     columns: columnConfigs,
-    data: rows,
+    // ADR 0004 §3.2：入口只吃一份快照。对象数组在这里导进稀疏矩阵，导完这
+    // 一遍之后 `rows` 与表格再无联系——改表格不会改到它，改它也不会改表格。
+    snapshot: rowsToWorkbookSnapshot(rows, FIELDS),
     rowHeight: config.rowHeight,
     overscanRows: config.overscanRows,
     overscanColumns: config.overscanColumns,

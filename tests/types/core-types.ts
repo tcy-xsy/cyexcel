@@ -1,5 +1,6 @@
 import type * as CoreApi from "../../src/core";
 import {
+  rowsToWorkbookSnapshot,
   SetCellCommand,
   type CellRange,
   type Command,
@@ -59,7 +60,7 @@ void emptyRowLayoutChange;
 
 const options: CyExcelCoreOptions = {
   columns: [{ id: "name", field: "name", width: 120 }],
-  data: [{ name: "Ada" }],
+  snapshot: rowsToWorkbookSnapshot([{ name: "Ada" }], ["name"]),
   rowHeight: 32,
   rowHeights: new Map([[2, 48]]),
   headerHeight: 40,

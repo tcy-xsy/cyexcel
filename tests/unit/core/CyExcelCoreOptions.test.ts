@@ -5,6 +5,7 @@ import {
   type CyExcelCoreOptions
 } from "../../../src/core/CyExcelCore";
 import { CyExcelError, CyExcelErrorCode } from "../../../src/core/errors";
+import { rowsToWorkbookSnapshot } from "../../../src/core/sheet";
 import {
   validateCyExcelCoreDataDimensions,
   validateCyExcelCoreHeaderGeometry,
@@ -26,7 +27,7 @@ describe("validateCyExcelCoreOptions", () => {
   it("accepts the supported zero/positive geometry and policy values", () => {
     expect(() => validateCyExcelCoreOptions({
       columns: [{ id: "a", width: 0, minWidth: 0, maxWidth: Number.POSITIVE_INFINITY }],
-      data: [{}],
+      snapshot: rowsToWorkbookSnapshot([{}], ["a"]),
       rowHeight: 24,
       rowHeights: new Map([[0, 36]]),
       headerHeight: 0,
@@ -42,10 +43,17 @@ describe("validateCyExcelCoreOptions", () => {
     })).not.toThrow();
   });
 
-  it("rejects a non-array data input", () => {
+  // 方向和从前的 `data` 恰好相反：入口收成快照之后，**数组**才是错的那一种。
+  // 而「把行对象数组直接塞进来」正是旧用法留下的最可能的一种错，所以它必须在
+  // 入口就被指名道姓地拒掉，而不是漏进 `assertValidWorkbookSnapshot` 报一句
+  // 「缺少 sheetOrder」。
+  it.each([
+    ["a rows array", [{ name: "Ada" }]],
+    ["a non-object", "snapshot"]
+  ])("rejects %s where a snapshot is expected", (_label, snapshot) => {
     expectInvalid(
-      () => validateCyExcelCoreOptions({ data: {} } as unknown as CyExcelCoreOptions),
-      "data"
+      () => validateCyExcelCoreOptions({ snapshot } as unknown as CyExcelCoreOptions),
+      "snapshot"
     );
   });
 
@@ -129,15 +137,15 @@ describe("validateCyExcelCoreDataDimensions", () => {
 });
 
 describe("CyExcelCore constructor preflight", () => {
-  it("fails a malformed data input before importing it or setting up a plugin", () => {
+  it("fails a malformed snapshot before loading it or setting up a plugin", () => {
     const setup = vi.fn();
 
     expectInvalid(
       () => new CyExcelCore({} as HTMLElement, {
-        data: {},
+        snapshot: [{ name: "Ada" }],
         plugins: [{ name: "must-not-run", setup }]
       } as unknown as CyExcelCoreOptions),
-      "data"
+      "snapshot"
     );
 
     expect(setup).not.toHaveBeenCalled();
@@ -148,7 +156,7 @@ describe("CyExcelCore constructor preflight", () => {
     expectInvalid(
       () => new CyExcelCore({} as HTMLElement, {
         columns: [{ id: "a" }],
-        data: [{}],
+        snapshot: rowsToWorkbookSnapshot([{}], ["a"]),
         rowHeights: new Map([[1, 30]]),
         plugins: [{ name: "must-not-run", setup }]
       }),
@@ -181,10 +189,23 @@ describe("CyExcelCore constructor preflight", () => {
     expect(setup).not.toHaveBeenCalled();
   });
 
-  // 「行列数与 columns 对不上」这条不再有构造期用例：数据层不可替换之后，
-  // `rowsToWorkbookSnapshot` 自己保证 `columnCount === columns.length`，从入口
-  // 造不出反例。那道闸仍然在（见上面 `validateCyExcelCoreDataDimensions` 的
-  // 用例），它守的是导入器这条承诺本身，不是外来实现（4B 设计 §4.2）。
+  // T5 时这条曾一度没有构造期用例（数据层不可替换之后从入口造不出反例）。
+  // T7 把入口收成 `snapshot` 又把它造了回来：快照的列数由建它的那次导入的
+  // `fields` 决定，`columns` 是另一处独立输入，两边对不上是调用方**做得到**
+  // 的事。不拦的后果是静默——渲染按 `columns.length` 画，存储按自己的列数存，
+  // 多出来的那一列永远读不到值。
+  it("fails a snapshot whose column count disagrees with columns before touching DOM", () => {
+    const setup = vi.fn();
+    expectInvalid(
+      () => new CyExcelCore({} as HTMLElement, {
+        columns: [{ id: "a" }],
+        snapshot: rowsToWorkbookSnapshot([{ a: 1, b: 2 }], ["a", "b"]),
+        plugins: [{ name: "must-not-run", setup }]
+      }),
+      "sheet.columnCount()"
+    );
+    expect(setup).not.toHaveBeenCalled();
+  });
 });
 
 describe("validateCyExcelCoreHeaderGeometry", () => {

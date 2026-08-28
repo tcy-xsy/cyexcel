@@ -20,7 +20,12 @@
     <div id="app"></div>
     <script type="module">
       import { CyExcelCore } from "/dist/core.js";
-      import { buildBenchmarkColumns, buildBenchmarkRows } from "/tests/performance/support/dataset.ts";
+      import {
+        buildBenchmarkColumns,
+        buildBenchmarkFields,
+        buildBenchmarkRows
+      } from "/tests/performance/support/dataset.ts";
+      import { rowsToWorkbookSnapshot } from "/dist/core.js";
 
       const ROW_COUNT = 500;
       const COLUMN_COUNT = 50;
@@ -30,16 +35,23 @@
 
       const container = document.getElementById("app");
       const columns = buildBenchmarkColumns(COLUMN_COUNT);
+      const fields = buildBenchmarkFields(COLUMN_COUNT);
       const data = buildBenchmarkRows(ROW_COUNT, COLUMN_COUNT);
       // A single cell holding a 100k-item array — everything else in this
       // sheet is plain scalars, so the "plain copy" scenario (rows 1-200,
       // deliberately excluding row 0) never touches it.
-      data[HUGE_ARRAY_ROW][columns[HUGE_ARRAY_COLUMN].field] = Array.from(
+      // 这一处改在导入**之前**：快照建好之后再改 `data` 已经没有任何效果了
+      // （ADR 0004 §3.2：`data` 是一次导入，不是存储）。
+      data[HUGE_ARRAY_ROW][fields[HUGE_ARRAY_COLUMN]] = Array.from(
         { length: HUGE_ARRAY_LENGTH },
         (_unused, index) => index
       );
 
-      const sheet = new CyExcelCore(container, { columns, data, rowHeight: 24 });
+      const sheet = new CyExcelCore(container, {
+        columns,
+        snapshot: rowsToWorkbookSnapshot(data, fields),
+        rowHeight: 24
+      });
 
       function observeLongTasks() {
         const durations = [];

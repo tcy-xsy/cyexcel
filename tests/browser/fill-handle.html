@@ -19,7 +19,7 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore } from "/src/core/index.ts";
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       const container = document.getElementById("app");
 
@@ -31,6 +31,15 @@
       //   4 undoTarget — row 0 only, drag-filled then undone.
       //   5 readonly   — clipboard.paste: false, row 0 only; must stay blank in the extended region.
       //   6 normal     — row 0 only, paired with column 5 in the same drag gesture.
+      const fields = [
+        "neighbor",
+        "dblTarget",
+        "dragCopy",
+        "dragSeq",
+        "undoTarget",
+        "readonly",
+        "normal"
+      ];
       const columns = [
         { id: "neighbor", field: "neighbor", width: 60, header: "N" },
         { id: "dblTarget", field: "dblTarget", width: 60, header: "D" },
@@ -53,7 +62,7 @@
 
       const sheet = new CyExcelCore(container, {
         columns,
-        data,
+        snapshot: rowsToWorkbookSnapshot(data, fields),
         rowHeight: 20
       });
 

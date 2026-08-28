@@ -7,15 +7,11 @@ export interface CellRange {
   readonly endColumn: number;
 }
 
-/**
- * 一行数据的对象形态：字段名 -> 值。
- *
- * 它只服务**入口**（`CyExcelCoreOptions.data`）与导入器，不再是存储层的形状——
- * 存储层是稀疏记录矩阵（ADR 0004）。T7 收口入口 API 时这个别名跟着入口一起走。
- */
-export type RowData = Record<string, unknown>;
-
 /*
+ * `RowData` 随 `CyExcelCoreOptions.data` 一起在 4B（T7）删除：入口只吃快照了。
+ * 对象数组的那一头搬去了导入器，叫 `sheet/import.ts` 的 `ImportRow`——它是导入
+ * 这件事的参数类型，不是核心的数据形状（ADR 0004 §3.2）。
+ *
  * `DataSource` / `DataMutation` / `ColumnFieldMapping` / `CellDescriptorSnapshot` /
  * `PreparedDataSourceMutation` / `DataSourceTransaction` 在 4B（T5）整体删除。
  *

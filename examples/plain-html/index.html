@@ -37,13 +37,21 @@
         { id: "name", field: "name", width: 240, header: "Name" },
         { id: "price", field: "price", width: 100, type: "number", header: "Price" }
       ];
+      // The i-th field is the i-th column — a parameter of the import, not of
+      // the column config.
+      var fields = ["sku", "name", "price"];
       var data = [
         { sku: "A100", name: "Widget", price: 9.99 },
         { sku: "A101", name: "Gadget", price: 14.5 },
         { sku: "A102", name: "Doohickey", price: 3.25 }
       ];
 
-      new CyExcel.CyExcelCore(document.getElementById("sheet"), { columns: columns, data: data });
+      // The sheet takes a snapshot, not a row array — the importer is on the
+      // same global, so a plain <script> tag can still load data.
+      new CyExcel.CyExcelCore(document.getElementById("sheet"), {
+        columns: columns,
+        snapshot: CyExcel.rowsToWorkbookSnapshot(data, fields)
+      });
     </script>
   </body>
 </html>

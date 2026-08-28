@@ -384,7 +384,7 @@ export class LayoutEngine {
     this.replaceRoot(this.prepareDeleteRows(start, count));
   }
 
-  /** `target` is the insertion index in the pre-move index space — same convention `moveColumns()`/`ArrayDataSource.moveRows()` use. Row count doesn't change, so (like moveColumns()) frozenRowCount doesn't need re-clamping. */
+  /** `target` is the insertion index in the pre-move index space — same convention `moveColumns()`/`SheetModel.moveRows()` use. Row count doesn't change, so (like moveColumns()) frozenRowCount doesn't need re-clamping. */
   moveRows(start: number, count: number, target: number): void {
     this.replaceRoot(this.prepareMoveRows(start, count, target));
   }
@@ -405,7 +405,7 @@ export class LayoutEngine {
     this.replaceRoot(this.prepareDeleteColumns(start, count));
   }
 
-  /** `target` is the insertion index in the pre-move index space — same convention `remapColumnIndex()`/`ArrayDataSource.moveColumns()` use. */
+  /** `target` is the insertion index in the pre-move index space — same convention `remapColumnIndex()`/`SheetModel.moveColumns()` use. */
   moveColumns(start: number, count: number, target: number): void {
     this.replaceRoot(this.prepareMoveColumns(start, count, target));
   }

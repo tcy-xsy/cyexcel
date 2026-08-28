@@ -28,7 +28,7 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore, createBasicContextMenuPlugin } from "/src/core/index.ts";
+      import { CyExcelCore, createBasicContextMenuPlugin, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       const container = document.getElementById("app");
       let headerDomPointerId = null;
@@ -109,6 +109,7 @@
         }
       };
 
+      const fields = ["sku", "name", "price", "qty", "status", "closed"];
       const columns = [
         { id: "sku", field: "sku", width: 100, header: "SKU" },
         { id: "name", field: "name", width: 140, header: "Name" },
@@ -141,7 +142,7 @@
 
       const sheet = new CyExcelCore(container, {
         columns,
-        data,
+        snapshot: rowsToWorkbookSnapshot(data, fields),
         headerGroups,
         rowHeight: 24,
         headerHeight: 28,

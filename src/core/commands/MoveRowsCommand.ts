@@ -6,7 +6,7 @@ export interface MoveRowsCommandParams {
   readonly target: number;
 }
 
-/** `target` is the insertion index in the pre-move index space — same convention `ArrayDataSource.moveRows()`/`remapRowIndex()` use. */
+/** `target` is the insertion index in the pre-move index space — same convention `SheetModel.moveRows()`/`remapRowIndex()` use. */
 export class MoveRowsCommand implements Command<"move-rows", MoveRowsCommandParams> {
   readonly type = "move-rows";
   readonly params: MoveRowsCommandParams;

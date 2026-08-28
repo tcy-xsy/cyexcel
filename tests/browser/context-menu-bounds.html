@@ -22,22 +22,23 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore, createBasicContextMenuPlugin } from "/src/core/index.ts";
+      import { CyExcelCore, createBasicContextMenuPlugin, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       const container = document.getElementById("app");
-      const columns = Array.from({ length: 4 }, (_unused, index) => ({
-        id: `c${index}`,
-        field: `c${index}`,
+      const fields = Array.from({ length: 4 }, (_unused, index) => `c${index}`);
+      const columns = fields.map((field, index) => ({
+        id: field,
+        field,
         width: 80,
         header: `C${index}`
       }));
       const data = Array.from({ length: 10 }, (_unused, row) =>
-        Object.fromEntries(columns.map((column, index) => [column.field, `${row}-${index}`]))
+        Object.fromEntries(fields.map((field, index) => [field, `${row}-${index}`]))
       );
 
       const sheet = new CyExcelCore(container, {
         columns,
-        data,
+        snapshot: rowsToWorkbookSnapshot(data, fields),
         rowHeight: 24,
         headerHeight: 24,
         plugins: [createBasicContextMenuPlugin()]

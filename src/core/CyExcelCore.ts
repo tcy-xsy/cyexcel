@@ -47,7 +47,7 @@ import {
   type SemanticChange,
   summarizeStructuralChanges
 } from "./data";
-import { rowsToWorkbookSnapshot, WorkbookModel, type SheetModel } from "./sheet";
+import { WorkbookModel, type SheetModel, type WorkbookSnapshot } from "./sheet";
 import type { CellEditorFactory } from "./editors";
 import { EditorManager } from "./editors";
 import { CyExcelError, CyExcelErrorCode } from "./errors";
@@ -125,7 +125,7 @@ import {
   type Canvas2DLike
 } from "./render";
 import { CELL_FONT } from "./render/theme";
-import type { CellRange, Command, Disposer, RowData } from "./types";
+import type { CellRange, Command, Disposer } from "./types";
 import {
   GridStructureOwner,
   StructureTransition,
@@ -152,16 +152,31 @@ export interface CyExcelHeaderActionEvent {
 export interface CyExcelCoreOptions {
   readonly columns?: readonly CyExcelColumnConfig[];
   /**
-   * 构造时**一次性读入**的初始数据：每个行对象按 `columns` 的 `field`
-   * （缺省为 `id`）取值，写进存储模型的对应格子。单元格值本身仍然按引用
-   * 保留（ADR 0001 §5：复杂值是原子的，不做深观察）。
+   * 初始数据，**一份快照**（ADR 0004 §3.1「模型即快照」）。省略就是一张
+   * 0 行 × `columns.length` 列的空表。
    *
-   * 与旧口径的区别：行对象不再是表格的存储。构造之后改这个数组里的行对象
-   * 不会影响表格读到的内容，表格的编辑也不会写回这些行对象——写回通道在
-   * ADR 0004 阶段 4B 切断了。所有编辑一律走
-   * `setCell()`/`setRange()`/`paste()`，它们经过 Command/Patch/History。
+   * 对象数组走导入器，它是入口之外的独立设施（§3.2）：
+   *
+   * ```ts
+   * new CyExcelCore(container, {
+   *   columns,
+   *   snapshot: rowsToWorkbookSnapshot(rows, ["sku", "name", "price"])
+   * });
+   * ```
+   *
+   * **`fields` 是导入的参数，不是列配置的字段**——数据长什么形状是数据自己的
+   * 事实（ADR §4.5 否决了拿 `field` 当数据格式开关），列配置只管宽度、类型这些
+   * 展示属性。第 `i` 个字段就是第 `i` 列。
+   *
+   * **快照的列数必须等于 `columns.length`**，对不上在构造期就报
+   * `invalid-options`：两者是同一根轴的两种说法，不一致只会以「渲染少画一列」
+   * 的形式静默出现。
+   *
+   * **没有写回。** 快照被读进存储模型之后，与调用方手里的对象再无联系；所有
+   * 编辑一律走 `setCell()`/`setRange()`/`paste()`，它们经过 Command/Patch/History。
+   * 这是 §3.2 的直接后果，是意图之内的破坏性变更（4B 设计 §3.3）。
    */
-  readonly data?: readonly RowData[];
+  readonly snapshot?: WorkbookSnapshot;
   readonly rowHeight?: number;
   /** Row index -> explicit height, only for rows that differ from `rowHeight`. See LayoutOptions.rowHeights. */
   readonly rowHeights?: ReadonlyMap<number, number>;
@@ -453,25 +468,27 @@ function createBrowserClipboardIO(): ClipboardIO {
 }
 
 /**
- * 把入口的 `data` 行对象数组读进存储模型（ADR 0004 §3.1）。
+ * 从入口的 `snapshot` 装载存储模型，没给就建一张空表（ADR 0004 §3.1）。
  *
- * 这是一次**导入**，不再是包一层适配器：`rows[i][field]` 被读成
- * `(i, columnIndex)` 上的一条 `CellRecord`，之后行对象与表格再无关系。
- * 因此原来那段「行对象按引用保留、`setCell()` 会原地改写调用方的对象」的
- * 契约作废了——`data` 现在是纯输入，写回通道已经切断（4B 设计 §3.3）。
+ * **入口不再吃对象数组**：那条路是 `rowsToWorkbookSnapshot`，一个独立的、
+ * 永久的导入器（§3.2；xlsx 导入将来落在同一个位置）。入口只认快照这一种形态，
+ * 于是「装载」与「把外部数据翻译成格子」是两件分开的事，各自可测。
  *
- * 列在存储里没有身份（ADR 0004 §3.8.2），只有位置：`fields[k]` 决定第 k 列
- * 从行对象的哪个字段取值，`column.id` 不参与。
+ * 空表的列数取 `columns.length` 而不是 0：坐标空间是派生的
+ * （`maxOccupied + 1 + blank`），一张没有任何格子的表若不把列数记进
+ * `blankColumns`，`columnCount()` 会答 0，紧接着的
+ * `validateCyExcelCoreDataDimensions` 就会把「没给数据」当成配置错误拒掉。
  */
 function buildWorkbook(
   options: CyExcelCoreOptions,
   columns: readonly CyExcelColumnConfig[]
 ): WorkbookModel {
-  const fields = columns.map((column) => column.field ?? column.id);
-  // 稀疏存储会把整行为空的尾行丢掉，而入口的行列数必须等于调用方给的
-  // `data.length` × `columns.length`——`rowsToWorkbookSnapshot` 把这个差额
-  // 折进 blankRows/blankColumns，这里依赖那条保证，不再自己补。
-  return WorkbookModel.fromSnapshot(rowsToWorkbookSnapshot(options.data ?? [], fields));
+  if (options.snapshot !== undefined) {
+    return WorkbookModel.fromSnapshot(options.snapshot);
+  }
+  return WorkbookModel.createEmpty({
+    sheet: { blankRows: 0, blankColumns: columns.length }
+  });
 }
 
 function buildLayout(
@@ -634,7 +651,7 @@ export class CyExcelCore {
     // splice this array in place, so without this much copying a structural
     // column change would silently resize/reorder the caller's own
     // `options.columns` array.
-    // （`options.data` 不需要同样的保护：它现在只被读一遍导进存储模型。）
+    // （`options.snapshot` 不需要同样的保护：它只被读一遍装进存储模型。）
     this.#columns = snapshotColumnDefinitions(options.columns ?? []);
     this.#headerGroups = options.headerGroups ?? [];
     this.#scrollCommitPolicy = options.scrollCommitPolicy ?? "commit";

@@ -19,7 +19,7 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { CyExcelCore } from "/src/core/index.ts";
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
 
       let rejectedCommand = null;
       let rejectedTransactionCommand = null;
@@ -33,9 +33,10 @@
         true
       );
 
+      const fields = Array.from({ length: 5 }, (_unused, index) => `c${index}`);
       const columns = [80, 90, 100, 110, 120].map((width, index) => ({
-        id: `c${index}`,
-        field: `c${index}`,
+        id: fields[index],
+        field: fields[index],
         width,
         header: `C${index}`
       }));
@@ -47,11 +48,11 @@
         }
       };
       const data = Array.from({ length: 30 }, (_unused, row) =>
-        Object.fromEntries(columns.map((column, columnIndex) => [column.field, `${row}:${columnIndex}`]))
+        Object.fromEntries(fields.map((field, columnIndex) => [field, `${row}:${columnIndex}`]))
       );
       const sheet = new CyExcelCore(document.getElementById("app"), {
         columns,
-        data,
+        snapshot: rowsToWorkbookSnapshot(data, fields),
         rowHeight: 24,
         headerHeight: 20,
         rowHeaderWidth: 40

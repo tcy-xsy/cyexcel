@@ -18,7 +18,7 @@ export interface StructuralChange {
   readonly operation: "insert" | "delete" | "move";
   readonly start: number;
   readonly count: number;
-  /** Only meaningful for "move" — the insertion index in the *original* (pre-removal) index space, same convention `ArrayDataSource.moveRows()`/`moveColumns()` use. */
+  /** Only meaningful for "move" — the insertion index in the *original* (pre-removal) index space, same convention `SheetModel.moveRows()`/`moveColumns()` use. */
   readonly target?: number;
 }
 

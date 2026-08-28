@@ -22,15 +22,19 @@
          first), not /src/... like every other browser fixture — this is
          what an actual npm consumer's `cyexcel/core` import resolves to. -->
     <script type="module">
-      import { CyExcelCore } from "/dist/core.js";
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/dist/core.js";
 
+      const fields = ["a", "b"];
       const columns = [
         { id: "a", field: "a", width: 60 },
         { id: "b", field: "b", width: 60 }
       ];
       const data = Array.from({ length: 10 }, (_unused, row) => ({ a: `${row}-a`, b: `${row}-b` }));
 
-      const sheet = new CyExcelCore(document.getElementById("app"), { columns, data });
+      const sheet = new CyExcelCore(document.getElementById("app"), {
+        columns,
+        snapshot: rowsToWorkbookSnapshot(data, fields)
+      });
 
       window.__sheet = sheet;
       window.__cyexcelDistEsmReady = true;

@@ -88,19 +88,21 @@ export function rowsToWorkbookSnapshot(
 ): WorkbookSnapshot {
   const { blankRows: extraBlankRows = 0, blankColumns: extraBlankColumns = 0, ...sheetOptions } = options;
 
-  const records: { row: number; column: number; record: CellRecord }[] = [];
+  // 第一遍只找占用范围，**不留下任何中间结构**。第二遍才写格子。
+  //
+  // 一趟写完更直白，但那需要先知道 blank 数才能建模型，而 blank 数要等扫完才知道
+  // ——于是一趟版只能先把记录攒进一个数组。那个数组与最终的矩阵同阶：100 万行 × 50
+  // 列的导入会先造 5000 万个临时对象再造一遍真的，峰值内存翻倍，而这正是导入器最
+  // 容易被喂大数据的地方。多扫一遍是 O(rows × fields) 的读，比多分配一份便宜得多。
   let occupiedRows = 0;
   let occupiedColumns = 0;
   for (let row = 0; row < rows.length; row += 1) {
     const source = rows[row] as ImportRow;
     for (let column = 0; column < fields.length; column += 1) {
-      const record = valueToRecord(source[fields[column] as string]);
-      if (record === undefined) {
-        continue;
+      if (source[fields[column] as string] !== undefined) {
+        occupiedRows = row + 1;
+        occupiedColumns = Math.max(occupiedColumns, column + 1);
       }
-      records.push({ row, column, record });
-      occupiedRows = Math.max(occupiedRows, row + 1);
-      occupiedColumns = Math.max(occupiedColumns, column + 1);
     }
   }
 
@@ -113,8 +115,14 @@ export function rowsToWorkbookSnapshot(
     }
   });
   const sheet = workbook.sheet();
-  for (const { row, column, record } of records) {
-    sheet.setRecord(row, column, record);
+  for (let row = 0; row < occupiedRows; row += 1) {
+    const source = rows[row] as ImportRow;
+    for (let column = 0; column < occupiedColumns; column += 1) {
+      const record = valueToRecord(source[fields[column] as string]);
+      if (record !== undefined) {
+        sheet.setRecord(row, column, record);
+      }
+    }
   }
   return workbook.toSnapshot();
 }

@@ -1,10 +1,18 @@
-import { CyExcelCore } from "../../dist/core.js";
+import { CyExcelCore, rowsToWorkbookSnapshot } from "../../dist/core.js";
 
 const columns = [
   { id: "sku", field: "sku", width: 140, header: "SKU" },
   { id: "name", field: "name", width: 240, header: "Name" },
   { id: "price", field: "price", width: 100, type: "number", header: "Price" }
 ];
+
+/**
+ * The i-th field is the i-th column. This is a parameter of the *import* — the
+ * one moment the server's field names matter — not part of the column config
+ * (doc/adr/0004-single-data-model.md §3.2, §4.5). After the import the sheet
+ * addresses everything by (row, column) and never sees a field name again.
+ */
+const fields = ["sku", "name", "price"];
 
 /** Stands in for a network call — real code would `await fetch(...)` here. */
 function fetchRowsFromServer() {
@@ -21,41 +29,14 @@ function fetchRowsFromServer() {
   });
 }
 
-/**
- * A minimal custom DataSource — getCell/setCell are synchronous (required:
- * they're called during paint/edit-commit), backed by a plain in-memory
- * array that's already been fully populated by the time this is
- * constructed. `columns` closed over here just to map a column index to
- * the row object's field name.
- */
-class InMemoryDataSource {
-  #rows;
-  #columns;
-
-  constructor(rows, cols) {
-    this.#rows = rows;
-    this.#columns = cols;
-  }
-
-  getRowCount() {
-    return this.#rows.length;
-  }
-
-  getColumnCount() {
-    return this.#columns.length;
-  }
-
-  getCell(row, column) {
-    return this.#rows[row]?.[this.#columns[column].field];
-  }
-
-  setCell(row, column, value) {
-    this.#rows[row][this.#columns[column].field] = value;
-  }
-}
-
 const rows = await fetchRowsFromServer();
-const dataSource = new InMemoryDataSource(rows, columns);
 
 document.getElementById("sheet").textContent = "";
-new CyExcelCore(document.getElementById("sheet"), { columns, dataSource });
+// Everything async happened *before* this line. The sheet is constructed with
+// a snapshot already in hand, so there is no loading state inside the table
+// itself — and no reference kept to `rows`, which is free to be collected the
+// moment the import returns.
+new CyExcelCore(document.getElementById("sheet"), {
+  columns,
+  snapshot: rowsToWorkbookSnapshot(rows, fields)
+});
