@@ -59,3 +59,4 @@ export {
   assertRestoreTablesAreWritable,
   estimateSheetMutationBytes
 } from "./apply";
+export { SheetTransaction, type PreparedSheetMutation } from "./SheetTransaction";
