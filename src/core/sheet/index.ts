@@ -60,3 +60,4 @@ export {
   estimateSheetMutationBytes
 } from "./apply";
 export { SheetTransaction, type PreparedSheetMutation } from "./SheetTransaction";
+export { changesForSheetMutation, type SheetAxisSpace } from "./patches";
