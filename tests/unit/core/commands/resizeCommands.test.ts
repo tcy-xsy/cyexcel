@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   HideColumnCommand,
   ResizeColumnCommand,
-  ResizeRowCommand
+  ResizeRowCommand,
+  ShowColumnCommand
 } from "../../../../src/core/commands";
 import { SetRowHeightsCommand } from "../../../../src/core/commands/SetRowHeightsCommand";
 import { TableStore } from "../../../../src/core/data";
@@ -184,19 +185,22 @@ describe("ResizeColumnCommand", () => {
     expect(columnWidthOf(sheet, 1, layout.defaultColumnWidth)).toBe(60);
     expect(isColumnHidden(sheet, 1)).toBe(true);
 
-    manager.execute(new ResizeColumnCommand(1, 95));
+    // 三次操作里**只有权威那半边在动**：几何宽度全程是 0，所以布局版本一次都不该走，
+    // 补丁也一条都不该发——屏幕上一个像素没变。会走的是模型版本，因为 `columnData[1].w`
+    // 确实改了，取消隐藏时就是按它逐像素回去的。
+    expect(manager.execute(new ResizeColumnCommand(1, 95))).toEqual([]);
     expect(layout.getColumnWidth(1)).toBe(0);
     expect(columnWidthOf(sheet, 1, layout.defaultColumnWidth)).toBe(95);
     expect(isColumnHidden(sheet, 1)).toBe(true);
-    expect(layout.version).toBe(layoutVersion + 1);
+    expect(layout.version).toBe(layoutVersion);
     expect(store.version).toBe(storeVersion + 1);
-    expect(manager.lastChangeSet?.modelVersion).toBe(storeVersion + 1);
+    expect(manager.lastChangeSet).toEqual({ modelVersion: storeVersion + 1, changes: [] });
 
     manager.undo();
     expect(layout.getColumnWidth(1)).toBe(0);
     expect(columnWidthOf(sheet, 1, layout.defaultColumnWidth)).toBe(60);
     expect(isColumnHidden(sheet, 1)).toBe(true);
-    expect(layout.version).toBe(layoutVersion + 2);
+    expect(layout.version).toBe(layoutVersion);
     expect(store.version).toBe(storeVersion + 2);
     expect(manager.lastChangeSet?.modelVersion).toBe(storeVersion + 2);
 
@@ -204,8 +208,13 @@ describe("ResizeColumnCommand", () => {
     expect(layout.getColumnWidth(1)).toBe(0);
     expect(columnWidthOf(sheet, 1, layout.defaultColumnWidth)).toBe(95);
     expect(isColumnHidden(sheet, 1)).toBe(true);
-    expect(layout.version).toBe(layoutVersion + 3);
+    expect(layout.version).toBe(layoutVersion);
     expect(store.version).toBe(storeVersion + 3);
     expect(manager.lastChangeSet?.modelVersion).toBe(storeVersion + 3);
+
+    // 而这一条要看得见：取消隐藏时回到的正是上面那个 95，不是夹具原来的 60。
+    manager.execute(new ShowColumnCommand(1));
+    expect(layout.getColumnWidth(1)).toBe(95);
+    expect(layout.version).toBe(layoutVersion + 1);
   });
 });

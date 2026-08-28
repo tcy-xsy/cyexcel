@@ -61,17 +61,23 @@ describe("HideColumnCommand", () => {
     expect(layout.getColumnWidth(1)).toBe(0);
   });
 
-  it("undoing a hide no-op keeps an already hidden column hidden", () => {
+  it("hiding an already hidden column does nothing and takes no undo slot", () => {
     const { layout, sheet, manager } = createFixture();
     manager.execute(new HideColumnCommand(1));
+    const historySize = manager.historySize;
 
-    manager.execute(new HideColumnCommand(1));
+    // 两半都判得出「没变」：权威那边整条 `ColumnMeta` 不动（`hd` 已经是 `true`），
+    // 索引那边几何宽度已经是 0。于是这一条没有效果，不进历史。
+    expect(manager.execute(new HideColumnCommand(1))).toEqual([]);
+    expect(manager.historySize).toBe(historySize);
+    // 重复隐藏尤其不该把 0 记成恢复宽度——它写的是 `hd`，`w` 一个字节没碰。
+    expect(columnWidthOf(sheet, 1, layout.defaultColumnWidth)).toBe(60);
+
+    // 既然它没进历史，撤销撤的就是**前一条**——那条真的隐藏了这一列的。
     manager.undo();
 
-    expect(layout.getColumnWidth(1)).toBe(0);
-    expect(isColumnHidden(sheet, 1)).toBe(true);
-    // 重复隐藏不该把 0 记成恢复宽度——它写的是 `hd`，`w` 一个字节没碰。
-    expect(columnWidthOf(sheet, 1, layout.defaultColumnWidth)).toBe(60);
+    expect(layout.getColumnWidth(1)).toBe(60);
+    expect(isColumnHidden(sheet, 1)).toBe(false);
   });
 });
 
@@ -113,10 +119,12 @@ describe("ShowColumnCommand", () => {
     expect(layout.getColumnWidth(1)).toBe(60);
   });
 
-  it("undoing a show no-op keeps an already visible column visible", () => {
+  it("showing an already visible column does nothing and takes no undo slot", () => {
     const { layout, sheet, manager } = createFixture();
 
-    manager.execute(new ShowColumnCommand(1));
+    expect(manager.execute(new ShowColumnCommand(1))).toEqual([]);
+    expect(manager.historySize).toBe(0);
+
     manager.undo();
 
     expect(layout.getColumnWidth(1)).toBe(60);

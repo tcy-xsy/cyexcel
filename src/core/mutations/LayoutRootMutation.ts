@@ -252,7 +252,17 @@ export class LayoutRootMutation implements Mutation {
     }
     context.roots.set(this.#layout, nextRoot);
 
-    const changes = Object.freeze([patchFor(action, nextRoot)]);
+    // 列这一侧：几何没动就没有可发的补丁。
+    //
+    // `ColumnMeta` 里对消费方可见的只有几何宽度（`hd` 已经被折进那个数），所以根没换就
+    // 真的什么都没变——发一条 `column-layout` 是在说谎，而且不是白说：插一列时结构那条
+    // `column-structure` 已经让整条列轴重画了，再补一条纯属重复；改一列**隐藏着的**列的
+    // 恢复宽度则是屏幕上一个像素都没动。
+    //
+    // 行那一侧不能照搬：`RowMeta` 的 `hp`（来源）是消费方要看的，一次「高度不变、只把
+    // 这行锁成 manual」必须发得出去，否则自动行高会继续来抢。所以那边照旧发。
+    const publishesPatch = nextRoot !== previousRoot || !isColumnAction;
+    const changes = Object.freeze(publishesPatch ? [patchFor(action, nextRoot)] : []);
     const forward = new LayoutRootMutation(this.#layout, this.#sheet, action, changes);
     // No `changes` for the inverse: `changes` describes the *forward* patch.
     // Every other action's patch happens to be direction-independent, and

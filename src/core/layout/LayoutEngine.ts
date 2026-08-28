@@ -442,6 +442,15 @@ export class LayoutEngine {
       throw invalidLayoutOption('width', width);
     }
 
+    // 宽度没变就把原根还回去，与 `prepareSetRowHeights` 的 `if (!changed) return base`
+    // 同一条口径。T8b 之前这条捷径够不着：那时只有「用户拖列边」一条路进来，宽度总是
+    // 新的。现在隐藏 / 取消隐藏 / 插入列的宽度播种都折进了这里，「算出来正好还是这个数」
+    // 成了常态——少了这一句，插一列会白重建一次列轴（O(列数) 的偏移量重算），还会发一条
+    // 说几何变了、其实没变的 `column-layout`。
+    if (base.columnAxis.getColumnWidth(column) === width) {
+      return base;
+    }
+
     const columnWidths = base.columnAxis.copyColumnWidths();
     columnWidths[column] = width;
     return this.#createRoot(
