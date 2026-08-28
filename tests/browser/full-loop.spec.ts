@@ -131,24 +131,24 @@ test("typing a new value and pressing Enter commits one undoable/redoable change
   expect(await getCell(page, 0, 0)).toBe("Changed");
 });
 
-test("setCell() through the `data` option mutates the caller's original row object, matching ArrayDataSource's own contract", async ({
+test("setCell() leaves the caller's original row object alone — `data` is an import, not the storage", async ({
   page
 }) => {
   await gotoFixture(page);
 
   await page.evaluate(() => (window as unknown as FixtureWindow).__sheet?.setCell(0, 1, 999));
 
-  // Not a deep-cloned copy: `buildDataSource()` only shallow-copies the
-  // *array* (to protect the caller's array from insertRows()/deleteRows()/
-  // moveRows() splicing it in place) — individual row objects are the same
-  // references the caller passed in, exactly like constructing
-  // ArrayDataSource directly (tests/unit/core/data/ArrayDataSource.test.ts's
-  // "reads and writes by numeric index" case asserts the same thing at the
-  // ArrayDataSource level).
-  const originalPrice = await page.evaluate(
-    () => (window as unknown as FixtureWindow).__originalData?.[0]?.price
-  );
-  expect(originalPrice).toBe(999);
+  // 这条断言的方向在 ADR 0004 §3.2 反了过来：`data` 曾经**就是**表格的存储，
+  // `setCell()` 会就地改写调用方传进来的行对象。现在它只被 `rowsToWorkbookSnapshot`
+  // 读一遍导进稀疏矩阵，此后两边再无联系。这是意图之内的破坏性变更（4B 设计
+  // §3.3），所以这里钉的是「写回真的断了」，而不是删掉一条用例了事。
+  const result = await page.evaluate(() => ({
+    originalPrice: (window as unknown as FixtureWindow).__originalData?.[0]?.price,
+    cell: (window as unknown as FixtureWindow).__sheet?.getCell(0, 1)
+  }));
+
+  expect(result.originalPrice).toBe(0);
+  expect(result.cell).toBe(999);
 });
 
 test("Ctrl+Z/Ctrl+Y undo and redo from the keyboard, not just the programmatic API", async ({ page }) => {

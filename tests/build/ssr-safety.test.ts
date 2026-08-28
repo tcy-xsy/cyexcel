@@ -28,16 +28,17 @@ describe("SSR safety — importing cyexcel/core touches no DOM", () => {
     await expect(importDist("../../dist/core.js")).resolves.toBeDefined();
   });
 
-  it("exercises the public ArrayDataSource adapter with no DOM access", async () => {
-    const { ArrayDataSource } = await importDist<typeof CoreModule>("../../dist/core.js");
-    const dataSource = new ArrayDataSource(
-      [{ name: "a" }, { name: "b" }],
-      [{ id: "name", field: "name" }]
-    );
+  it("exercises the public importer and storage model with no DOM access", async () => {
+    const { rowsToWorkbookSnapshot, WorkbookModel } =
+      await importDist<typeof CoreModule>("../../dist/core.js");
+    const sheet = WorkbookModel
+      .fromSnapshot(rowsToWorkbookSnapshot([{ name: "a" }, { name: "b" }], ["name"]))
+      .sheet();
 
-    expect(dataSource.getCell(0, 0)).toBe("a");
-    dataSource.setCell(1, 0, "c");
-    expect(dataSource.getCell(1, 0)).toBe("c");
+    expect(sheet.rowCount()).toBe(2);
+    expect(sheet.columnCount()).toBe(1);
+    expect(sheet.getCell(0, 0)).toBe("a");
+    expect(sheet.getCell(1, 0)).toBe("b");
   });
 });
 

@@ -23,7 +23,7 @@ import { LayoutRootMutation, type LayoutRootAction } from "../mutations/LayoutRo
 import { RowHeightMutation } from "../mutations/RowHeightMutation";
 import { StructureIntegrationMutation } from "../mutations/StructureIntegrationMutation";
 import type { CommitReceipt, Mutation, MutationPrepareSession, PreparedTransaction } from "../mutations/types";
-import type { CellRange, ColumnFieldMapping } from "../types";
+import type { CellRange } from "../types";
 import { checkBeforeColumnsChange } from "../commands/checkBeforeColumnsChange";
 import { checkBeforeRowsChange } from "../commands/checkBeforeRowsChange";
 import type { ColumnDefinition } from "../cells/types";
@@ -89,8 +89,8 @@ export class TableDataCommandMutationFactory implements DataCommandMutationFacto
     return this.#store.createReorderRowsMutation(order);
   }
 
-  createInsertColumns(start: number, columns: readonly ColumnFieldMapping[]): Mutation {
-    return this.#store.createInsertColumnsMutation(start, columns);
+  createInsertColumns(start: number, count: number): Mutation {
+    return this.#store.createInsertColumnsMutation(start, count);
   }
 
   createDeleteColumns(start: number, count: number): Mutation {

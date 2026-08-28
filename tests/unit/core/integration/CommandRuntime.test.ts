@@ -13,20 +13,17 @@ import {
   type BeforeCommandContext,
   type BeforeTransactionCommitContext
 } from "../../../../src/core/commands";
-import { ArrayDataSource, TableStore } from "../../../../src/core/data";
+import { TableStore } from "../../../../src/core/data";
 import { HeaderManager } from "../../../../src/core/headers";
 import { HookManager, PRODUCTION_HOOK_REGISTRY } from "../../../../src/core/hooks";
 import { GridStructureOwner, createGridCommandManager } from "../../../../src/core/integration";
 import { SelectionModel } from "../../../../src/core/interaction";
 import { LayoutEngine } from "../../../../src/core/layout";
+import { createSheetFromRows } from "../../../helpers/createSheetModel";
 
 function createFixture() {
   let columns: readonly ColumnDefinition[] = Object.freeze([{ id: "a" }, { id: "b" }]);
-  const source = new ArrayDataSource(
-    [{ a: "A", b: 1 }, { a: "B", b: 2 }],
-    [{ id: "a", field: "a" }, { id: "b", field: "b" }]
-  );
-  const store = new TableStore(source);
+  const store = new TableStore(createSheetFromRows([{ a: "A", b: 1 }, { a: "B", b: 2 }], ["a", "b"]));
   const registry = new CellTypeRegistry();
   registerBuiltinCellTypes(registry);
   const columnManager = new ColumnManager({ columns, registry });
@@ -54,11 +51,7 @@ function createFixture() {
 /** Three rows with three distinct heights, so no assertion can pass by accident. */
 function createReorderFixture() {
   let columns: readonly ColumnDefinition[] = Object.freeze([{ id: "a" }]);
-  const source = new ArrayDataSource(
-    [{ a: "A" }, { a: "B" }, { a: "C" }],
-    [{ id: "a", field: "a" }]
-  );
-  const store = new TableStore(source);
+  const store = new TableStore(createSheetFromRows([{ a: "A" }, { a: "B" }, { a: "C" }], ["a"]));
   const registry = new CellTypeRegistry();
   registerBuiltinCellTypes(registry);
   const columnManager = new ColumnManager({ columns, registry });

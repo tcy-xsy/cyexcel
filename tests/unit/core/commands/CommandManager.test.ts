@@ -8,7 +8,7 @@ import type {
   BeforeCommandContext,
   BeforeTransactionCommitContext
 } from "../../../../src/core/commands";
-import { ArrayDataSource, TableStore } from "../../../../src/core/data";
+import { TableStore } from "../../../../src/core/data";
 import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
 import {
   TableCommandManager,
@@ -16,6 +16,7 @@ import {
 } from "../../../../src/core/integration";
 import { HookManager, PRODUCTION_HOOK_REGISTRY } from "../../../../src/core/hooks";
 import { createStateMutation, type Mutation } from "../../../../src/core/mutations";
+import { createSheetFromRows } from "../../../helpers/createSheetModel";
 import type {
   Command,
   CommandContext,
@@ -77,11 +78,7 @@ function createStore() {
     { name: "A", price: 1 },
     { name: "B", price: 2 }
   ];
-  const source = new ArrayDataSource(rows, [
-    { id: "name", field: "name" },
-    { id: "price", field: "price" }
-  ]);
-  return new TableStore(source);
+  return new TableStore(createSheetFromRows(rows, ["name", "price"]));
 }
 
 describe("CommandManager basics", () => {

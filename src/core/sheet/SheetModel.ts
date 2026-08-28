@@ -30,6 +30,25 @@ function maxOccupiedFrom(extent: number): number | undefined {
   return extent === 0 ? undefined : extent - 1;
 }
 
+/**
+ * `pinCoordinateSpace` 要的空白数：目标轴长减去占用范围。
+ *
+ * 差额为负说明占用范围已经越过了要钉的那个轴长——那只可能是一次越界的值写，而那
+ * 种写在 `TableStore` 的 prepare 期就被挡下了。到了这里再遇上，说明有人绕过了那道
+ * 闸，此时**抛**而不是夹到 0：夹的话轴会被悄悄放大到 `extent`，与要钉的值不符，
+ * 而这个函数存在的全部理由就是不让轴悄悄变。
+ */
+function blankFor(target: number, extent: number, axis: "row" | "column"): number {
+  const blank = target - extent;
+  if (blank < 0) {
+    throw new CyExcelError(
+      CyExcelErrorCode.InvalidMutation,
+      `Cannot pin ${axis} count to ${target}: ${extent} ${axis}s are occupied`
+    );
+  }
+  return blank;
+}
+
 export interface SheetModelOptions {
   readonly id?: string;
   readonly name?: string;
@@ -53,8 +72,8 @@ export class SheetModel {
   #mergeData: readonly CellRange[];
   readonly #id: string;
   readonly #name: string;
-  readonly #blankRows: number;
-  readonly #blankColumns: number;
+  #blankRows: number;
+  #blankColumns: number;
   readonly #defaultRowHeight: number;
   readonly #defaultColumnWidth: number;
   readonly #freeze: { readonly rows: number; readonly columns: number } | undefined;
@@ -214,6 +233,35 @@ export class SheetModel {
       maxOccupiedFrom(this.#columnExtentIncludingTables()),
       this.#blankColumns
     );
+  }
+
+  /**
+   * 把坐标空间钉回给定的大小，差额由 `blankRows` / `blankColumns` 吸收。
+   *
+   * **这是"值写不改坐标空间"这条不变量的执行体**（另一半是 `TableStore` 里那道
+   * 拒绝越界写的闸）。轴是派生量（`maxOccupied + 1 + blank`，spec §3.3），于是
+   * 单纯写值就能把它挪动，两个方向都会：
+   *
+   * - **缩**：清空最后一行的每一个格子，`maxOccupied` 退回去，`rowCount()` 跟着变
+   *   小。旧的行数组模型里这做不到——`ClearRangeCommand` 清空整张表之后表还是那么
+   *   多行。稀疏矩阵里它是默认行为，而这条变更只带一条 `range-value` 补丁：渲染层
+   *   不知道表变短了。
+   * - **涨**：往一行**空白行**里写第一个值（导入把数据末尾的空行折进了 `blankRows`），
+   *   `maxOccupied` 前进而 `blank` 不动，轴凭空多出一行。
+   *
+   * 两种都不是"清空/填写一个格子"该有的效果。这里的口径是：格子的占用范围变了，
+   * 空白的数量就反向变同样多——**被清空的尾行本来就变回了空白行**，这正是
+   * `blankRows` 这个字段的含义（与 `rowsToWorkbookSnapshot` 折算尾部空行是同一条
+   * 口径）。因此它也自然是自逆的：逆变更把值写回去时，同一条规则把 `blank` 还原。
+   *
+   * 结构变更**不**走这里——插入/删除行列本来就该改坐标空间。
+   */
+  pinCoordinateSpace(rowCount: number, columnCount: number): void {
+    // 两个都先算出来再赋值：列那一边抛的时候，行不该已经被改掉一半
+    const blankRows = blankFor(rowCount, this.#rowExtentIncludingTables(), "row");
+    const blankColumns = blankFor(columnCount, this.#columnExtentIncludingTables(), "column");
+    this.#blankRows = blankRows;
+    this.#blankColumns = blankColumns;
   }
 
   /**

@@ -1,15 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { dispatchCellAction } from "../../../../src/core/commands";
-import { ArrayDataSource, TableStore } from "../../../../src/core/data";
+import { TableStore } from "../../../../src/core/data";
 import { createTableCommandManager } from "../../../../src/core/integration";
+import { createSheetFromRows } from "../../../helpers/createSheetModel";
 
 function createStore(): TableStore {
-  const dataSource = new ArrayDataSource(
-    [{ name: "old" }],
-    [{ id: "name", field: "name" }]
-  );
-  return new TableStore(dataSource);
+  return new TableStore(createSheetFromRows([{ name: "old" }], ["name"]));
 }
 
 describe("dispatchCellAction — hitTest CellAction to Command translation", () => {

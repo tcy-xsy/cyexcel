@@ -1,4 +1,3 @@
-import type { ModelRevision } from "./model";
 import type { Mutation, TransactionReadView } from "./mutations";
 
 export interface CellRange {
@@ -8,87 +7,32 @@ export interface CellRange {
   readonly endColumn: number;
 }
 
+/**
+ * 一行数据的对象形态：字段名 -> 值。
+ *
+ * 它只服务**入口**（`CyExcelCoreOptions.data`）与导入器，不再是存储层的形状——
+ * 存储层是稀疏记录矩阵（ADR 0004）。T7 收口入口 API 时这个别名跟着入口一起走。
+ */
 export type RowData = Record<string, unknown>;
 
-export interface DataSource {
-  getRowCount(): number;
-  getColumnCount(): number;
-  getCell(row: number, column: number): unknown;
-  setCell(row: number, column: number, value: unknown): void;
-  getRows?(start: number, end: number): RowData[] | Promise<RowData[]>;
-  /**
-   * Optional structural mutation capability (Step 12) — a remote/computed
-   * DataSource is free to leave all three unimplemented; TableStore checks
-   * for their presence and throws a clear capability error instead of
-   * assuming they exist. `rows` uses the same "one array of values per
-   * row, in column order" convention as `setRange()`, not
-   * `RowData` — field-name mapping is ArrayDataSource's own concern, never
-   * TableStore's or a Command's.
-   */
-  insertRows?(start: number, rows: readonly (readonly unknown[])[]): void;
-  deleteRows?(start: number, count: number): void;
-  moveRows?(start: number, count: number, target: number): void;
-  /**
-   * Column-axis counterpart to insertRows/deleteRows/moveRows (Step 17) —
-   * same optional-capability contract. `columns` is the same `{id, field}`
-   * shape `ArrayDataSourceColumn` uses; declared inline (not imported from
-   * `./data/ArrayDataSource`) since this interface stays implementation-
-   * agnostic — TypeScript's structural typing makes the two interchangeable
-   * without either needing to reference the other.
-   */
-  insertColumns?(start: number, columns: readonly ColumnFieldMapping[]): void;
-  deleteColumns?(start: number, count: number): void;
-  moveColumns?(start: number, count: number, target: number): void;
-  /**
-   * Optional whole-axis row permutation (Step 22 sorting). `order` follows the
-   * repo-wide convention `order[newPosition] = oldPosition`. Kept separate from
-   * `moveRows()` because a sort is not expressible as a cheap sequence of
-   * moves, and because a DataSource may reasonably support one and not the
-   * other.
-   */
-  reorderRows?(order: Int32Array): void;
-  /** Optional strong transaction adapter. Mutable TableStore operations require it. */
-  beginTransaction?(baseRevision: ModelRevision): DataSourceTransaction;
-}
-
-export interface ColumnFieldMapping {
-  readonly id: string;
-  readonly field: string;
-}
-
-export interface CellDescriptorSnapshot {
-  readonly row: number;
-  readonly column: number;
-  readonly descriptor: PropertyDescriptor | undefined;
-}
-
-export type DataMutation =
-  | { readonly type: "set-cell"; readonly row: number; readonly column: number; readonly value: unknown }
-  | { readonly type: "set-range"; readonly range: CellRange; readonly values: readonly (readonly unknown[])[] }
-  | { readonly type: "restore-cells"; readonly cells: readonly CellDescriptorSnapshot[] }
-  | { readonly type: "insert-rows"; readonly start: number; readonly rows: readonly (readonly unknown[])[] }
-  | { readonly type: "insert-row-objects"; readonly start: number; readonly rows: readonly RowData[] }
-  | { readonly type: "delete-rows"; readonly start: number; readonly count: number }
-  | { readonly type: "move-rows"; readonly start: number; readonly count: number; readonly target: number }
-  | { readonly type: "reorder-rows"; readonly order: Int32Array }
-  | { readonly type: "insert-columns"; readonly start: number; readonly columns: readonly ColumnFieldMapping[] }
-  | { readonly type: "delete-columns"; readonly start: number; readonly count: number }
-  | { readonly type: "move-columns"; readonly start: number; readonly count: number; readonly target: number };
-
-export interface PreparedDataSourceMutation {
-  readonly forward: DataMutation;
-  readonly inverse: DataMutation;
-  readonly estimatedBytes: number;
-  commit(): void;
-  rollback(): void;
-  dispose(): void;
-}
-
-/** Source-owned scratch projection used while a Command transaction is planned. */
-export interface DataSourceTransaction extends TransactionReadView {
-  prepareMutation(mutation: DataMutation): PreparedDataSourceMutation;
-  dispose(): void;
-}
+/*
+ * `DataSource` / `DataMutation` / `ColumnFieldMapping` / `CellDescriptorSnapshot` /
+ * `PreparedDataSourceMutation` / `DataSourceTransaction` 在 4B（T5）整体删除。
+ *
+ * 它们描述的是"数据在一个可替换的外部对象里，核心通过接口去改它"这套模型，而
+ * ADR 0004 §3.2 判定调用方不能替换数据层：存储就是 `SheetModel`，变更就是
+ * `SheetMutation`，暂存就是 `SheetTransaction`。留一个接口壳子当过渡层是白做的工
+ * （§0 决定 1）。对应物：
+ *
+ * - `DataSource` → `src/core/sheet/SheetModel.ts`
+ * - `DataMutation` → `src/core/sheet/mutation.ts` 的 `SheetMutation`
+ * - `DataSourceTransaction` / `PreparedDataSourceMutation` →
+ *   `src/core/sheet/SheetTransaction.ts`
+ * - `ColumnFieldMapping` → 没有对应物：列不再有身份（§3.8.2），字段名是导入那一刻
+ *   的参数（`sheet/import.ts`）
+ * - `CellDescriptorSnapshot` → 没有对应物：它是"就地改调用方数组"时代用来复原属性
+ *   描述符的，稀疏矩阵里删格就是删键
+ */
 
 /**
  * Minimal shape shared by every Command; CommandManager (Step 3) will add

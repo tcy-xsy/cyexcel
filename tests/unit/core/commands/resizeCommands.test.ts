@@ -5,24 +5,22 @@ import {
   ResizeRowCommand
 } from "../../../../src/core/commands";
 import { SetRowHeightsCommand } from "../../../../src/core/commands/SetRowHeightsCommand";
-import { ArrayDataSource, TableStore } from "../../../../src/core/data";
+import { TableStore } from "../../../../src/core/data";
 import { createTableCommandManager } from "../../../../src/core/integration";
 import { LayoutEngine } from "../../../../src/core/layout";
+import { createSheetFromRows } from "../../../helpers/createSheetModel";
 
 function createFixture() {
-  const source = new ArrayDataSource(
-    [
-      { a: "A1", b: "B1", c: "C1" },
-      { a: "A2", b: "B2", c: "C2" },
-      { a: "A3", b: "B3", c: "C3" }
-    ],
-    [
-      { id: "a", field: "a" },
-      { id: "b", field: "b" },
-      { id: "c", field: "c" }
-    ]
+  const store = new TableStore(
+    createSheetFromRows(
+      [
+        { a: "A1", b: "B1", c: "C1" },
+        { a: "A2", b: "B2", c: "C2" },
+        { a: "A3", b: "B3", c: "C3" }
+      ],
+      ["a", "b", "c"]
+    )
   );
-  const store = new TableStore(source);
   const layout = new LayoutEngine({
     rowCount: 3,
     columnCount: 3,

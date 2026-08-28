@@ -1,22 +1,23 @@
 import { describe, expect, it } from "vitest";
 
-import { ArrayDataSource, TableStore } from "../../../../src/core/data";
+import { TableStore } from "../../../../src/core/data";
 import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
-import type { DataSource } from "../../../../src/core/types";
-import { createCountingDataSource } from "../../../helpers/createCountingDataSource";
+import { rowsToWorkbookSnapshot } from "../../../../src/core/sheet/import";
+import { SheetModel } from "../../../../src/core/sheet/SheetModel";
+import { WorkbookModel } from "../../../../src/core/sheet/WorkbookModel";
 
 function createStore() {
-  const rows = [
-    { name: "A", price: 1, tags: ["x"] },
-    { name: "B", price: 2, tags: ["y"] },
-    { name: "C", price: 3, tags: ["z"] }
-  ];
-  const source = new ArrayDataSource(rows, [
-    { id: "name", field: "name" },
-    { id: "price", field: "price" },
-    { id: "tags", field: "tags" }
-  ]);
-  return { rows, store: new TableStore(source) };
+  const sheet = WorkbookModel.fromSnapshot(
+    rowsToWorkbookSnapshot(
+      [
+        { name: "A", price: 1, tags: ["x"] },
+        { name: "B", price: 2, tags: ["y"] },
+        { name: "C", price: 3, tags: ["z"] }
+      ],
+      ["name", "price", "tags"]
+    )
+  ).sheet();
+  return { sheet, store: new TableStore(sheet) };
 }
 
 describe("TableStore.setCell", () => {
@@ -108,44 +109,114 @@ describe("TableStore failure paths do not bump the version", () => {
     expect(attempt).toThrow(CyExcelError);
   });
 
-  it("readonly DataSource: setCell throws and version stays at 0", () => {
-    const source = new ArrayDataSource(
-      [{ name: "A" }],
-      [{ id: "name", field: "name" }],
-      { readonly: true }
-    );
-    const store = new TableStore(source);
+  /**
+   * 稀疏矩阵会痛快地把第 5 行建出来，所以「越界写」不再由存储自己拒绝——
+   * 挡它的是 `TableStore`。这两条钉的就是那道闸：值写永远不改坐标空间，
+   * 否则表在渲染层不知情的情况下变长/变宽（只发了一条 `cell-value`）。
+   */
+  it("a write past the last row is refused, and the row axis does not grow", () => {
+    const { sheet, store } = createStore();
 
-    expect(() => store.setCell(0, 0, "B")).toThrow(CyExcelError);
-    expect(store.version).toBe(0);
-
-    try {
-      store.setCell(0, 0, "B");
-    } catch (error) {
-      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.ReadonlyDataSource);
-    }
-  });
-
-  it("a write failure raised by the DataSource leaves version unchanged", () => {
-    const source = new ArrayDataSource([{ name: "A" }], [{ id: "name", field: "name" }]);
-    const store = new TableStore(source);
-
-    // Row 5 does not exist in the underlying source, so the write fails.
     expect(() => store.setCell(5, 0, "B")).toThrow(CyExcelError);
     expect(store.version).toBe(0);
+    expect(sheet.rowCount()).toBe(3);
+  });
+
+  it("a write past the last column is refused with column-not-found", () => {
+    const { sheet, store } = createStore();
+
+    try {
+      store.setCell(0, 3, "B");
+      expect.unreachable("expected setCell to throw");
+    } catch (error) {
+      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.ColumnNotFound);
+    }
+    expect(sheet.columnCount()).toBe(3);
+  });
+
+  it("setRange refuses a range that runs past the last row", () => {
+    const { sheet, store } = createStore();
+
+    expect(() =>
+      store.setRange({ startRow: 2, startColumn: 0, endRow: 3, endColumn: 0 }, [["x"], ["y"]])
+    ).toThrow(CyExcelError);
+    expect(store.version).toBe(0);
+    expect(sheet.rowCount()).toBe(3);
+  });
+});
+
+/**
+ * 越界写有闸挡着（上面那三条），但轴还能被**合法**的值写挪动：派生轴是
+ * `maxOccupied + 1 + blank`，清空尾行会让它变短，填一行空白行会让它变长。两种都只
+ * 发一条值补丁，渲染层收不到"表变长了"的消息。`SheetModel.pinCoordinateSpace` 把
+ * 差额记进 `blank`，这一组钉的是那条不变量的两个方向。
+ */
+describe("TableStore — value writes never move the axes", () => {
+  it("clearing the last row's cells keeps the row axis at three", () => {
+    const { sheet, store } = createStore();
+
+    store.setRange(
+      { startRow: 2, startColumn: 0, endRow: 2, endColumn: 2 },
+      [[undefined, undefined, undefined]]
+    );
+
+    expect(store.getCell(2, 0)).toBeUndefined();
+    // 占用范围确实缩了——轴没跟着缩，是因为差额进了 blankRows
+    expect(sheet.occupiedRowCount()).toBe(2);
+    expect(sheet.rowCount()).toBe(3);
+    expect(store.getRowCount()).toBe(3);
+  });
+
+  it("clearing every cell keeps the axes instead of collapsing the sheet", () => {
+    const { sheet, store } = createStore();
+
+    store.setRange(
+      { startRow: 0, startColumn: 0, endRow: 2, endColumn: 2 },
+      [
+        [undefined, undefined, undefined],
+        [undefined, undefined, undefined],
+        [undefined, undefined, undefined]
+      ]
+    );
+
+    expect(sheet.occupiedCount()).toBe(0);
+    expect(sheet.rowCount()).toBe(3);
+    expect(sheet.columnCount()).toBe(3);
+  });
+
+  it("filling a trailing blank row does not grow the row axis", () => {
+    // 第二行整行为空——导入器把它折进 blankRows，坐标空间仍是 2 行
+    const sheet = WorkbookModel.fromSnapshot(
+      rowsToWorkbookSnapshot([{ a: 1 }, { a: undefined }], ["a"])
+    ).sheet();
+    const store = new TableStore(sheet);
+    expect(store.getRowCount()).toBe(2);
+
+    store.setCell(1, 0, "filled");
+
+    expect(store.getCell(1, 0)).toBe("filled");
+    expect(store.getRowCount()).toBe(2);
   });
 });
 
 describe("TableStore does not scan unrelated rows", () => {
   it("setCell touches a constant number of cells regardless of table size", () => {
-    const source = createCountingDataSource(1_000_000, 50);
-    const store = new TableStore(source);
+    // 一百万行是**空白**行：稀疏矩阵一个格子都不建，坐标空间由
+    // `blankRows` 直接给出。旧口径靠计数 DataSource 的 getCell/setCell 次数，
+    // 这里换成更强的一条：写完之后矩阵里仍然只有那一个格子——既证明没有扫描，
+    // 也证明没有为了写一格而把整表物化出来。
+    const sheet = SheetModel.createEmpty({ blankRows: 1_000_000, blankColumns: 50 });
+    const store = new TableStore(sheet);
 
     const result = store.setCell(10, 2, 99);
 
     expect(result.patches).toEqual([{ type: "cell-value", row: 10, column: 2 }]);
-    expect(source.readCount).toBeLessThanOrEqual(1);
-    expect(source.writeCount).toBe(1);
+    expect(sheet.occupiedCount()).toBe(1);
+    expect(sheet.getCell(10, 2)).toBe(99);
+    // 值写不改坐标空间：填掉第 10 行这个空白行之后，`blankRows` 相应少 11，轴还是
+    // 一百万（`SheetModel.pinCoordinateSpace`）。派生轴的原始算术会给出
+    // 10 + 1 + 1_000_000（spec §3.3），那正是这条不变量要挡住的"凭空长一行"。
+    expect(store.getRowCount()).toBe(1_000_000);
   });
 });
 
@@ -197,85 +268,6 @@ describe("TableStore — structural row operations", () => {
     expect(store.getCell(2, 0)).toBe("B");
   });
 
-  it("throws StructuralModificationNotSupported when the DataSource doesn't implement reorderRows", () => {
-    // A plain-object DataSource that implements only the four required
-    // methods, mirroring the insertRows/deleteRows/moveRows capability
-    // checks above.
-    const source: DataSource = {
-      getRowCount: () => 3,
-      getColumnCount: () => 1,
-      getCell: () => "A",
-      setCell: () => {}
-    };
-    const store = new TableStore(source);
-
-    try {
-      store.reorderRows(Int32Array.from([2, 0, 1]));
-      expect.unreachable("expected reorderRows to throw");
-    } catch (error) {
-      expect(error).toBeInstanceOf(CyExcelError);
-      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.StructuralModificationNotSupported);
-    }
-  });
-
-  it("throws StructuralModificationNotSupported when the DataSource doesn't implement insertRows", () => {
-    // A plain-object DataSource (e.g. a remote/computed one) that never
-    // declared insertRows — not an ArrayDataSource with the method deleted,
-    // since that would still be found via the prototype chain.
-    const source: DataSource = {
-      getRowCount: () => 1,
-      getColumnCount: () => 1,
-      getCell: () => "A",
-      setCell: () => {}
-    };
-    const store = new TableStore(source);
-
-    try {
-      store.insertRows(0, [["B"]]);
-      expect.unreachable("expected insertRows to throw");
-    } catch (error) {
-      expect(error).toBeInstanceOf(CyExcelError);
-      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.StructuralModificationNotSupported);
-    }
-  });
-
-  it("throws StructuralModificationNotSupported when the DataSource doesn't implement deleteRows", () => {
-    const source: DataSource = {
-      getRowCount: () => 1,
-      getColumnCount: () => 1,
-      getCell: () => "A",
-      setCell: () => {}
-    };
-    const store = new TableStore(source);
-
-    expect(() => store.deleteRows(0, 1)).toThrow(CyExcelError);
-  });
-
-  it("throws StructuralModificationNotSupported when the DataSource doesn't implement moveRows", () => {
-    const source: DataSource = {
-      getRowCount: () => 2,
-      getColumnCount: () => 1,
-      getCell: () => "A",
-      setCell: () => {}
-    };
-    const store = new TableStore(source);
-
-    expect(() => store.moveRows(0, 1, 1)).toThrow(CyExcelError);
-  });
-
-  it("a rejected structural operation leaves the version unchanged (row)", () => {
-    const source: DataSource = {
-      getRowCount: () => 1,
-      getColumnCount: () => 1,
-      getCell: () => "A",
-      setCell: () => {}
-    };
-    const store = new TableStore(source);
-
-    expect(() => store.insertRows(0, [["B"]])).toThrow(CyExcelError);
-    expect(store.version).toBe(0);
-  });
-
   it.each([
     ["zero-count insert", (store: TableStore) => store.insertRows(1, [])],
     ["delete past the end", (store: TableStore) => store.deleteRows(2, 2)],
@@ -285,9 +277,8 @@ describe("TableStore — structural row operations", () => {
     // in createReorderRowsMutation. Calling createReorderRowsMutation()
     // directly (not reorderRows()) matters here: reorderRows() would still
     // pass even if TableStore's own check were deleted, because
-    // ArrayDataSource's own transaction independently re-validates `order`
-    // during prepare() and would mask the gap — see
-    // ArrayDataSource.ts's "reorder-rows" case in beginTransaction(). Calling
+    // `SheetModel.reorderRows()` independently re-validates `order` when the
+    // mutation is applied and would mask the gap. Calling
     // createReorderRowsMutation() in isolation, before #execute/prepare()
     // ever runs, is what actually exercises the call site in this diff.
     [
@@ -295,12 +286,12 @@ describe("TableStore — structural row operations", () => {
       (store: TableStore) => store.createReorderRowsMutation(Int32Array.from([2, 0]))
     ]
   ])("rejects %s before mutating data or version", (_label, run) => {
-    const { rows, store } = createStore();
+    const { store } = createStore();
 
     expect(() => run(store)).toThrow(RangeError);
 
     expect(store.version).toBe(0);
-    expect(rows.map((row) => row.name)).toEqual(["A", "B", "C"]);
+    expect([store.getCell(0, 0), store.getCell(1, 0), store.getCell(2, 0)]).toEqual(["A", "B", "C"]);
   });
 });
 
@@ -308,7 +299,7 @@ describe("TableStore — structural column operations", () => {
   it("insertColumns emits a column-structure Patch and bumps the version", () => {
     const { store } = createStore();
 
-    const result = store.insertColumns(1, [{ id: "qty", field: "qty" }]);
+    const result = store.insertColumns(1, 1);
 
     expect(result.patches).toEqual([{ type: "column-structure", operation: "insert", start: 1, count: 1 }]);
     expect(result.version).toBe(1);
@@ -339,63 +330,8 @@ describe("TableStore — structural column operations", () => {
     expect(result.version).toBe(1);
   });
 
-  it("throws StructuralModificationNotSupported when the DataSource doesn't implement insertColumns", () => {
-    const source: DataSource = {
-      getRowCount: () => 1,
-      getColumnCount: () => 1,
-      getCell: () => "A",
-      setCell: () => {}
-    };
-    const store = new TableStore(source);
-
-    try {
-      store.insertColumns(0, [{ id: "b", field: "b" }]);
-      expect.unreachable("expected insertColumns to throw");
-    } catch (error) {
-      expect(error).toBeInstanceOf(CyExcelError);
-      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.StructuralModificationNotSupported);
-    }
-  });
-
-  it("throws StructuralModificationNotSupported when the DataSource doesn't implement deleteColumns", () => {
-    const source: DataSource = {
-      getRowCount: () => 1,
-      getColumnCount: () => 1,
-      getCell: () => "A",
-      setCell: () => {}
-    };
-    const store = new TableStore(source);
-
-    expect(() => store.deleteColumns(0, 1)).toThrow(CyExcelError);
-  });
-
-  it("throws StructuralModificationNotSupported when the DataSource doesn't implement moveColumns", () => {
-    const source: DataSource = {
-      getRowCount: () => 1,
-      getColumnCount: () => 2,
-      getCell: () => "A",
-      setCell: () => {}
-    };
-    const store = new TableStore(source);
-
-    expect(() => store.moveColumns(0, 1, 1)).toThrow(CyExcelError);
-  });
-
-  it("a rejected structural operation leaves the version unchanged (column)", () => {
-    const source: DataSource = {
-      getRowCount: () => 1,
-      getColumnCount: () => 1,
-      getCell: () => "A",
-      setCell: () => {}
-    };
-    const store = new TableStore(source);
-
-    expect(() => store.insertColumns(0, [{ id: "b", field: "b" }])).toThrow(CyExcelError);
-    expect(store.version).toBe(0);
-  });
-
   it.each([
-    ["zero-count insert", (store: TableStore) => store.insertColumns(1, [])],
+    ["zero-count insert", (store: TableStore) => store.insertColumns(1, 0)],
     ["delete past the end", (store: TableStore) => store.deleteColumns(2, 2)],
     ["move target inside the block", (store: TableStore) => store.moveColumns(0, 2, 1)]
   ])("rejects %s before mutating columns or version", (_label, run) => {
@@ -411,40 +347,28 @@ describe("TableStore — structural column operations", () => {
   });
 });
 
-describe("TableStore DataSource transaction capability", () => {
-  /** The minimal read/write DataSource: no optional capability declared. */
-  function minimalSource(): DataSource {
-    return {
-      getRowCount: () => 2,
-      getColumnCount: () => 2,
-      getCell: (row, column) => `${row}:${column}`,
-      setCell: () => {}
-    };
-  }
+/**
+ * 归属校验：一个 `TableStore` 一次只服务一张表。旧口径这里问的是「这个
+ * DataSource 声明了 beginTransaction 吗」——数据层不再可替换之后那个问题不
+ * 存在了，但「拿着 A 表的 mutation 去 B 表的事务里施加」这个错误还在，而且
+ * 更危险：它会安静地写错表。
+ */
+describe("TableStore mutation ownership", () => {
+  it("refuses a mutation built against another sheet", () => {
+    const { store } = createStore();
+    const other = createStore();
+    const foreign = other.store.createSetCellMutation(0, 0, "Z");
 
-  it("throws MutationNotSupported when the DataSource has no beginTransaction", () => {
-    // The counterpart to the StructuralModificationNotSupported cases above,
-    // and the code a caller sees for an ordinary cell write rather than a
-    // structural one. It had an error code and a message but no assertion
-    // until this test — the gap the Phase 8 audit turned up.
-    const store = new TableStore(minimalSource());
-
+    const session = store.beginMutationSession("t1");
     try {
-      store.beginMutationSession("t1");
-      expect.unreachable("expected beginMutationSession to throw");
+      session.stage(foreign);
+      expect.unreachable("expected stage to throw");
     } catch (error) {
       expect(error).toBeInstanceOf(CyExcelError);
-      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.MutationNotSupported);
+      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.MutationConflict);
     }
-  });
 
-  it("names the missing contract in the message, not just the code", () => {
-    const store = new TableStore(minimalSource());
-    try {
-      store.beginMutationSession("t1");
-      expect.unreachable("expected beginMutationSession to throw");
-    } catch (error) {
-      expect((error as CyExcelError).message).toContain("staged transaction contract");
-    }
+    expect(store.version).toBe(0);
+    expect(other.store.getCell(0, 0)).toBe("A");
   });
 });

@@ -16,24 +16,24 @@ export {
 
 export { CyExcelError, CyExcelErrorCode } from "./errors";
 
-export type {
-  CellRange,
-  RowData,
-  DataSource,
-  DataMutation,
-  PreparedDataSourceMutation,
-  DataSourceTransaction,
-  CellDescriptorSnapshot,
-  ColumnFieldMapping,
-  Command,
-  Disposer
-} from "./types";
+export type { CellRange, RowData, Command, Disposer } from "./types";
 
+/**
+ * 存储层的公开面：模型、快照与导入器。
+ *
+ * 替代了原来导出的 `DataSource` / `ArrayDataSource` 一族——调用方不再替换数据层
+ * （ADR 0004 §3.2），而是交一份快照进来。
+ */
 export {
-  ArrayDataSource,
-  type ArrayDataSourceColumn,
-  type ArrayDataSourceOptions
-} from "./data";
+  rowsToWorkbookSnapshot,
+  SheetModel,
+  WorkbookModel,
+  type CellRecord,
+  type ImportRow,
+  type RowsToWorkbookSnapshotOptions,
+  type SheetSnapshot,
+  type WorkbookSnapshot
+} from "./sheet";
 export type {
   ChangeSet,
   SemanticChange

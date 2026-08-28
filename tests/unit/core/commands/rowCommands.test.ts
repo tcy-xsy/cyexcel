@@ -8,15 +8,15 @@ import {
   SetCellCommand
 } from "../../../../src/core/commands";
 import type { BeforeRowsChangeContext, BeforeTransactionCommitContext } from "../../../../src/core/commands";
-import { ArrayDataSource, TableStore } from "../../../../src/core/data";
+import { TableStore } from "../../../../src/core/data";
 import { CyExcelError } from "../../../../src/core/errors";
 import { HookManager, PRODUCTION_HOOK_REGISTRY } from "../../../../src/core/hooks";
 import { createTableCommandManager } from "../../../../src/core/integration";
+import { createSheetFromRows } from "../../../helpers/createSheetModel";
 
 function createStore(names: readonly string[] = ["A", "B", "C"]) {
   const rows = names.map((name) => ({ name }));
-  const source = new ArrayDataSource(rows, [{ id: "name", field: "name" }]);
-  return { rows, store: new TableStore(source) };
+  return { rows, store: new TableStore(createSheetFromRows(rows, ["name"])) };
 }
 
 function readNames(store: TableStore, count: number): string[] {
@@ -130,22 +130,24 @@ describe("MoveRowsCommand", () => {
     expect(readNames(store, 5)).toEqual(["A", "D", "B", "C", "E"]);
   });
 
-  it("preserves each moved row's own object identity", () => {
+  // 行对象不再是存储（ADR 0004 §3.1），所以"行的身份"这件事没有了；仍然成立
+  // 而且仍然要钉的是**单元格值**的身份：复杂值是原子的（ADR 0001 §5），移动一段
+  // 行不能把值复制一份。
+  it("moves complex cell values by reference, not by copy", () => {
     const marker = { id: "row-b" };
-    const rowB = { name: "B", marker };
-    const rows = [{ name: "A" }, rowB, { name: "C" }];
-    const source = new ArrayDataSource(rows, [
-      { id: "name", field: "name" },
-      { id: "marker", field: "marker" }
-    ]);
-    const store = new TableStore(source);
+    const store = new TableStore(
+      createSheetFromRows(
+        [{ name: "A" }, { name: "B", marker }, { name: "C" }],
+        ["name", "marker"]
+      )
+    );
     const manager = createTableCommandManager(store);
     const command = new MoveRowsCommand(1, 1, 3);
 
     manager.execute(command);
 
-    expect(source.getCell(2, 0)).toBe("B");
-    expect(source.getCell(2, 1)).toBe(marker);
+    expect(store.getCell(2, 0)).toBe("B");
+    expect(store.getCell(2, 1)).toBe(marker);
   });
 
   it("undoing a move-earlier round-trips back to the original order", () => {
@@ -162,12 +164,13 @@ describe("MoveRowsCommand", () => {
 });
 
 describe("row commands — staged transaction view", () => {
-  it("deletes a row, writes the shifted row, and restores exact values and identities on undo", () => {
+  it("deletes a row, writes the shifted row, and restores exact values on undo", () => {
+    // 导入用的行对象在这里被留着，钉的是**反过来**的一条：写回通道已经切断
+    // （4B 设计 §3.3），表格改的是自己的存储，这三个对象一个字节都不会动。
     const rowA = { name: "A" };
     const rowB = { name: "B" };
     const rowC = { name: "C" };
-    const source = new ArrayDataSource([rowA, rowB, rowC], [{ id: "name", field: "name" }]);
-    const store = new TableStore(source);
+    const store = new TableStore(createSheetFromRows([rowA, rowB, rowC], ["name"]));
     const manager = createTableCommandManager(store);
 
     manager.transaction(() => {
@@ -176,16 +179,14 @@ describe("row commands — staged transaction view", () => {
     });
 
     expect(readNames(store, 2)).toEqual(["B2", "C"]);
-    expect(rowB.name).toBe("B2");
+    expect(rowB.name).toBe("B");
 
     manager.undo();
     expect(readNames(store, 3)).toEqual(["A", "B", "C"]);
-    expect(rowA.name).toBe("A");
-    expect(rowB.name).toBe("B");
 
     manager.redo();
     expect(readNames(store, 2)).toEqual(["B2", "C"]);
-    expect(rowB.name).toBe("B2");
+    expect([rowA.name, rowB.name, rowC.name]).toEqual(["A", "B", "C"]);
   });
 
   it("can read and write an inserted row before the transaction commits", () => {

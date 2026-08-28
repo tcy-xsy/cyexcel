@@ -112,21 +112,14 @@ function validateRowHeights(options: CyExcelCoreOptions): void {
   }
 }
 
-function validateDataSourceShape(options: CyExcelCoreOptions): void {
+/**
+ * `data` 是唯一的数据入口了：`dataSource` 在 ADR 0004 阶段 4B 删除，数据层
+ * 不再可替换（§3.2），所以这里也没有「鸭子类型校验一个外来对象」这件事，
+ * 只剩下形状检查。
+ */
+function validateDataShape(options: CyExcelCoreOptions): void {
   if (options.data !== undefined && !Array.isArray(options.data)) {
     throw invalidOption("data", options.data, "expected an array");
-  }
-  if (options.dataSource === undefined) {
-    return;
-  }
-  if (typeof options.dataSource !== "object" || options.dataSource === null) {
-    throw invalidOption("dataSource", options.dataSource, "expected a DataSource object");
-  }
-  const requiredMethods = ["getRowCount", "getColumnCount", "getCell", "setCell"] as const;
-  for (const method of requiredMethods) {
-    if (typeof options.dataSource[method] !== "function") {
-      throw invalidOption(`dataSource.${method}`, options.dataSource[method], "expected a function");
-    }
   }
 }
 
@@ -153,10 +146,6 @@ export function validateCyExcelCoreOptions(options: CyExcelCoreOptions): void {
   if (typeof options !== "object" || options === null) {
     throw invalidOption("options", options, "expected an options object");
   }
-  if (options.data !== undefined && options.dataSource !== undefined) {
-    throw invalidOption("data/dataSource", "both provided", "choose exactly one data input");
-  }
-
   if (options.columns !== undefined && !Array.isArray(options.columns)) {
     throw invalidOption("columns", options.columns, "expected an array");
   }
@@ -187,7 +176,7 @@ export function validateCyExcelCoreOptions(options: CyExcelCoreOptions): void {
     throw invalidOption("clipboard", options.clipboard, "expected an object");
   }
 
-  validateDataSourceShape(options);
+  validateDataShape(options);
   validatePlugins(options);
   validateColumnGeometry(options);
 
@@ -232,7 +221,14 @@ export function validateCyExcelCoreOptions(options: CyExcelCoreOptions): void {
   }
 }
 
-/** Validates source-reported dimensions and row-height keys before DOM setup. */
+/**
+ * 在建 DOM 之前校验模型报出的行列数与 `rowHeights` 的键。
+ *
+ * 数据层不可替换之后，前三条检查不再是「校验外来实现」而是核对导入的结果
+ * ——`rowsToWorkbookSnapshot` 承诺 `rowCount === data.length`、
+ * `columnCount === columns.length`，这里是那条承诺的门禁。留着而不是删掉，
+ * 是因为它一旦破就会以「渲染少了一行」的形式静默出现（4B 设计 §4.2）。
+ */
 export function validateCyExcelCoreDataDimensions(
   options: CyExcelCoreOptions,
   dimensions: CyExcelCoreDataDimensions,
@@ -240,21 +236,21 @@ export function validateCyExcelCoreDataDimensions(
 ): void {
   if (!isNonNegativeSafeInteger(dimensions.rowCount)) {
     throw invalidOption(
-      "dataSource.getRowCount()",
+      "sheet.rowCount()",
       dimensions.rowCount,
       "expected a non-negative safe integer"
     );
   }
   if (!isNonNegativeSafeInteger(dimensions.columnCount)) {
     throw invalidOption(
-      "dataSource.getColumnCount()",
+      "sheet.columnCount()",
       dimensions.columnCount,
       "expected a non-negative safe integer"
     );
   }
   if (dimensions.columnCount !== configuredColumnCount) {
     throw invalidOption(
-      "dataSource.getColumnCount()",
+      "sheet.columnCount()",
       dimensions.columnCount,
       `must equal columns.length ${configuredColumnCount}`
     );

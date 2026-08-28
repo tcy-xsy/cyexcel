@@ -89,4 +89,44 @@ describe("SheetModel", () => {
     const snapshot = model.toSnapshot();
     expect("freeze" in snapshot).toBe(false);
   });
+
+  describe("pinCoordinateSpace", () => {
+    it("absorbs a shrinking occupied range into the blank counts", () => {
+      const model = SheetModel.createEmpty({ blankRows: 0, blankColumns: 0 });
+      model.setCell(2, 1, "a");
+      expect(model.rowCount()).toBe(3);
+
+      model.deleteCell(2, 1);
+      model.pinCoordinateSpace(3, 2);
+
+      expect(model.rowCount()).toBe(3);
+      expect(model.columnCount()).toBe(2);
+      expect(model.occupiedCount()).toBe(0);
+    });
+
+    it("survives a snapshot round trip — the absorbed blanks are persisted", () => {
+      const model = SheetModel.createEmpty({ blankRows: 0, blankColumns: 0 });
+      model.setCell(2, 1, "a");
+      model.deleteCell(2, 1);
+      model.pinCoordinateSpace(3, 2);
+
+      const restored = SheetModel.fromSnapshot(model.toSnapshot());
+
+      expect(restored.rowCount()).toBe(3);
+      expect(restored.columnCount()).toBe(2);
+    });
+
+    /**
+     * 钉到比占用范围还小的轴上是没有意义的请求——空白数会是负的。正常路径上
+     * 到不了（越界的值写在 `TableStore` 的 prepare 期就被拒了），所以这里直接
+     * 钉住"抛，而不是夹到 0"：夹的话轴会悄悄放大成占用范围，正是这个方法要防的事。
+     */
+    it("refuses to pin an axis below its occupied extent", () => {
+      const model = SheetModel.createEmpty({ blankRows: 0, blankColumns: 0 });
+      model.setCell(4, 0, "a");
+
+      expect(() => model.pinCoordinateSpace(2, 1)).toThrow(/Cannot pin row count to 2/);
+      expect(model.rowCount()).toBe(5);
+    });
+  });
 });

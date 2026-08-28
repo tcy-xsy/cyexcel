@@ -8,17 +8,16 @@ import {
   SetCellCommand
 } from "../../../../src/core/commands";
 import type { BeforeColumnsChangeContext, BeforeTransactionCommitContext } from "../../../../src/core/commands";
-import { ArrayDataSource, TableStore } from "../../../../src/core/data";
+import { TableStore } from "../../../../src/core/data";
 import { CyExcelError } from "../../../../src/core/errors";
 import { HookManager, PRODUCTION_HOOK_REGISTRY } from "../../../../src/core/hooks";
 import { createTableCommandManager } from "../../../../src/core/integration";
+import { createSheetFromRows } from "../../../helpers/createSheetModel";
 
 /** One row whose cell value in each column is that column's own uppercased field name — lets a test read back "which logical column is currently at position N", the column-axis analog of rowCommands.test.ts's readNames() trick. */
 function createStore(fieldNames: readonly string[] = ["a", "b", "c"]) {
   const rows = [Object.fromEntries(fieldNames.map((field) => [field, field.toUpperCase()]))];
-  const columns = fieldNames.map((field) => ({ id: field, field }));
-  const source = new ArrayDataSource(rows, columns);
-  return { store: new TableStore(source) };
+  return { store: new TableStore(createSheetFromRows(rows, fieldNames)) };
 }
 
 function readColumnLabels(store: TableStore, count: number): string[] {

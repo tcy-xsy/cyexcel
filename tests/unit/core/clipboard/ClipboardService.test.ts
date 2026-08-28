@@ -8,8 +8,9 @@ import {
 import { ClipboardService, escapeTsvCell } from "../../../../src/core/clipboard";
 import type { ClipboardIO } from "../../../../src/core/clipboard";
 import { SetRangeCommand } from "../../../../src/core/commands";
-import { ArrayDataSource, TableStore } from "../../../../src/core/data";
+import { TableStore } from "../../../../src/core/data";
 import { createTableCommandManager } from "../../../../src/core/integration";
+import { createSheetFromRows } from "../../../helpers/createSheetModel";
 
 function fakeIo(overrides: Partial<ClipboardIO> = {}): ClipboardIO & {
   writeText: ReturnType<typeof vi.fn>;
@@ -34,14 +35,11 @@ function setup(columnDefs: { id: string; type?: string }[] = [{ id: "name" }, { 
     { name: "Bob", age: 40 },
     { name: "Carol", age: 50 }
   ];
-  const dataSource = new ArrayDataSource(
-    rows,
-    columnDefs.map((c) => ({ id: c.id, field: c.id }))
-  );
-  const store = new TableStore(dataSource);
+  const sheet = createSheetFromRows(rows, columnDefs.map((c) => c.id));
+  const store = new TableStore(sheet);
   const commandManager = createTableCommandManager(store);
 
-  return { registry, columnManager, store, commandManager, dataSource };
+  return { registry, columnManager, store, commandManager, sheet };
 }
 
 function makeService(
@@ -57,7 +55,7 @@ function makeService(
   const service = new ClipboardService({
     getCellValue: (row, column) => store.getCell(row, column),
     getColumn: (column) => columnManager.getColumn(column),
-    getRowCount: () => setupResult.dataSource.getRowCount(),
+    getRowCount: () => setupResult.sheet.rowCount(),
     getColumnCount: () => columnManager.columnCount,
     parseValue: (row, column, text) => {
       const runtimeColumn = columnManager.getColumn(column);
@@ -102,17 +100,14 @@ describe("ClipboardService.copy", () => {
     const registry = new CellTypeRegistry();
     registerBuiltinCellTypes(registry);
     const columnManager = new ColumnManager({ columns: [{ id: "tags", type: "array" }], registry });
-    const dataSource = new ArrayDataSource(
-      [{ tags: ["a", "b", "c", "d"] }],
-      [{ id: "tags", field: "tags" }]
-    );
-    const store = new TableStore(dataSource);
+    const sheet = createSheetFromRows([{ tags: ["a", "b", "c", "d"] }], ["tags"]);
+    const store = new TableStore(sheet);
     const commandManager = createTableCommandManager(store);
     const io = fakeIo();
     const service = new ClipboardService({
       getCellValue: (row, column) => store.getCell(row, column),
       getColumn: (column) => columnManager.getColumn(column),
-      getRowCount: () => dataSource.getRowCount(),
+      getRowCount: () => sheet.rowCount(),
       getColumnCount: () => columnManager.columnCount,
       parseValue: (row, column, text) => {
         const c = columnManager.getColumn(column);
@@ -193,7 +188,7 @@ describe("ClipboardService.copy", () => {
     const service = new ClipboardService({
       getCellValue: (row, column) => s.store.getCell(row, column),
       getColumn: (column) => s.columnManager.getColumn(column),
-      getRowCount: () => s.dataSource.getRowCount(),
+      getRowCount: () => s.sheet.rowCount(),
       getColumnCount: () => s.columnManager.columnCount,
       parseValue: (_row, _column, text) => text,
       getSelectionRange: () => ({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }),
@@ -265,16 +260,13 @@ describe("ClipboardService.paste", () => {
       columns: [{ id: "name" }, { id: "age", type: "number", clipboard: { paste: false } }],
       registry
     });
-    const dataSource = new ArrayDataSource([{ name: "Alice", age: 30 }], [
-      { id: "name", field: "name" },
-      { id: "age", field: "age" }
-    ]);
-    const store = new TableStore(dataSource);
+    const sheet = createSheetFromRows([{ name: "Alice", age: 30 }], ["name", "age"]);
+    const store = new TableStore(sheet);
     const commandManager = createTableCommandManager(store);
     const service = new ClipboardService({
       getCellValue: (row, column) => store.getCell(row, column),
       getColumn: (column) => columnManager.getColumn(column),
-      getRowCount: () => dataSource.getRowCount(),
+      getRowCount: () => sheet.rowCount(),
       getColumnCount: () => columnManager.columnCount,
       parseValue: (row, column, text) => {
         const c = columnManager.getColumn(column);

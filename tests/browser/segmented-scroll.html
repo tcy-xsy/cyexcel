@@ -34,20 +34,19 @@
         header: `C${index}`
       }));
 
-      const dataSource = {
-        getRowCount: () => ROW_COUNT,
-        getColumnCount: () => columns.length,
-        getCell: (row, column) => `${row}-${column}`,
-        setCell() {
-          throw new Error("read-only fixture");
-        }
-      };
+      // 800,000 empty rows, all sharing one object: this fixture only ever
+      // measures *where* the viewport is, never what a cell says (the probe
+      // renderer below paints nothing and reads only `context.row`), so the
+      // cheapest 800,000-row table is the right one. Sharing the object is
+      // safe now that the importer only reads it — 表格不再写回调用方的行对象
+      // （ADR 0004 §3.2，4B 设计 §3.3）。
+      const EMPTY_ROW = {};
+      const rows = new Array(ROW_COUNT).fill(EMPTY_ROW);
 
-      // A paint probe, not a data probe: TableStore caches cell reads, so a
-      // scroll back into already-visited rows never reaches the DataSource and
-      // would look like "nothing was rendered". The canvas renderer runs for
-      // every visible cell on every frame, so it reports exactly which rows are
-      // on screen right now.
+      // A paint probe, not a data probe: the canvas renderer runs for every
+      // visible cell on every frame, so it reports exactly which rows are on
+      // screen right now — while a read-side probe would miss a scroll back
+      // into rows the store has already cached.
       let minPaintedRow = Number.POSITIVE_INFINITY;
       let maxPaintedRow = Number.NEGATIVE_INFINITY;
       const probeRenderer = {
@@ -62,7 +61,7 @@
       }
 
       const sheet = new CyExcelCore(document.getElementById("app"), {
-        dataSource,
+        data: rows,
         columns,
         rowHeight: ROW_HEIGHT,
         headerHeight: HEADER_HEIGHT

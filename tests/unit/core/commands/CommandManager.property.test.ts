@@ -2,15 +2,12 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { SetCellCommand } from "../../../../src/core/commands";
-import { ArrayDataSource, TableStore } from "../../../../src/core/data";
+import { TableStore } from "../../../../src/core/data";
 import { createTableCommandManager } from "../../../../src/core/integration";
+import { createSheetFromRows } from "../../../helpers/createSheetModel";
 
 const ROW_COUNT = 5;
-const COLUMNS = [
-  { id: "a", field: "a" },
-  { id: "b", field: "b" },
-  { id: "c", field: "c" }
-];
+const COLUMNS = ["a", "b", "c"];
 
 function createGrid() {
   const rows = Array.from({ length: ROW_COUNT }, (_unused, row) => ({
@@ -18,8 +15,7 @@ function createGrid() {
     b: row * 10 + 1,
     c: row * 10 + 2
   }));
-  const source = new ArrayDataSource(rows, COLUMNS);
-  return new TableStore(source);
+  return new TableStore(createSheetFromRows(rows, COLUMNS));
 }
 
 function snapshot(store: TableStore): unknown[][] {

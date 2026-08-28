@@ -5,7 +5,6 @@ import {
   type CyExcelCoreOptions
 } from "../../../src/core/CyExcelCore";
 import { CyExcelError, CyExcelErrorCode } from "../../../src/core/errors";
-import type { DataSource } from "../../../src/core/types";
 import {
   validateCyExcelCoreDataDimensions,
   validateCyExcelCoreHeaderGeometry,
@@ -21,15 +20,6 @@ function expectInvalid(run: () => unknown, field: string): void {
     expect((error as CyExcelError).code).toBe(CyExcelErrorCode.InvalidOptions);
     expect((error as Error).message).toContain(field);
   }
-}
-
-function dataSource(rowCount: number, columnCount: number): DataSource {
-  return {
-    getRowCount: () => rowCount,
-    getColumnCount: () => columnCount,
-    getCell: () => undefined,
-    setCell: () => {}
-  };
 }
 
 describe("validateCyExcelCoreOptions", () => {
@@ -52,10 +42,10 @@ describe("validateCyExcelCoreOptions", () => {
     })).not.toThrow();
   });
 
-  it("rejects simultaneous data inputs instead of silently preferring dataSource", () => {
+  it("rejects a non-array data input", () => {
     expectInvalid(
-      () => validateCyExcelCoreOptions({ data: [], dataSource: dataSource(0, 0) }),
-      "data/dataSource"
+      () => validateCyExcelCoreOptions({ data: {} } as unknown as CyExcelCoreOptions),
+      "data"
     );
   });
 
@@ -116,9 +106,9 @@ describe("validateCyExcelCoreDataDimensions", () => {
   });
 
   it.each([
-    ["dataSource.getRowCount()", { rowCount: -1, columnCount: 1 }, 1],
-    ["dataSource.getColumnCount()", { rowCount: 1, columnCount: 1.5 }, 1],
-    ["dataSource.getColumnCount()", { rowCount: 1, columnCount: 2 }, 1]
+    ["sheet.rowCount()", { rowCount: -1, columnCount: 1 }, 1],
+    ["sheet.columnCount()", { rowCount: 1, columnCount: 1.5 }, 1],
+    ["sheet.columnCount()", { rowCount: 1, columnCount: 2 }, 1]
   ] as const)("rejects invalid %s", (field, dimensions, configuredColumnCount) => {
     expectInvalid(
       () => validateCyExcelCoreDataDimensions({}, dimensions, configuredColumnCount),
@@ -139,21 +129,17 @@ describe("validateCyExcelCoreDataDimensions", () => {
 });
 
 describe("CyExcelCore constructor preflight", () => {
-  it("fails a conflicting data input before reading the source or setting up a plugin", () => {
-    const getRowCount = vi.fn(() => 0);
+  it("fails a malformed data input before importing it or setting up a plugin", () => {
     const setup = vi.fn();
-    const source = { ...dataSource(0, 0), getRowCount };
 
     expectInvalid(
       () => new CyExcelCore({} as HTMLElement, {
-        data: [],
-        dataSource: source,
+        data: {},
         plugins: [{ name: "must-not-run", setup }]
-      }),
-      "data/dataSource"
+      } as unknown as CyExcelCoreOptions),
+      "data"
     );
 
-    expect(getRowCount).not.toHaveBeenCalled();
     expect(setup).not.toHaveBeenCalled();
   });
 
@@ -195,18 +181,10 @@ describe("CyExcelCore constructor preflight", () => {
     expect(setup).not.toHaveBeenCalled();
   });
 
-  it("fails a DataSource/column dimension mismatch before touching DOM or plugins", () => {
-    const setup = vi.fn();
-    expectInvalid(
-      () => new CyExcelCore({} as HTMLElement, {
-        columns: [{ id: "a" }],
-        dataSource: dataSource(1, 2),
-        plugins: [{ name: "must-not-run", setup }]
-      }),
-      "dataSource.getColumnCount()"
-    );
-    expect(setup).not.toHaveBeenCalled();
-  });
+  // 「行列数与 columns 对不上」这条不再有构造期用例：数据层不可替换之后，
+  // `rowsToWorkbookSnapshot` 自己保证 `columnCount === columns.length`，从入口
+  // 造不出反例。那道闸仍然在（见上面 `validateCyExcelCoreDataDimensions` 的
+  // 用例），它守的是导入器这条承诺本身，不是外来实现（4B 设计 §4.2）。
 });
 
 describe("validateCyExcelCoreHeaderGeometry", () => {

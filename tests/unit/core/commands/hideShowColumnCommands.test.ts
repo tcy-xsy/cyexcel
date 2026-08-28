@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { HideColumnCommand, ShowColumnCommand } from "../../../../src/core/commands";
-import { ArrayDataSource, TableStore } from "../../../../src/core/data";
+import { TableStore } from "../../../../src/core/data";
 import { createTableCommandManager } from "../../../../src/core/integration";
 import { LayoutEngine } from "../../../../src/core/layout";
+import { createSheetFromRows } from "../../../helpers/createSheetModel";
 
 
 function createLayout(): LayoutEngine {
@@ -11,12 +12,8 @@ function createLayout(): LayoutEngine {
 }
 
 function createManager(layout: LayoutEngine) {
-  const source = new ArrayDataSource([], [
-    { id: "a", field: "a" },
-    { id: "b", field: "b" },
-    { id: "c", field: "c" }
-  ]);
-  return createTableCommandManager(new TableStore(source), { layout });
+  const sheet = createSheetFromRows([], ["a", "b", "c"]);
+  return createTableCommandManager(new TableStore(sheet), { layout });
 }
 
 describe("HideColumnCommand", () => {

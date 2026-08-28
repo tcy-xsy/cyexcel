@@ -6,20 +6,17 @@ import {
   SetRangeCommand
 } from "../../../../src/core/commands";
 import { SetRowHeightsCommand } from "../../../../src/core/commands/SetRowHeightsCommand";
-import { ArrayDataSource, TableStore } from "../../../../src/core/data";
+import { TableStore } from "../../../../src/core/data";
 import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
 import { createTableCommandManager } from "../../../../src/core/integration";
+import { createSheetFromRows } from "../../../helpers/createSheetModel";
 
 function createStore() {
   const rows = [
     { name: "A", price: 1 },
     { name: "B", price: 2 }
   ];
-  const source = new ArrayDataSource(rows, [
-    { id: "name", field: "name" },
-    { id: "price", field: "price" }
-  ]);
-  return new TableStore(source);
+  return new TableStore(createSheetFromRows(rows, ["name", "price"]));
 }
 
 describe("SetCellCommand", () => {

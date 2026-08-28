@@ -5,7 +5,6 @@ import {
   type Command,
   type CyExcelCoreOptions,
   type CyExcelPlugin,
-  type DataSource,
   type SemanticChange,
   type SceneSnapshot,
   type SelectionSnapshot
@@ -22,20 +21,6 @@ const range: CellRange = {
 
 // @ts-expect-error public ranges are immutable values
 range.startRow = 1;
-
-const dataSource: DataSource = {
-  getRowCount: () => 0,
-  getColumnCount: () => 0,
-  getCell: (row, column) => `${row}:${column}`,
-  setCell: (row, column, value) => {
-    void row;
-    void column;
-    void value;
-  }
-};
-
-const setCellReturnsVoid: void = dataSource.setCell(0, 0, 1);
-void setCellReturnsVoid;
 
 const command: Command = new SetCellCommand(0, 1, "value");
 void command;
@@ -116,11 +101,16 @@ type IsPublic<Name extends PropertyKey> = Name extends keyof typeof CoreApi ? tr
 
 const retainedSurface: [
   IsPublic<"CyExcelCore">,
-  IsPublic<"ArrayDataSource">,
   IsPublic<"SceneSnapshot">,
   IsPublic<"SetCellCommand">,
   IsPublic<"createBasicContextMenuPlugin">
-] = [true, true, true, true, true];
+] = [true, true, true, true];
+
+// 数据层不再可替换（ADR 0004 §3.2）：`DataSource` 与它唯一的实现
+// `ArrayDataSource` 一起删掉了，桶里不该再冒出第二条写数据的路。
+// 这里把「不导出」钉成类型事实，重新导出会在这一行变红。
+const removedDataSurface: [IsPublic<"DataSource">, IsPublic<"ArrayDataSource">] = [false, false];
+void removedDataSurface;
 
 const internalSurface: [
   IsPublic<"TableStore">,

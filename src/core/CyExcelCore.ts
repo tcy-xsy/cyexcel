@@ -41,14 +41,13 @@ import {
   type CommandManager
 } from "./commands";
 import {
-  ArrayDataSource,
   TableStore,
   compileDirtySet,
   createChangeSet,
   type SemanticChange,
-  summarizeStructuralChanges,
-  type ArrayDataSourceColumn
+  summarizeStructuralChanges
 } from "./data";
+import { rowsToWorkbookSnapshot, WorkbookModel, type SheetModel } from "./sheet";
 import type { CellEditorFactory } from "./editors";
 import { EditorManager } from "./editors";
 import { CyExcelError, CyExcelErrorCode } from "./errors";
@@ -126,13 +125,7 @@ import {
   type Canvas2DLike
 } from "./render";
 import { CELL_FONT } from "./render/theme";
-import type {
-  CellRange,
-  Command,
-  DataSource,
-  Disposer,
-  RowData
-} from "./types";
+import type { CellRange, Command, Disposer, RowData } from "./types";
 import {
   GridStructureOwner,
   StructureTransition,
@@ -159,22 +152,16 @@ export interface CyExcelHeaderActionEvent {
 export interface CyExcelCoreOptions {
   readonly columns?: readonly CyExcelColumnConfig[];
   /**
-   * Row objects are kept by reference, not deep-cloned (matches
-   * ArrayDataSource's own contract when constructed directly via
-   * `dataSource`, and ADR 0001 §5's "complex values are atomic, no deep
-   * observation" applied one level up to the row wrapper itself — see
-   * Univer's `Worksheet` constructor / `ObjectMatrix` for the same choice
-   * in an established OSS spreadsheet). Two consequences: `setCell()` etc.
-   * mutate the exact row objects passed in here, and — the one to actually
-   * watch for — mutating a row object in this array yourself *after*
-   * construction changes what the sheet reads back, but bypasses Command/
-   * Patch/History entirely, so nothing repaints, nothing becomes
-   * undoable, and no `change` event fires. Always go through
-   * `setCell()`/`setRange()`/`paste()` for edits; never mutate `data`'s
-   * row objects directly once they're handed to the constructor.
+   * 构造时**一次性读入**的初始数据：每个行对象按 `columns` 的 `field`
+   * （缺省为 `id`）取值，写进存储模型的对应格子。单元格值本身仍然按引用
+   * 保留（ADR 0001 §5：复杂值是原子的，不做深观察）。
+   *
+   * 与旧口径的区别：行对象不再是表格的存储。构造之后改这个数组里的行对象
+   * 不会影响表格读到的内容，表格的编辑也不会写回这些行对象——写回通道在
+   * ADR 0004 阶段 4B 切断了。所有编辑一律走
+   * `setCell()`/`setRange()`/`paste()`，它们经过 Command/Patch/History。
    */
   readonly data?: readonly RowData[];
-  readonly dataSource?: DataSource;
   readonly rowHeight?: number;
   /** Row index -> explicit height, only for rows that differ from `rowHeight`. See LayoutOptions.rowHeights. */
   readonly rowHeights?: ReadonlyMap<number, number>;
@@ -465,32 +452,26 @@ function createBrowserClipboardIO(): ClipboardIO {
   };
 }
 
-function buildDataSource(
+/**
+ * 把入口的 `data` 行对象数组读进存储模型（ADR 0004 §3.1）。
+ *
+ * 这是一次**导入**，不再是包一层适配器：`rows[i][field]` 被读成
+ * `(i, columnIndex)` 上的一条 `CellRecord`，之后行对象与表格再无关系。
+ * 因此原来那段「行对象按引用保留、`setCell()` 会原地改写调用方的对象」的
+ * 契约作废了——`data` 现在是纯输入，写回通道已经切断（4B 设计 §3.3）。
+ *
+ * 列在存储里没有身份（ADR 0004 §3.8.2），只有位置：`fields[k]` 决定第 k 列
+ * 从行对象的哪个字段取值，`column.id` 不参与。
+ */
+function buildWorkbook(
   options: CyExcelCoreOptions,
   columns: readonly CyExcelColumnConfig[]
-): DataSource {
-  if (options.dataSource) {
-    return options.dataSource;
-  }
-  // Shallow-copies only the *array* (cheap: one reference per row), not
-  // each row object — ArrayDataSource.insertRows()/deleteRows()/moveRows()
-  // splice() this array in place, so without even this much copying a
-  // structural edit would silently resize/reorder the caller's own array.
-  // Row objects themselves are intentionally left un-cloned: setCell()
-  // mutating them in place is ArrayDataSource's own tested contract
-  // (tests/unit/core/data/ArrayDataSource.test.ts), so cloning them here
-  // only for the `data` convenience path would make that path behave
-  // differently from constructing ArrayDataSource directly — for no
-  // documented reason, and at O(rows * columns) cost (the previous
-  // `options.data.map((row) => ({ ...row }))` here was the dominant cost
-  // behind Step 15's 1,000,000 x 50 first-paint benchmark taking 6-10s to
-  // construct; see doc/progress.md's Step 15 entry).
-  const rows: RowData[] = options.data ? [...options.data] : [];
-  const arrayColumns: ArrayDataSourceColumn[] = columns.map((column) => ({
-    id: column.id,
-    field: column.field ?? column.id
-  }));
-  return new ArrayDataSource(rows, arrayColumns);
+): WorkbookModel {
+  const fields = columns.map((column) => column.field ?? column.id);
+  // 稀疏存储会把整行为空的尾行丢掉，而入口的行列数必须等于调用方给的
+  // `data.length` × `columns.length`——`rowsToWorkbookSnapshot` 把这个差额
+  // 折进 blankRows/blankColumns，这里依赖那条保证，不再自己补。
+  return WorkbookModel.fromSnapshot(rowsToWorkbookSnapshot(options.data ?? [], fields));
 }
 
 function buildLayout(
@@ -525,7 +506,7 @@ type CorePointerInputContext = InputCandidateContext<
 >;
 
 /**
- * The integration layer: DataSource -> TableStore -> CommandManager -> Patch
+ * The integration layer: SheetModel -> TableStore -> CommandManager -> Patch
  * -> RenderScheduler/Canvas -> DOM editor overlay, all wired to a real
  * container. Unlike src/core/{data,commands,layout,render,interaction,
  * editors}/, this class genuinely creates and manipulates DOM/Canvas — see
@@ -550,8 +531,8 @@ export class CyExcelCore {
   readonly #columnManager: ColumnManager;
   readonly #headerManager: HeaderManager;
   /**
-   * The last sort *applied* — never one that is merely queued or that a
-   * DataSource refused; `#runSortByColumn` writes it only after the reorder
+   * The last sort *applied* — never one that is merely queued or that the
+   * storage layer refused; `#runSortByColumn` writes it only after the reorder
    * commits. `null` before any sort, and again after any column-structure
    * change (see `#publishCommitReceipt`). Not the data's live order:
    * editing a cell afterwards does not clear it (ADR 0003 §3.4, matching
@@ -562,7 +543,12 @@ export class CyExcelCore {
   readonly #columnHeaderHeight: number;
   readonly #groupHeaderHeight: number;
   readonly #rowHeaderWidth: number;
-  readonly #dataSource: DataSource;
+  /**
+   * 表格数据的唯一权威（ADR 0004 §3.1）。这里只留 sheet 不留 workbook：
+   * 侧表资源登记在 sheet 上，workbook 那层壳目前只为 `toSnapshot()` 收拢
+   * 资源用，等 T7 的 `snapshot?` 入口落地时再把它一起持有。
+   */
+  readonly #sheet: SheetModel;
   readonly #store: TableStore;
   readonly #commandManager: CommandManager;
   readonly #layout: LayoutEngine;
@@ -645,10 +631,10 @@ export class CyExcelCore {
     validateCyExcelCoreOptions(options);
 
     // Copied, not aliased — insertColumns()/deleteColumns()/moveColumns()
-    // splice this array in place (mirrors buildDataSource()'s identical
-    // reasoning for `options.data`, a few lines below), so without this
-    // much copying a structural column change would silently resize/
-    // reorder the caller's own `options.columns` array.
+    // splice this array in place, so without this much copying a structural
+    // column change would silently resize/reorder the caller's own
+    // `options.columns` array.
+    // （`options.data` 不需要同样的保护：它现在只被读一遍导进存储模型。）
     this.#columns = snapshotColumnDefinitions(options.columns ?? []);
     this.#headerGroups = options.headerGroups ?? [];
     this.#scrollCommitPolicy = options.scrollCommitPolicy ?? "commit";
@@ -671,17 +657,17 @@ export class CyExcelCore {
       this.#headerManager.groupDepth
     );
 
-    const dataSource = buildDataSource(options, this.#columns);
+    const sheet = buildWorkbook(options, this.#columns).sheet();
     const initialDimensions = {
-      rowCount: dataSource.getRowCount(),
-      columnCount: dataSource.getColumnCount()
+      rowCount: sheet.rowCount(),
+      columnCount: sheet.columnCount()
     };
     validateCyExcelCoreDataDimensions(
       options,
       initialDimensions,
       this.#columns.length
     );
-    this.#dataSource = dataSource;
+    this.#sheet = sheet;
     this.#layout = buildLayout(options, this.#columns, initialDimensions.rowCount);
 
     const initialization = new InitializationRollback();
@@ -837,7 +823,7 @@ export class CyExcelCore {
       hooks: this.#hooks
     });
 
-    this.#store = new TableStore(this.#dataSource);
+    this.#store = new TableStore(this.#sheet);
     initialization.defer(() => this.#store.coordinator.dispose());
 
     this.#updateSpacerSize();
@@ -1207,7 +1193,7 @@ export class CyExcelCore {
     this.#clipboardService = new ClipboardService({
       getCellValue: (row, column) => this.#store.getCell(row, column),
       getColumn: (column) => this.#columnManager.getColumn(column),
-      getRowCount: () => this.#dataSource.getRowCount(),
+      getRowCount: () => this.#sheet.rowCount(),
       getColumnCount: () => this.#columns.length,
       parseValue: (row, column, text) => this.#parseEditedValue(row, column, text),
       getSelectionRange: () => this.#selectionModel.snapshot.range,
@@ -1302,7 +1288,7 @@ export class CyExcelCore {
    * The most recent sort that was actually applied — via header click or
    * direct API call, both update this the same way — or `null` if no sort
    * has ever been applied. A sort that is still queued, that was cancelled
-   * by its `AbortSignal`, or that the DataSource refused never appears
+   * by its `AbortSignal`, or that the storage layer refused never appears
    * here. Reflects the *last sort applied*, not the data's current order:
    * editing a cell afterwards does not clear it, same one-shot indicator
    * semantics as Excel (ADR 0003 §3.4). A column insert/delete/move clears
@@ -1346,14 +1332,14 @@ export class CyExcelCore {
   /**
    * Inserts `count` blank rows (every cell `undefined`) at `start`. To
    * insert pre-filled rows, insert blank ones then setRange() over them.
-   * The DataSource edit and the matching Layout/Selection roots are
+   * The SheetModel edit and the matching Layout/Selection roots are
    * prepared together; live owners are changed only by the narrow commit.
    * New rows are always default-height (no third `heights` argument here);
    * a row wanting a custom height gets one via `setRowHeight()` afterward.
    */
   insertRows(start: number, count = 1): void {
     this.#enqueueOrRunMutation(() => {
-      validateAxisChange({ axis: "row", operation: "insert", start, count }, this.#dataSource.getRowCount());
+      validateAxisChange({ axis: "row", operation: "insert", start, count }, this.#sheet.rowCount());
       this.#cancelActiveEdit();
       const rows = Array.from({ length: count }, () => new Array<unknown>(this.#columns.length).fill(undefined));
       this.#applyCommandNow(new InsertRowsCommand(start, rows));
@@ -1363,16 +1349,16 @@ export class CyExcelCore {
   /** Deletes rows while the integration participant captures inverse layout state during prepare. */
   deleteRows(start: number, count = 1): void {
     this.#enqueueOrRunMutation(() => {
-      validateAxisChange({ axis: "row", operation: "delete", start, count }, this.#dataSource.getRowCount());
+      validateAxisChange({ axis: "row", operation: "delete", start, count }, this.#sheet.rowCount());
       this.#cancelActiveEdit();
       this.#applyCommandNow(new DeleteRowsCommand(start, count));
     });
   }
 
-  /** `target` is the insertion index in the pre-move index space (same convention `ArrayDataSource.moveRows()` uses). */
+  /** `target` is the insertion index in the pre-move index space (same convention `SheetModel.moveRows()` uses). */
   moveRows(start: number, count: number, target: number): void {
     this.#enqueueOrRunMutation(() => {
-      validateAxisChange({ axis: "row", operation: "move", start, count, target }, this.#dataSource.getRowCount());
+      validateAxisChange({ axis: "row", operation: "move", start, count, target }, this.#sheet.rowCount());
       this.#cancelActiveEdit();
       this.#applyCommandNow(new MoveRowsCommand(start, count, target));
     });
@@ -1398,7 +1384,7 @@ export class CyExcelCore {
    *   event listener or a header-click intent, say — and was queued behind
    *   the in-flight commit. The sort still runs, just later; watch
    *   `sortState` or the `change` event for it, and note that a queued sort
-   *   that a DataSource then refuses reports through the `error` event
+   *   that the storage layer then refuses reports through the `error` event
    *   rather than throwing back here.
    *
    * Either way `false` means "nothing had been applied yet when this
@@ -1425,7 +1411,7 @@ export class CyExcelCore {
    * can never get a second slot of its own.
    *
    * `#sortState` and the indicator repaint happen *after* `#applyCommandNow`
-   * returns. A DataSource that refuses the reorder throws out of here with
+   * returns. A refused reorder throws out of here with
    * the indicator still describing the last sort that really was applied —
    * the ordering is the whole point, not an accident of layout.
    */
@@ -1536,7 +1522,7 @@ export class CyExcelCore {
     });
   }
 
-  /** `target` is the insertion index in the pre-move index space (same convention `ArrayDataSource.moveColumns()` uses). */
+  /** `target` is the insertion index in the pre-move index space (same convention `SheetModel.moveColumns()` uses). */
   moveColumns(start: number, count: number, target: number): void {
     this.#enqueueOrRunMutation(() => {
       this.#assertNoHeaderGroups("move");
@@ -2371,7 +2357,7 @@ export class CyExcelCore {
   #autoFillDownNow(range: CellRange): void {
     const targetRow = computeAutoFillDownTargetRow(
       range,
-      { columnCount: this.#columns.length, rowCount: this.#dataSource.getRowCount() },
+      { columnCount: this.#columns.length, rowCount: this.#sheet.rowCount() },
       (row, column) => this.#store.getCell(row, column)
     );
     if (targetRow === null) {
@@ -2651,8 +2637,8 @@ export class CyExcelCore {
    * drain, so `sortByColumn` would only queue the work behind this drain and
    * return before it happened — leaving nothing here to report on.
    *
-   * Returns whether the indicator moved. A DataSource that rejects the sort
-   * (no `reorderRows`, or no transaction support at all) reports an `error`
+   * Returns whether the indicator moved. A reorder the storage layer rejects
+   * (a permutation that would cut a merge region, say) reports an `error`
    * event instead of throwing out of the pointer-routing pipeline, and
    * leaves the indicator exactly where it was — which is only true because
    * `#runSortByColumn` writes `#sortState` after the command commits.
@@ -2753,7 +2739,7 @@ export class CyExcelCore {
     try {
       validateAxisChange(
         { axis: "row", operation: "move", start, count, target },
-        this.#dataSource.getRowCount()
+        this.#sheet.rowCount()
       );
       this.#cancelActiveEdit();
       this.#applyCommandNow(new MoveRowsCommand(start, count, target));

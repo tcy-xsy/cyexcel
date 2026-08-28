@@ -120,7 +120,7 @@ test("moveColumns moves a column to a new position, and undo restores it", async
   await gotoFixture(page);
 
   // [a, b, c, d] -> moveColumns(0, 1, 3) -> [b, c, a, d] (same pre-move
-  // target-index convention as moveRows()/ArrayDataSource.moveColumns()).
+  // target-index convention as moveRows()/SheetModel.moveColumns()).
   await page.evaluate(() => (window as unknown as FixtureWindow).__sheet?.moveColumns(0, 1, 3));
 
   expect(await getColumnId(page, 0)).toBe("b");

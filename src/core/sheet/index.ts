@@ -61,3 +61,10 @@ export {
 } from "./apply";
 export { SheetTransaction, type PreparedSheetMutation } from "./SheetTransaction";
 export { changesForSheetMutation, type SheetAxisSpace } from "./patches";
+export {
+  rowValuesToCells,
+  rowsToWorkbookSnapshot,
+  valueToRecord,
+  type ImportRow,
+  type RowsToWorkbookSnapshotOptions
+} from "./import";

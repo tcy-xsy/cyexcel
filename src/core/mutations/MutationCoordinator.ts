@@ -244,7 +244,7 @@ export class MutationCoordinator {
 
   #createEmptyPlanningResources(baseRevision: ModelRevision): MutationPlanningResources {
     const unsupported = () => {
-      throw new CyExcelError(CyExcelErrorCode.MutationNotSupported, "No DataSource transaction is attached");
+      throw new CyExcelError(CyExcelErrorCode.MutationNotSupported, "No sheet transaction is attached");
     };
     return {
       model: {

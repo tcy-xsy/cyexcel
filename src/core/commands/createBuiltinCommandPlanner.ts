@@ -116,11 +116,9 @@ export function createBuiltinCommandPlanner(options: BuiltinCommandPlannerOption
     plan: ({ start, columns }, context) => {
       const change = { operation: "insert" as const, start, count: columns.length };
       options.guards?.checkColumns(change);
-      const mappings = Object.freeze(columns.map((column) => Object.freeze({
-        id: column.id,
-        field: column.field ?? column.id
-      })));
-      context.stage(options.data.createInsertColumns(start, mappings));
+      // 只把个数交给数据层：列在存储里没有身份（ADR 0004 §3.8.2），`columns` 里剩下
+      // 的是宽度、类型这些展示属性，它们的家在 `structure` 那一半。
+      context.stage(options.data.createInsertColumns(start, columns.length));
       const structure = options.structure?.createInsertColumns(start, columns);
       if (structure) {
         context.stage(structure);

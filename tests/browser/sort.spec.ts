@@ -36,7 +36,6 @@ interface FixtureWindow {
   __sort?: {
     sheet: SortSheet;
     getCommitCount(): number;
-    getErrors(): { eventName: string; code?: string; message: string }[];
     getHeaderActions(): { action: { type: string }; column: number }[];
     setOnCompare(hook: (() => void) | null): void;
   };
@@ -262,48 +261,13 @@ test("aborting from inside the comparator returns false and writes nothing", asy
   expect(result.commits).toBe(0);
 });
 
-async function refusedSort(page: Page): Promise<{
-  code: string | undefined;
-  columnBefore: string[];
-  columnAfter: string[];
-}> {
-  return page.evaluate(() => {
-    const sheet = (window as unknown as FixtureWindow).__sort!.sheet;
-    const columnBefore = [0, 1, 2].map((row) => sheet.getCell(row, 0) as string);
-    let code: string | undefined;
-    try {
-      sheet.sortByColumn(0, "asc");
-    } catch (error) {
-      code = (error as { code?: string }).code;
-    }
-    return {
-      code,
-      columnBefore,
-      columnAfter: [0, 1, 2].map((row) => sheet.getCell(row, 0) as string)
-    };
-  });
-}
-
-test("sorting is rejected on a DataSource that cannot reorder", async ({ page }) => {
-  await gotoFixture(page, "?dataSource=no-reorder");
-
-  const result = await refusedSort(page);
-
-  expect(result.code).toBe("structural-modification-not-supported");
-  expect(result.columnBefore).toEqual(["banana", "cherry", "apple"]);
-  expect(result.columnAfter).toEqual(result.columnBefore);
-});
-
-test("sorting is rejected on a DataSource that cannot transact at all", async ({ page }) => {
-  await gotoFixture(page, "?dataSource=minimal");
-
-  const result = await refusedSort(page);
-
-  // A DataSource with only the four required methods never gets as far as
-  // the reorder capability check: it cannot open a transaction at all.
-  expect(result.code).toBe("mutation-not-supported");
-  expect(result.columnAfter).toEqual(result.columnBefore);
-});
+// 这里原来有三条「排序被拒」用例：两条同步调用 `sortByColumn()`（数据源不能
+// reorder / 根本不能开事务），一条走真实点击（拒绝只能经 `error` 事件回报）。
+// 三条都靠 `?dataSource=` 换进一个能力更少的数据层来制造拒绝，而 ADR 0004 §3.2
+// 把可替换的数据层整个删掉了——`StructuralModificationNotSupported` 随之作废，
+// 现在没有任何构造方式能得到一张不能重排的表。4B 设计 §7 第 5 条点名连同代码
+// 一起删。若将来表级只读落地（那会是一个**新**错误码，见 §6.1 第 3 条），
+// 「被拒的排序不动指示器、不发 header-action」这条断言值得照这个形状再写一遍。
 
 test("clicking a default header's sort zone sorts ascending and reports it in sortState", async ({
   page
@@ -366,42 +330,6 @@ test("a third click is still a valid sort, never a return to the original row or
   expect(result.column).toEqual(["apple", "banana", "cherry"]);
   expect(result.column).not.toEqual(originalOrder);
   expect(result.sortState).toEqual({ column: 0, direction: "asc" });
-});
-
-test("a header click whose sort is refused leaves the indicator and the data exactly where they were", async ({
-  page
-}) => {
-  // Driven by a real click, never page.evaluate(): a click reaches
-  // #routeHeaderCanvasAction from inside an interaction read lease, so the
-  // sort runs *deferred*, out of the mutation queue's own drain. That is the
-  // only path a real user can take, and it is the path on which a failing
-  // sort has no call site left to throw at — the two page.evaluate()-driven
-  // refusal tests above run the sort synchronously and so never exercise it.
-  await gotoFixture(page, "?dataSource=no-reorder");
-
-  await clickHeaderSortZone(page, NAME_COLUMN_RIGHT_X);
-
-  const result = await page.evaluate(() => {
-    const fixture = (window as unknown as FixtureWindow).__sort!;
-    return {
-      column: [0, 1, 2].map((row) => fixture.sheet.getCell(row, 0) as string),
-      sortState: fixture.sheet.sortState,
-      errors: fixture.getErrors(),
-      headerActions: fixture.getHeaderActions()
-    };
-  });
-
-  expect(result.column).toEqual(["banana", "cherry", "apple"]);
-  // The indicator must still describe the last sort that really happened —
-  // here, none at all.
-  expect(result.sortState).toBeNull();
-  expect(result.errors).toMatchObject([
-    { eventName: "interaction:toggle-sort:0", code: "structural-modification-not-supported" }
-  ]);
-  // ...and no `header-action` either: for a default header the core owns the
-  // sort, so announcing `toggle-sort` after refusing to sort would tell every
-  // listener a sort just happened. The `error` event is the whole report.
-  expect(result.headerActions).toEqual([]);
 });
 
 test("a column too narrow for both zones can still be selected by clicking its header", async ({

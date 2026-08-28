@@ -28,19 +28,23 @@ import type { CellRecord, ColumnMeta, RowMeta } from "./types";
 export function applySheetMutation(model: SheetModel, mutation: SheetMutation): void {
   switch (mutation.type) {
     case "set-cell":
-      writeCell(model, mutation.row, mutation.column, mutation.record);
+      writeValues(model, () => {
+        writeCell(model, mutation.row, mutation.column, mutation.record);
+      });
       return;
 
     case "set-range": {
       const { startRow, startColumn, endRow, endColumn } = mutation.range;
-      // 尺寸取自 `range` 而不是 `records`：`records` 可能是不齐的，缺的那几格按
-      // 空格处理（与 `invert.ts` 的 `captureRange` 是同一条口径，两边必须一致，
-      // 否则 `set-range` 的往返会在缺格上分叉）。
-      for (let row = startRow; row <= endRow; row += 1) {
-        for (let column = startColumn; column <= endColumn; column += 1) {
-          writeCell(model, row, column, mutation.records[row - startRow]?.[column - startColumn]);
+      writeValues(model, () => {
+        // 尺寸取自 `range` 而不是 `records`：`records` 可能是不齐的，缺的那几格按
+        // 空格处理（与 `invert.ts` 的 `captureRange` 是同一条口径，两边必须一致，
+        // 否则 `set-range` 的往返会在缺格上分叉）。
+        for (let row = startRow; row <= endRow; row += 1) {
+          for (let column = startColumn; column <= endColumn; column += 1) {
+            writeCell(model, row, column, mutation.records[row - startRow]?.[column - startColumn]);
+          }
         }
-      }
+      });
       return;
     }
 
@@ -114,6 +118,24 @@ export function applySheetMutation(model: SheetModel, mutation: SheetMutation): 
       }
       return;
   }
+}
+
+/**
+ * 跑一段**只写值**的改动，并保证坐标空间与跑之前一样大。
+ *
+ * 轴只能由结构变更改动，值写不行——理由与实现都在 `SheetModel.pinCoordinateSpace`
+ * 的注释里。钉在整条变更的两端而不是每个格子上：`set-range` 中途的状态（清了一半
+ * 的尾行）不是任何人观察得到的状态，逐格去钉会把 `blank` 在循环里推来推去，还会让
+ * "先清后写"的顺序影响最终结果。
+ *
+ * `restore-*` 里的写值**不**从这里走：那两条变更本来就在改坐标空间（它们先插行/插
+ * 列），钉住会把插入的效果抵消掉。
+ */
+function writeValues(model: SheetModel, write: () => void): void {
+  const rowCount = model.rowCount();
+  const columnCount = model.columnCount();
+  write();
+  model.pinCoordinateSpace(rowCount, columnCount);
 }
 
 function writeCell(model: SheetModel, row: number, column: number, record: CellRecord | undefined): void {

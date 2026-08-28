@@ -9,7 +9,12 @@ import {
   type MutationPrepareSession,
   type PreparedMutationParticipant
 } from "../mutations";
-import type { CellRange, ColumnFieldMapping, DataMutation, DataSource, Patch } from "../types";
+import { rowValuesToCells, valueToRecord } from "../sheet/import";
+import type { SheetMutation } from "../sheet/mutation";
+import { changesForSheetMutation, type SheetAxisSpace } from "../sheet/patches";
+import type { SheetModel } from "../sheet/SheetModel";
+import { SheetTransaction } from "../sheet/SheetTransaction";
+import type { CellRange, Patch } from "../types";
 import { assertValidCoordinate, assertValidRange } from "../validation";
 import type { ChangeSet } from "./changes";
 
@@ -19,30 +24,35 @@ export interface TableStoreCommitResult {
   readonly version: number;
 }
 
-class TableDataMutation implements Mutation {
+class TableSheetMutation implements Mutation {
   readonly type: string;
   readonly changes: readonly Patch[];
-  readonly #source: DataSource;
-  readonly #mutation: DataMutation;
+  readonly #sheet: SheetModel;
+  readonly #mutation: SheetMutation;
 
-  constructor(source: DataSource, mutation: DataMutation, changes: readonly Patch[]) {
-    this.#source = source;
+  constructor(sheet: SheetModel, mutation: SheetMutation, changes: readonly Patch[]) {
+    this.#sheet = sheet;
     this.#mutation = mutation;
     this.type = `data:${mutation.type}`;
     this.changes = Object.freeze([...changes]);
   }
 
   prepare(context: MutationPrepareContext): PreparedMutationParticipant {
-    const prepared = context.prepareData(this.#source, this.#mutation);
-    const forward = new TableDataMutation(
-      this.#source,
+    // 施加**之前**的坐标空间要先读下来：`prepareData` 返回时预览已经吃过这条变更了。
+    const before = spaceOf(context);
+    assertValueWriteIsInsideSpace(this.#mutation, before);
+    const prepared = context.prepareData(this.#sheet, this.#mutation);
+    const space = unionSpace(before, spaceOf(context));
+
+    const forward = new TableSheetMutation(
+      this.#sheet,
       prepared.forward,
-      changesForDataMutation(prepared.forward, this.changes)
+      changesForSheetMutation(prepared.forward, space)
     );
-    const inverse = new TableDataMutation(
-      this.#source,
+    const inverse = new TableSheetMutation(
+      this.#sheet,
       prepared.inverse,
-      changesForDataMutation(prepared.inverse, this.changes)
+      changesForSheetMutation(prepared.inverse, space)
     );
     return {
       hasEffect: true,
@@ -56,44 +66,69 @@ class TableDataMutation implements Mutation {
   }
 }
 
-function changesForDataMutation(mutation: DataMutation, fallback: readonly Patch[]): readonly Patch[] {
-  switch (mutation.type) {
-    case "set-cell":
-      return [{ type: "cell-value", row: mutation.row, column: mutation.column }];
-    case "set-range":
-      return [{ type: "range-value", range: mutation.range }];
-    case "restore-cells":
-      return fallback;
-    case "insert-rows":
-    case "insert-row-objects":
-      return [{ type: "row-structure", operation: "insert", start: mutation.start, count: mutation.rows.length }];
-    case "delete-rows":
-      return [{ type: "row-structure", operation: "delete", start: mutation.start, count: mutation.count }];
-    case "move-rows":
-      return [{ type: "row-structure", operation: "move", start: mutation.start, count: mutation.count, target: mutation.target }];
-    case "reorder-rows":
-      // A whole-axis permutation touches every row at once and has no
-      // start/count/target shape the "row-structure" Patch can carry
-      // faithfully, so it gets its own Patch variant that carries the order
-      // directly instead of being approximated by another shape.
-      return [{ type: "row-reorder", order: mutation.order }];
-    case "insert-columns":
-      return [{ type: "column-structure", operation: "insert", start: mutation.start, count: mutation.columns.length }];
-    case "delete-columns":
-      return [{ type: "column-structure", operation: "delete", start: mutation.start, count: mutation.count }];
-    case "move-columns":
-      return [{ type: "column-structure", operation: "move", start: mutation.start, count: mutation.count, target: mutation.target }];
+function spaceOf(context: MutationPrepareContext): SheetAxisSpace {
+  return { rowCount: context.model.getRowCount(), columnCount: context.model.getColumnCount() };
+}
+
+/**
+ * 值写不许改坐标空间——越界的 `set-cell` / `set-range` 在这里被挡下。
+ *
+ * 旧模型里挡它的是行数组本身（`rows[5]` 不存在，`ArrayDataSource.setCell()` 抛
+ * `invalid-coordinate`）。稀疏矩阵不会拒绝：它会把第 5 行建出来，`rowCount()`
+ * 随之变大，而这条变更只带一条 `cell-value` 补丁——渲染层不知道表变长了，选择、
+ * 布局、行头三处各自算出不同的行数。轴只能由结构变更改动，这条是那个约束的闸。
+ *
+ * 校验发生在 prepare 而不是构造时：同一个事务里"先插行、再往新行里写"是合法的
+ * （`rowCommands.test.ts` 的暂存视图用例），而那时新行只存在于影子模型上。
+ * `context.model` 正是影子，`before` 是这条变更施加前的暂存空间。
+ */
+function assertValueWriteIsInsideSpace(mutation: SheetMutation, space: SheetAxisSpace): void {
+  if (mutation.type === "set-cell") {
+    assertInsideSpace(mutation.row, mutation.column, space);
+    return;
   }
+  if (mutation.type === "set-range") {
+    assertInsideSpace(mutation.range.startRow, mutation.range.startColumn, space);
+    assertInsideSpace(mutation.range.endRow, mutation.range.endColumn, space);
+  }
+}
+
+function assertInsideSpace(row: number, column: number, space: SheetAxisSpace): void {
+  if (row >= space.rowCount) {
+    throw new CyExcelError(CyExcelErrorCode.InvalidCoordinate, `Row ${row} does not exist`);
+  }
+  if (column >= space.columnCount) {
+    throw new CyExcelError(CyExcelErrorCode.ColumnNotFound, `Column ${column} does not exist`);
+  }
+}
+
+/**
+ * 正逆两条补丁共用一个坐标空间：**施加前与施加后的并集**。
+ *
+ * `row-layout` 那条补丁的 `range` 是"这一段几何失效了"的依据，取窄了是渲染层**画少
+ * 了**、不报错。正变更该取施加后的空间（与 `RowHeightMutation` / `LayoutRootMutation`
+ * 同口径），而逆是在回滚时施加的，它要盖住的是回滚**之后**的空间——那正好是施加
+ * 前的那个。两者取并集，两条都不会偏小；偏大的那一头只是多重画一段。
+ *
+ * 这不是假想的：`set-row-meta` 会改坐标空间（`rowData` 的下标进 `rowCount()` 的并集），
+ * 于是"删掉第 5000 行的行高"这条变更施加后空间缩到 10 行，它的逆再把那条元数据放
+ * 回去——只按施加后的空间算，逆那条补丁的 `range` 会停在第 9 行。
+ */
+function unionSpace(before: SheetAxisSpace, after: SheetAxisSpace): SheetAxisSpace {
+  return {
+    rowCount: Math.max(before.rowCount, after.rowCount),
+    columnCount: Math.max(before.columnCount, after.columnCount)
+  };
 }
 
 /** Mutable table model whose writes are finalized by one shared coordinator. */
 export class TableStore {
-  readonly #dataSource: DataSource;
+  readonly #sheet: SheetModel;
   readonly #coordinator: MutationCoordinator;
   #nextDirectTransactionId = 1;
 
-  constructor(dataSource: DataSource, coordinator = new MutationCoordinator()) {
-    this.#dataSource = dataSource;
+  constructor(sheet: SheetModel, coordinator = new MutationCoordinator()) {
+    this.#sheet = sheet;
     this.#coordinator = coordinator;
   }
 
@@ -105,50 +140,61 @@ export class TableStore {
     return this.#coordinator;
   }
 
+  /** 这次事务写的是哪张表——`CyExcelCore` 要拿它去读快照与侧表。 */
+  get sheet(): SheetModel {
+    return this.#sheet;
+  }
+
   beginMutationSession(transactionId: string): MutationPrepareSession {
     return this.#coordinator.begin(transactionId, (baseRevision) => {
-      const sourceTransaction = this.#dataSource.beginTransaction?.(baseRevision);
-      if (!sourceTransaction) {
-        throw new CyExcelError(
-          CyExcelErrorCode.MutationNotSupported,
-          "This DataSource does not implement the staged transaction contract"
-        );
-      }
-      if (sourceTransaction.baseRevision !== baseRevision) {
-        sourceTransaction.dispose();
-        throw new CyExcelError(CyExcelErrorCode.MutationConflict, "DataSource transaction revision mismatch");
-      }
+      // 影子模型在这里克隆出来（`SheetTransaction` 的构造函数），此后到 commit 之前
+      // 活模型一个字节都不会动。`baseRevision` 直接交给它，所以不存在"事务的基准版本
+      // 与协调器对不上"这种情况——那是数据源自己开事务时代的检查。
+      const transaction = new SheetTransaction(this.#sheet, baseRevision);
       return {
-        model: sourceTransaction,
+        model: transaction,
         prepareData: (source, mutation) => {
-          if (source !== this.#dataSource) {
-            throw new CyExcelError(CyExcelErrorCode.MutationConflict, "Mutation targets another DataSource");
+          if (source !== this.#sheet) {
+            throw new CyExcelError(CyExcelErrorCode.MutationConflict, "Mutation targets another sheet");
           }
-          return sourceTransaction.prepareMutation(mutation);
+          return transaction.prepareMutation(mutation);
         },
-        dispose: () => sourceTransaction.dispose()
+        dispose: () => transaction.dispose()
       };
     });
   }
 
   getRowCount(): number {
-    return this.#dataSource.getRowCount();
+    return this.#sheet.rowCount();
   }
 
   getColumnCount(): number {
-    return this.#dataSource.getColumnCount();
+    return this.#sheet.columnCount();
   }
 
   getCell(row: number, column: number): unknown {
     this.#assertCellExists(row, column);
-    return this.#dataSource.getCell(row, column);
+    return this.#sheet.getCell(row, column);
   }
 
+  /**
+   * 只带值的一条变更**整条替换**记录，不与该格已有的 `t`/`s`/`f`/`si` 合并。
+   *
+   * 今天这样是对的：4B 之后没有任何活路径产出带这些字段的记录（样式属阶段 5、公式
+   * 不在范围内），所以此刻做合并等于给一条还不存在的状态写代码。
+   *
+   * **等到有了那些字段，合并必须发生在事务里、读影子的 `getRecord`**——不能在这里
+   * 读活模型：同一个事务里连写两次同一格时，第二条会拿到一份还没被第一条更新过的
+   * 旧样式，把第一条的结果悄悄盖掉。届时的落点是给 `TableSheetMutation.prepare` 一条
+   * "带值的 set-cell"变体，在 `prepareData` 之前就地问影子要记录。
+   */
   createSetCellMutation(row: number, column: number, value: unknown): Mutation {
+    // 这里只查形状；"在不在坐标空间里"要等到 prepare 才知道——同一个事务里可以
+    // 先插行再往新行写，那时新行只存在于影子模型上（见 `assertValueWriteIsInsideSpace`）。
     assertValidCoordinate(row, column);
-    return new TableDataMutation(
-      this.#dataSource,
-      { type: "set-cell", row, column, value },
+    return new TableSheetMutation(
+      this.#sheet,
+      { type: "set-cell", row, column, record: valueToRecord(value) },
       [{ type: "cell-value", row, column }]
     );
   }
@@ -163,38 +209,35 @@ export class TableStore {
         `Range values must have shape ${expectedRows}x${expectedColumns}`
       );
     }
-    return new TableDataMutation(
-      this.#dataSource,
-      { type: "set-range", range, values },
+    return new TableSheetMutation(
+      this.#sheet,
+      { type: "set-range", range, records: values.map((row) => row.map(valueToRecord)) },
       [{ type: "range-value", range }]
     );
   }
 
   createInsertRowsMutation(start: number, rows: readonly (readonly unknown[])[]): Mutation {
-    this.#assertTransactionalStructuralCapability("insertRows");
     this.#assertStructuralShape("row", "insert", start, rows.length);
-    return new TableDataMutation(
-      this.#dataSource,
-      { type: "insert-rows", start, rows },
+    return new TableSheetMutation(
+      this.#sheet,
+      { type: "insert-rows", start, rows: rows.map(rowValuesToCells) },
       [{ type: "row-structure", operation: "insert", start, count: rows.length }]
     );
   }
 
   createDeleteRowsMutation(start: number, count: number): Mutation {
-    this.#assertTransactionalStructuralCapability("deleteRows");
     this.#assertStructuralShape("row", "delete", start, count);
-    return new TableDataMutation(
-      this.#dataSource,
+    return new TableSheetMutation(
+      this.#sheet,
       { type: "delete-rows", start, count },
       [{ type: "row-structure", operation: "delete", start, count }]
     );
   }
 
   createMoveRowsMutation(start: number, count: number, target: number): Mutation {
-    this.#assertTransactionalStructuralCapability("moveRows");
     this.#assertStructuralShape("row", "move", start, count, target);
-    return new TableDataMutation(
-      this.#dataSource,
+    return new TableSheetMutation(
+      this.#sheet,
       { type: "move-rows", start, count, target },
       [{ type: "row-structure", operation: "move", start, count, target }]
     );
@@ -204,46 +247,43 @@ export class TableStore {
    * Whole-axis permutation (Step 22 sorting). Unlike the other row mutations
    * there is no start/count/target shape to validate against the row axis,
    * so this skips `#assertStructuralShape` and instead validates `order` is
-   * a permutation of the current row count directly — `TableStore.reorderRows`
-   * is reachable without going through `ArrayDataSource`, so a wrong-length
-   * or non-permutation order must fail here rather than relying on whatever
-   * DataSource happens to be behind this store.
+   * a permutation of the current row count directly.
    */
   createReorderRowsMutation(order: Int32Array): Mutation {
-    this.#assertTransactionalStructuralCapability("reorderRows");
     assertValidRowOrder(order, this.getRowCount());
-    return new TableDataMutation(
-      this.#dataSource,
+    return new TableSheetMutation(
+      this.#sheet,
       { type: "reorder-rows", order },
       [{ type: "row-reorder", order }]
     );
   }
 
-  createInsertColumnsMutation(start: number, columns: readonly ColumnFieldMapping[]): Mutation {
-    this.#assertTransactionalStructuralCapability("insertColumns");
-    this.#assertStructuralShape("column", "insert", start, columns.length);
-    return new TableDataMutation(
-      this.#dataSource,
-      { type: "insert-columns", start, columns },
-      [{ type: "column-structure", operation: "insert", start, count: columns.length }]
+  /**
+   * 插列只要个数。列不再有身份（ADR §3.8.2），所以这里不再收字段映射——
+   * "第 i 列对应哪个字段"是导入那一刻的事实，不是表运行期的状态。
+   */
+  createInsertColumnsMutation(start: number, count: number): Mutation {
+    this.#assertStructuralShape("column", "insert", start, count);
+    return new TableSheetMutation(
+      this.#sheet,
+      { type: "insert-columns", start, count },
+      [{ type: "column-structure", operation: "insert", start, count }]
     );
   }
 
   createDeleteColumnsMutation(start: number, count: number): Mutation {
-    this.#assertTransactionalStructuralCapability("deleteColumns");
     this.#assertStructuralShape("column", "delete", start, count);
-    return new TableDataMutation(
-      this.#dataSource,
+    return new TableSheetMutation(
+      this.#sheet,
       { type: "delete-columns", start, count },
       [{ type: "column-structure", operation: "delete", start, count }]
     );
   }
 
   createMoveColumnsMutation(start: number, count: number, target: number): Mutation {
-    this.#assertTransactionalStructuralCapability("moveColumns");
     this.#assertStructuralShape("column", "move", start, count, target);
-    return new TableDataMutation(
-      this.#dataSource,
+    return new TableSheetMutation(
+      this.#sheet,
       { type: "move-columns", start, count, target },
       [{ type: "column-structure", operation: "move", start, count, target }]
     );
@@ -277,8 +317,8 @@ export class TableStore {
     return this.#execute(this.createReorderRowsMutation(order));
   }
 
-  insertColumns(start: number, columns: readonly ColumnFieldMapping[]): TableStoreCommitResult {
-    return this.#execute(this.createInsertColumnsMutation(start, columns));
+  insertColumns(start: number, count: number): TableStoreCommitResult {
+    return this.#execute(this.createInsertColumnsMutation(start, count));
   }
 
   deleteColumns(start: number, count: number): TableStoreCommitResult {
@@ -319,15 +359,6 @@ export class TableStore {
     }
     if (column >= this.getColumnCount()) {
       throw new CyExcelError(CyExcelErrorCode.ColumnNotFound, `Column ${column} does not exist`);
-    }
-  }
-
-  #assertTransactionalStructuralCapability(method: keyof DataSource): void {
-    if (!this.#dataSource[method] || !this.#dataSource.beginTransaction) {
-      throw new CyExcelError(
-        CyExcelErrorCode.StructuralModificationNotSupported,
-        `This DataSource does not support transactional ${String(method)}()`
-      );
     }
   }
 

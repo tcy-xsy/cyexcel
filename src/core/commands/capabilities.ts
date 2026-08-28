@@ -1,7 +1,7 @@
 import type { ColumnDefinition } from "../cells/types";
 import type { LayoutRootAction } from "../mutations/LayoutRootMutation";
 import type { Mutation } from "../mutations/types";
-import type { CellRange, ColumnFieldMapping } from "../types";
+import type { CellRange } from "../types";
 import type {
   RowHeightCommandProvenance,
   SetRowHeightUpdate
@@ -15,7 +15,8 @@ export interface DataCommandMutationFactory {
   createMoveRows(start: number, count: number, target: number): Mutation;
   /** Whole-axis permutation, `order[newPosition] = oldPosition`. */
   createReorderRows(order: Int32Array): Mutation;
-  createInsertColumns(start: number, columns: readonly ColumnFieldMapping[]): Mutation;
+  /** 插列只要个数：列不再有身份（ADR 0004 §3.8.2），没有字段映射可带。 */
+  createInsertColumns(start: number, count: number): Mutation;
   createDeleteColumns(start: number, count: number): Mutation;
   createMoveColumns(start: number, count: number, target: number): Mutation;
 }

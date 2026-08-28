@@ -19,7 +19,7 @@
   <body>
     <div id="app"></div>
     <script type="module">
-      import { ArrayDataSource, CyExcelCore } from "/src/core/index.ts";
+      import { CyExcelCore } from "/src/core/index.ts";
 
       const container = document.getElementById("app");
 
@@ -132,48 +132,16 @@
         }
       ];
 
-      const variant = new URLSearchParams(location.search).get("dataSource");
-
-      // Only the four required DataSource methods: no beginTransaction at
-      // all, so no mutation of any kind can be staged.
-      const minimalDataSource = {
-        getRowCount: () => rows.length,
-        getColumnCount: () => columns.length,
-        getCell: (row, column) => rows[row][columns[column].field],
-        setCell: (row, column, value) => {
-          rows[row][columns[column].field] = value;
-        }
-      };
-
-      // Fully transactional and structurally editable, but with no
-      // reorderRows(): the case the reorder capability check exists for.
-      const backing = new ArrayDataSource(
-        rows,
-        columns.map((column) => ({ id: column.id, field: column.field }))
-      );
-      const noReorderDataSource = {
-        getRowCount: () => backing.getRowCount(),
-        getColumnCount: () => backing.getColumnCount(),
-        getCell: (row, column) => backing.getCell(row, column),
-        setCell: (row, column, value) => backing.setCell(row, column, value),
-        beginTransaction: (revision) => backing.beginTransaction(revision),
-        insertRows: (start, inserted) => backing.insertRows(start, inserted),
-        deleteRows: (start, count) => backing.deleteRows(start, count),
-        moveRows: (start, count, target) => backing.moveRows(start, count, target)
-        // No reorderRows on purpose.
-      };
-
-      const dataSource =
-        variant === "minimal"
-          ? minimalDataSource
-          : variant === "no-reorder"
-            ? noReorderDataSource
-            : undefined;
-
+      // `?dataSource=minimal` / `?dataSource=no-reorder` used to swap in a
+      // hand-written data layer with fewer capabilities, which is how the
+      // three "refuses to sort" cases got their refusal. ADR 0004 §3.2 took
+      // the replaceable data layer away, so there is no longer a way to build
+      // a table that cannot reorder — those cases went with it (4B 设计 §7
+      // 第 5 条).
       const sheet = new CyExcelCore(container, {
         columns,
         columnTypes,
-        ...(dataSource ? { dataSource } : { data: rows }),
+        data: rows,
         rowHeight: 20,
         headerHeight: 20,
         rowHeaderWidth: 40
@@ -187,14 +155,6 @@
         commitCount += 1;
       });
 
-      // A sort refused from inside the mutation queue (a header click on a
-      // DataSource that cannot reorder) can only report itself through an
-      // `error` event — it has no call site left to throw at.
-      const errors = [];
-      sheet.events.on("error", ({ error, eventName }) => {
-        errors.push({ eventName, code: error?.code, message: String(error?.message ?? error) });
-      });
-
       const headerActions = [];
       sheet.events.on("header-action", ({ action, column }) => {
         headerActions.push({ action: { ...action }, column });
@@ -203,7 +163,6 @@
       window.__sort = {
         sheet,
         getCommitCount: () => commitCount,
-        getErrors: () => errors.map((entry) => ({ ...entry })),
         getHeaderActions: () => headerActions.map((entry) => ({ ...entry })),
         setOnCompare: (hook) => {
           onCompare = hook;
