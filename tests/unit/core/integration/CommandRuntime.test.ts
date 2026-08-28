@@ -22,7 +22,7 @@ import { LayoutEngine } from "../../../../src/core/layout";
 import { createSheetFromRows } from "../../../helpers/createSheetModel";
 
 function createFixture() {
-  let columns: readonly ColumnDefinition[] = Object.freeze([{ id: "a" }, { id: "b" }]);
+  let columns: readonly ColumnDefinition[] = Object.freeze([{ }, { }]);
   const store = new TableStore(createSheetFromRows([{ a: "A", b: 1 }, { a: "B", b: 2 }], ["a", "b"]));
   const registry = new CellTypeRegistry();
   registerBuiltinCellTypes(registry);
@@ -50,7 +50,7 @@ function createFixture() {
 
 /** Three rows with three distinct heights, so no assertion can pass by accident. */
 function createReorderFixture() {
-  let columns: readonly ColumnDefinition[] = Object.freeze([{ id: "a" }]);
+  let columns: readonly ColumnDefinition[] = Object.freeze([{ }]);
   const store = new TableStore(createSheetFromRows([{ a: "A" }, { a: "B" }, { a: "C" }], ["a"]));
   const registry = new CellTypeRegistry();
   registerBuiltinCellTypes(registry);

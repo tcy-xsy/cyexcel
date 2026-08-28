@@ -3,9 +3,9 @@ import { createRoot } from "react-dom/client";
 import { CyExcelCore, rowsToWorkbookSnapshot } from "../../dist/core.js";
 
 const columns = [
-  { id: "sku", field: "sku", width: 140, header: "SKU" },
-  { id: "name", field: "name", width: 240, header: "Name" },
-  { id: "price", field: "price", width: 100, type: "number", header: "Price" }
+  { width: 140, header: "SKU" },
+  { width: 240, header: "Name" },
+  { width: 100, type: "number", header: "Price" }
 ];
 
 /** The i-th field is the i-th column — a parameter of the import, not of `columns`. */

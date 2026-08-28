@@ -26,7 +26,7 @@ function expectInvalid(run: () => unknown, field: string): void {
 describe("validateCyExcelCoreOptions", () => {
   it("accepts the supported zero/positive geometry and policy values", () => {
     expect(() => validateCyExcelCoreOptions({
-      columns: [{ id: "a", width: 0, minWidth: 0, maxWidth: Number.POSITIVE_INFINITY }],
+      columns: [{ width: 0, minWidth: 0, maxWidth: Number.POSITIVE_INFINITY }],
       snapshot: rowsToWorkbookSnapshot([{}], ["a"]),
       rowHeight: 24,
       rowHeights: new Map([[0, 36]]),
@@ -70,8 +70,8 @@ describe("validateCyExcelCoreOptions", () => {
     ["freeze.columns", { freeze: { columns: -1 } }],
     ["overscanRows", { overscanRows: Number.MAX_SAFE_INTEGER + 1 }],
     ["overscanColumns", { overscanColumns: 0.5 }],
-    ["columns[0].width", { columns: [{ id: "a", width: Number.NaN }] }],
-    ["columns[0].maxWidth", { columns: [{ id: "a", minWidth: 50, maxWidth: 40 }] }],
+    ["columns[0].width", { columns: [{ width: Number.NaN }] }],
+    ["columns[0].maxWidth", { columns: [{ minWidth: 50, maxWidth: 40 }] }],
     ["clipboard.maxCells", { clipboard: { maxCells: -1 } }],
     [
       "clipboard.oversizedAction",
@@ -155,7 +155,7 @@ describe("CyExcelCore constructor preflight", () => {
     const setup = vi.fn();
     expectInvalid(
       () => new CyExcelCore({} as HTMLElement, {
-        columns: [{ id: "a" }],
+        columns: [{ }],
         snapshot: rowsToWorkbookSnapshot([{}], ["a"]),
         rowHeights: new Map([[1, 30]]),
         plugins: [{ name: "must-not-run", setup }]
@@ -179,7 +179,7 @@ describe("CyExcelCore constructor preflight", () => {
     const setup = vi.fn();
     expectInvalid(
       () => new CyExcelCore({} as HTMLElement, {
-        columns: [{ id: "a" }],
+        columns: [{ }],
         headerHeight: Number.MAX_VALUE,
         headerGroups: [{ id: "group", title: "Group", columns: [0] }],
         plugins: [{ name: "must-not-run", setup }]
@@ -198,7 +198,7 @@ describe("CyExcelCore constructor preflight", () => {
     const setup = vi.fn();
     expectInvalid(
       () => new CyExcelCore({} as HTMLElement, {
-        columns: [{ id: "a" }],
+        columns: [{ }],
         snapshot: rowsToWorkbookSnapshot([{ a: 1, b: 2 }], ["a", "b"]),
         plugins: [{ name: "must-not-run", setup }]
       }),

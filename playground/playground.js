@@ -53,18 +53,16 @@ const COLUMNS = [
   // sortable:false on the column itself — demonstrates the per-column override.
   // The "标签" (array) column is unsortable too, but by its *type*'s own
   // declaration rather than here, which is the other half of the mechanism.
-  { id: "sku", field: "sku", width: 140, type: "text", label: "SKU", header: "SKU", sortable: false },
-  { id: "name", field: "name", width: 200, type: "text", label: "产品名称", wrap: true },
-  { id: "price", field: "price", width: 110, type: "money", label: "单价", header: "单价" },
-  { id: "quantity", field: "quantity", width: 90, type: "number", label: "数量" },
-  { id: "region", field: "region", width: 110, type: "text", label: "地区" },
+  { width: 140, type: "text", label: "SKU", header: "SKU", sortable: false },
+  { width: 200, type: "text", label: "产品名称", wrap: true },
+  { width: 110, type: "money", label: "单价", header: "单价" },
+  { width: 90, type: "number", label: "数量" },
+  { width: 110, type: "text", label: "地区" },
   // 数据类型（boolean/date/select…）和编辑控件是两个独立维度，不会被自动绑定——
   // 这三列显式通过 createEditor 接上对应控件，是业务方要自己做的事，不是"boolean
   // 类型天生等于 checkbox"。不接的类型（下面的 tags/meta）仍然用默认文本编辑器，
   // 靠 CellType.parse()/serialize() 保证往返正确。
   {
-    id: "inStock",
-    field: "inStock",
     width: 90,
     type: "boolean",
     label: "有库存",
@@ -73,16 +71,12 @@ const COLUMNS = [
     createEditor: () => createBooleanCellEditor()
   },
   {
-    id: "restockedAt",
-    field: "restockedAt",
     width: 130,
     type: "date",
     label: "入库日期",
     createEditor: () => createDateCellEditor()
   },
   {
-    id: "status",
-    field: "status",
     width: 110,
     type: "select",
     label: "状态",
@@ -91,8 +85,6 @@ const COLUMNS = [
     createEditor: (context) => createSelectCellEditor(context.column.options ?? [])
   },
   {
-    id: "tags",
-    field: "tags",
     width: 220,
     type: "array",
     label: "标签",
@@ -109,8 +101,6 @@ const COLUMNS = [
       })
   },
   {
-    id: "meta",
-    field: "meta",
     width: 240,
     type: "json",
     label: "元数据",
@@ -310,7 +300,9 @@ function populateColumnSelect(select, accepts = () => true) {
     }
     const option = document.createElement("option");
     option.value = String(index);
-    option.textContent = `${column.label} (${column.id})`;
+    // 列没有 id 了（ADR 0004 §3.8.2），一列就是它的下标——所有公开 API
+    // 吃的也正是这个数字，所以括号里显示的比原来的 id 更贴近调用方要传的东西。
+    option.textContent = `${column.label}（第 ${index} 列）`;
     select.append(option);
   });
 }

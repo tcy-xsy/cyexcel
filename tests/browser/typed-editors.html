@@ -52,11 +52,9 @@
       const columns = [
         // Explicitly opts into the checkbox editor — nothing about the
         // "boolean" type does this automatically.
-        { id: "active", field: "active", width: 90, type: "boolean", createEditor: () => createBooleanCellEditor() },
+        { width: 90, type: "boolean", createEditor: () => createBooleanCellEditor() },
         // Explicitly opts into the native date-picker editor.
         {
-          id: "joinedAt",
-          field: "joinedAt",
           width: 130,
           type: "date",
           createEditor: () => createDateCellEditor()
@@ -64,8 +62,6 @@
         // Explicitly opts into a dropdown, built from this column's own
         // options — the editor itself doesn't know it's a "select" type.
         {
-          id: "status",
-          field: "status",
           width: 110,
           type: "select",
           options: STATUS_OPTIONS,
@@ -74,12 +70,10 @@
         // Deliberately does NOT opt into any editor — stays on the default
         // text editor, exercising only the parse()/serialize() round-trip
         // fix for the "array" type.
-        { id: "tags", field: "tags", width: 180, type: "array" },
+        { width: 180, type: "array" },
         // Explicitly opts into a multi-line editor with JSON syntax
         // validation on commit.
         {
-          id: "meta",
-          field: "meta",
           width: 200,
           type: "json",
           createEditor: () => createTextAreaCellEditor({ validate: validateJson })

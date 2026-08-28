@@ -41,7 +41,9 @@ void internalRuntimeIsNotShipped;
 // 出得来，否则只 import `CyExcelCore` 的消费者只能开一张空表（见 src/index.ts）。
 
 const options: CyExcelCoreOptions = {
-  columns: [{ id: "name", field: "name", width: 120 }],
+  // 列配置里没有 id、也没有 field（ADR 0004 §3.8.2）：字段名只在下面那次导入里
+  // 出现一次，列本身就是它的下标。
+  columns: [{ width: 120 }],
   snapshot: rowsToWorkbookSnapshot([{ name: "Ada" }], ["name"]),
   rowHeight: 24
 };

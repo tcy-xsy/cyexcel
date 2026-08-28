@@ -32,11 +32,11 @@
       const container = document.getElementById("app");
       const fields = ["name", "age", "secret", "locked", "tags"];
       const columns = [
-        { id: "name", field: "name", width: 100 },
-        { id: "age", field: "age", type: "number", width: 80 },
-        { id: "secret", field: "secret", width: 80, clipboard: { copy: false } },
-        { id: "locked", field: "locked", type: "number", width: 80, clipboard: { paste: false } },
-        { id: "tags", field: "tags", type: "array", width: 160 }
+        { width: 100 },
+        { type: "number", width: 80 },
+        { width: 80, clipboard: { copy: false } },
+        { type: "number", width: 80, clipboard: { paste: false } },
+        { type: "array", width: 160 }
       ];
       const data = [
         { name: "Alice", age: 30, secret: "s1", locked: 100, tags: ["red", "green", "blue", "yellow"] },

@@ -31,8 +31,7 @@
           // 20 行 10 列，一个格子都没有值：稀疏矩阵里这就是一张空矩阵，
           // 坐标空间整个来自 blank（派生坐标空间，ADR 0004 §3.3）。
           snapshot: rowsToWorkbookSnapshot([], fields, { blankRows: 20 }),
-          columns: fields.map((field) => ({
-            id: field,
+          columns: fields.map(() => ({
             width: 50
           })),
           rowHeight: 20,

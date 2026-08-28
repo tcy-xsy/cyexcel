@@ -41,13 +41,13 @@
         "normal"
       ];
       const columns = [
-        { id: "neighbor", field: "neighbor", width: 60, header: "N" },
-        { id: "dblTarget", field: "dblTarget", width: 60, header: "D" },
-        { id: "dragCopy", field: "dragCopy", width: 60, header: "C" },
-        { id: "dragSeq", field: "dragSeq", width: 60, header: "S" },
-        { id: "undoTarget", field: "undoTarget", width: 60, header: "U" },
-        { id: "readonly", field: "readonly", width: 60, header: "R", clipboard: { paste: false } },
-        { id: "normal", field: "normal", width: 60, header: "M" }
+        { width: 60, header: "N" },
+        { width: 60, header: "D" },
+        { width: 60, header: "C" },
+        { width: 60, header: "S" },
+        { width: 60, header: "U" },
+        { width: 60, header: "R", clipboard: { paste: false } },
+        { width: 60, header: "M" }
       ];
 
       const data = Array.from({ length: 30 }, (_unused, row) => ({

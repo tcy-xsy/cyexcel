@@ -14,9 +14,9 @@ interface FixtureWindow {
   __sheet?: {
     readonly scene: { readonly modelVersion: number };
     getCell(row: number, column: number): unknown;
-    getColumn(column: number): { readonly id: string };
+    getHeader(column: number): { readonly title: string };
     setCell(row: number, column: number, value: unknown): void;
-    insertColumns(start: number, columns: readonly { readonly id: string; readonly width: number }[]): void;
+    insertColumns(start: number, columns: readonly { readonly header: string; readonly width: number }[]): void;
     startEdit(row: number, column: number): void;
     undo(): void;
   };
@@ -40,15 +40,15 @@ test("a DOM cell finalizer failure cannot roll back or starve a column transacti
   const result = await page.evaluate(() => {
     const fixture = window as unknown as FixtureWindow;
     fixture.__armFailure?.("cells");
-    fixture.__sheet?.insertColumns(0, [{ id: "inserted", width: 40 }]);
+    fixture.__sheet?.insertColumns(0, [{ header: "Inserted", width: 40 }]);
     return {
-      firstColumn: fixture.__sheet?.getColumn(0).id,
+      firstColumn: fixture.__sheet?.getHeader(0).title,
       shiftedCell: fixture.__sheet?.getCell(0, 1),
       timeline: fixture.__timeline
     };
   });
 
-  expect(result.firstColumn).toBe("inserted");
+  expect(result.firstColumn).toBe("Inserted");
   expect(result.shiftedCell).toBe("outer");
   expect(result.timeline).toEqual([
     { kind: "error", eventName: "finalize:dom-cells", message: "cell update failed" },
@@ -64,13 +64,13 @@ test("a DOM header finalizer failure still publishes change and keeps history", 
   const result = await page.evaluate(() => {
     const fixture = window as unknown as FixtureWindow;
     fixture.__armFailure?.("headers");
-    fixture.__sheet?.insertColumns(0, [{ id: "inserted", width: 40 }]);
-    const afterInsert = fixture.__sheet?.getColumn(0).id;
+    fixture.__sheet?.insertColumns(0, [{ header: "Inserted", width: 40 }]);
+    const afterInsert = fixture.__sheet?.getHeader(0).title;
     fixture.__sheet?.undo();
-    return { afterInsert, afterUndo: fixture.__sheet?.getColumn(0).id, timeline: fixture.__timeline };
+    return { afterInsert, afterUndo: fixture.__sheet?.getHeader(0).title, timeline: fixture.__timeline };
   });
 
-  expect(result).toMatchObject({ afterInsert: "inserted", afterUndo: "dom" });
+  expect(result).toMatchObject({ afterInsert: "Inserted", afterUndo: "DOM" });
   expect(result.timeline?.filter((entry) => entry.kind === "error")).toEqual([
     { kind: "error", eventName: "finalize:dom-headers", message: "header update failed" }
   ]);

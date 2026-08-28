@@ -5,8 +5,8 @@ interface FixtureWindow {
   __cyexcelColumnStructureReady?: boolean;
   __sheet?: {
     getCell(row: number, column: number): unknown;
-    getColumn(column: number): { readonly id: string };
-    insertColumns(start: number, columns: readonly { readonly id: string; readonly field?: string; readonly width?: number }[]): void;
+    getHeader(column: number): { readonly title: string };
+    insertColumns(start: number, columns: readonly { readonly header?: string; readonly width?: number }[]): void;
     deleteColumns(start: number, count?: number): void;
     moveColumns(start: number, count: number, target: number): void;
     hideColumn(column: number): void;
@@ -45,9 +45,15 @@ function getCell(page: Page, row: number, column: number): Promise<unknown> {
   );
 }
 
-function getColumnId(page: Page, column: number): Promise<unknown> {
+/*
+ * 「这一列是哪一列」以前问的是 `getColumn(c).id`。列没有身份了（ADR 0004
+ * §3.8.2），改问它自己声明的表头标题——fixture 给四列分别配了 A/B/C/D，标题跟着
+ * 列一起被插入/删除/移动搬走，所以它仍然能把结构操作后的列身份钉死。（字母兜底
+ * 不行：那是按下标算出来的，列怎么搬它都不动。）
+ */
+function getColumnTitle(page: Page, column: number): Promise<unknown> {
   return page.evaluate(
-    (c) => (window as unknown as FixtureWindow).__sheet?.getColumn(c).id,
+    (c) => (window as unknown as FixtureWindow).__sheet?.getHeader(c).title,
     column
   );
 }
@@ -83,20 +89,20 @@ test("insertColumns inserts a blank column and shifts the rest right, and undo r
   expect(await getCell(page, 0, 1)).toBe("0b");
 
   await page.evaluate(() => {
-    (window as unknown as FixtureWindow).__sheet?.insertColumns(1, [{ id: "x", field: "x", width: 60 }]);
+    (window as unknown as FixtureWindow).__sheet?.insertColumns(1, [{ header: "X", width: 60 }]);
   });
 
   expect(await getCell(page, 0, 1)).toBeUndefined(); // the new blank column
-  expect(await getColumnId(page, 1)).toBe("x");
+  expect(await getColumnTitle(page, 1)).toBe("X");
   expect(await getCell(page, 0, 2)).toBe("0b"); // original column b, shifted right
 
   await page.evaluate(() => (window as unknown as FixtureWindow).__sheet?.undo());
 
   expect(await getCell(page, 0, 1)).toBe("0b");
-  expect(await getColumnId(page, 1)).toBe("b");
+  expect(await getColumnTitle(page, 1)).toBe("B");
 
   await page.evaluate(() => (window as unknown as FixtureWindow).__sheet?.redo());
-  expect(await getColumnId(page, 1)).toBe("x");
+  expect(await getColumnTitle(page, 1)).toBe("X");
   expect(await getCell(page, 0, 2)).toBe("0b");
 });
 
@@ -108,12 +114,12 @@ test("deleteColumns removes a column and shifts the rest left, and undo restores
   await page.evaluate(() => (window as unknown as FixtureWindow).__sheet?.deleteColumns(1));
 
   expect(await getCell(page, 0, 1)).toBe("0c"); // column c shifted into column b's old slot
-  expect(await getColumnId(page, 1)).toBe("c");
+  expect(await getColumnTitle(page, 1)).toBe("C");
 
   await page.evaluate(() => (window as unknown as FixtureWindow).__sheet?.undo());
 
   expect(await getCell(page, 0, 1)).toBe("0b");
-  expect(await getColumnId(page, 1)).toBe("b");
+  expect(await getColumnTitle(page, 1)).toBe("B");
 });
 
 test("moveColumns moves a column to a new position, and undo restores it", async ({ page }) => {
@@ -123,18 +129,18 @@ test("moveColumns moves a column to a new position, and undo restores it", async
   // target-index convention as moveRows()/SheetModel.moveColumns()).
   await page.evaluate(() => (window as unknown as FixtureWindow).__sheet?.moveColumns(0, 1, 3));
 
-  expect(await getColumnId(page, 0)).toBe("b");
-  expect(await getColumnId(page, 1)).toBe("c");
-  expect(await getColumnId(page, 2)).toBe("a");
-  expect(await getColumnId(page, 3)).toBe("d");
+  expect(await getColumnTitle(page, 0)).toBe("B");
+  expect(await getColumnTitle(page, 1)).toBe("C");
+  expect(await getColumnTitle(page, 2)).toBe("A");
+  expect(await getColumnTitle(page, 3)).toBe("D");
   expect(await getCell(page, 0, 2)).toBe("0a");
 
   await page.evaluate(() => (window as unknown as FixtureWindow).__sheet?.undo());
 
-  expect(await getColumnId(page, 0)).toBe("a");
-  expect(await getColumnId(page, 1)).toBe("b");
-  expect(await getColumnId(page, 2)).toBe("c");
-  expect(await getColumnId(page, 3)).toBe("d");
+  expect(await getColumnTitle(page, 0)).toBe("A");
+  expect(await getColumnTitle(page, 1)).toBe("B");
+  expect(await getColumnTitle(page, 2)).toBe("C");
+  expect(await getColumnTitle(page, 3)).toBe("D");
 });
 
 test("hideColumn collapses the column to zero width and shifts later columns left; showColumn restores it", async ({

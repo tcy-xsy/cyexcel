@@ -6,7 +6,7 @@ import { HeaderManager } from "../../../../src/core/headers";
 
 describe("HeaderManager — leaf header resolution", () => {
   it("resolves a plain string header as its title", () => {
-    const manager = new HeaderManager({ columns: [{ id: "name", header: "Name" }] });
+    const manager = new HeaderManager({ columns: [{ header: "Name" }] });
 
     expect(manager.getHeader(0)).toEqual({ column: 0, title: "Name", renderer: undefined });
   });
@@ -14,7 +14,7 @@ describe("HeaderManager — leaf header resolution", () => {
   it("resolves a HeaderDefinition's title and renderer", () => {
     const renderer: CanvasHeaderRenderer = { kind: "canvas", paint: () => {} };
     const manager = new HeaderManager({
-      columns: [{ id: "name", header: { title: "Name", renderer } }]
+      columns: [{ header: { title: "Name", renderer } }]
     });
 
     const header = manager.getHeader(0);
@@ -22,37 +22,50 @@ describe("HeaderManager — leaf header resolution", () => {
     expect(header.renderer).toBe(renderer);
   });
 
-  it("falls back to the column id when no header is declared", () => {
-    const manager = new HeaderManager({ columns: [{ id: "sku" }] });
+  it("falls back to the spreadsheet letter when no header is declared", () => {
+    const manager = new HeaderManager({ columns: [{ }] });
 
-    expect(manager.getHeader(0)).toEqual({ column: 0, title: "sku", renderer: undefined });
+    expect(manager.getHeader(0)).toEqual({ column: 0, title: "A", renderer: undefined });
   });
 
   it("getHeaders() returns every leaf header in column order", () => {
     const manager = new HeaderManager({
-      columns: [{ id: "a", header: "A" }, { id: "b", header: "B" }, { id: "c" }]
+      columns: [{ header: "第一列" }, { header: "第二列" }, { }]
     });
 
-    expect(manager.getHeaders().map((header) => header.title)).toEqual(["A", "B", "c"]);
+    expect(manager.getHeaders().map((header) => header.title)).toEqual(["第一列", "第二列", "C"]);
   });
 
   it("getHeader() throws for an out-of-range column", () => {
-    const manager = new HeaderManager({ columns: [{ id: "a" }] });
+    const manager = new HeaderManager({ columns: [{ }] });
 
     expect(() => manager.getHeader(5)).toThrow(CyExcelError);
   });
 });
 
 describe("HeaderManager — columnLetterFallback (spreadsheet-style A/B/C.../AA/AB... labels)", () => {
-  it("defaults to false — unset behavior (fall back to column id) is unchanged", () => {
-    const manager = new HeaderManager({ columns: [{ id: "sku" }] });
+  // 列没有 `id` 之后，这个开关的两个值就是仅剩的两种答案（ADR 0004 §3.8.1/
+  // §3.8.2）：开是 A/B/C（默认从 false 翻成了 true），关是**没有标题**——不是
+  // 回退到别的名字，而是这一列不显示标题。
+  it("defaults to true — an undeclared header shows its spreadsheet letter", () => {
+    const manager = new HeaderManager({ columns: [{ }] });
 
-    expect(manager.getHeader(0).title).toBe("sku");
+    expect(manager.getHeader(0).title).toBe("A");
   });
 
-  it("falls back to the spreadsheet letter instead of the column id when enabled", () => {
+  it("turning it off leaves an undeclared header with no title at all, not some other fallback", () => {
     const manager = new HeaderManager({
-      columns: [{ id: "sku" }, { id: "name" }],
+      columns: [{ }, { header: "Price" }],
+      columnLetterFallback: false
+    });
+
+    expect(manager.getHeader(0).title).toBe("");
+    expect(manager.getHeader(1).title).toBe("Price");
+  });
+
+  it("falls back to the spreadsheet letter when explicitly enabled", () => {
+    const manager = new HeaderManager({
+      columns: [{ }, { }],
       columnLetterFallback: true
     });
 
@@ -61,7 +74,7 @@ describe("HeaderManager — columnLetterFallback (spreadsheet-style A/B/C.../AA/
   });
 
   it("wraps past Z into AA, AB, ... like Excel/Google Sheets/Univer column references", () => {
-    const columns = Array.from({ length: 30 }, (_unused, index) => ({ id: `c${index}` }));
+    const columns = Array.from({ length: 30 }, () => ({ }));
     const manager = new HeaderManager({ columns, columnLetterFallback: true });
 
     expect(manager.getHeader(25).title).toBe("Z");
@@ -71,7 +84,7 @@ describe("HeaderManager — columnLetterFallback (spreadsheet-style A/B/C.../AA/
 
   it("an explicit header still overrides the letter for that one column — mutually exclusive per column, matching Univer's customizeColumnHeader model", () => {
     const manager = new HeaderManager({
-      columns: [{ id: "a" }, { id: "b", header: "Price" }, { id: "c" }],
+      columns: [{ }, { header: "Price" }, { }],
       columnLetterFallback: true
     });
 
@@ -81,10 +94,10 @@ describe("HeaderManager — columnLetterFallback (spreadsheet-style A/B/C.../AA/
   });
 
   it("prepareRoot() keeps using the letter fallback the manager was constructed with", () => {
-    const manager = new HeaderManager({ columns: [{ id: "a" }], columnLetterFallback: true });
+    const manager = new HeaderManager({ columns: [{ }], columnLetterFallback: true });
     expect(manager.getHeader(0).title).toBe("A");
 
-    manager.replaceRoot(manager.prepareRoot([{ id: "a" }, { id: "b" }]));
+    manager.replaceRoot(manager.prepareRoot([{ }, { }]));
 
     expect(manager.getHeader(0).title).toBe("A");
     expect(manager.getHeader(1).title).toBe("B");
@@ -94,7 +107,7 @@ describe("HeaderManager — columnLetterFallback (spreadsheet-style A/B/C.../AA/
 describe("HeaderManager — two-level groups (先写测试 #3: colspan)", () => {
   it("computes a group's colspan from its leaf column range", () => {
     const manager = new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }],
+      columns: [{ }, { }, { }, { }],
       groups: [{ id: "g1", title: "Basics", columns: [0, 1, 2] }]
     });
 
@@ -105,7 +118,7 @@ describe("HeaderManager — two-level groups (先写测试 #3: colspan)", () => 
 
   it("supports multiple independent groups", () => {
     const manager = new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }],
+      columns: [{ }, { }, { }, { }],
       groups: [
         { id: "g1", title: "Basics", columns: [0, 1] },
         { id: "g2", title: "Sales", columns: [2, 3] }
@@ -119,7 +132,7 @@ describe("HeaderManager — two-level groups (先写测试 #3: colspan)", () => 
     expect(
       () =>
         new HeaderManager({
-          columns: [{ id: "a" }, { id: "b" }, { id: "c" }],
+          columns: [{ }, { }, { }],
           groups: [{ id: "g1", title: "Bad", columns: [0, 2] }]
         })
     ).toThrow(CyExcelError);
@@ -129,7 +142,7 @@ describe("HeaderManager — two-level groups (先写测试 #3: colspan)", () => 
     expect(
       () =>
         new HeaderManager({
-          columns: [{ id: "a" }],
+          columns: [{ }],
           groups: [{ id: "g1", title: "Bad", columns: [0, 1] }]
         })
     ).toThrow(CyExcelError);
@@ -139,7 +152,7 @@ describe("HeaderManager — two-level groups (先写测试 #3: colspan)", () => 
     expect(
       () =>
         new HeaderManager({
-          columns: [{ id: "a" }],
+          columns: [{ }],
           groups: [{ id: "g1", title: "Bad", columns: [] }]
         })
     ).toThrow(CyExcelError);
@@ -149,7 +162,7 @@ describe("HeaderManager — two-level groups (先写测试 #3: colspan)", () => 
 describe("HeaderManager — resolves once and caches", () => {
   it("getHeader()/getGroups() return the same objects on repeated calls", () => {
     const manager = new HeaderManager({
-      columns: [{ id: "a" }],
+      columns: [{ }],
       groups: [{ id: "g1", title: "G", columns: [0] }]
     });
 
@@ -160,11 +173,11 @@ describe("HeaderManager — resolves once and caches", () => {
 
 describe("HeaderManager.rebuild", () => {
   it("prepares a validated root without changing the live root", () => {
-    const manager = new HeaderManager({ columns: [{ id: "a", header: "A" }] });
+    const manager = new HeaderManager({ columns: [{ header: "A" }] });
     const oldHeaders = manager.getHeaders();
     const root = manager.prepareRoot([
-      { id: "x", header: "X" },
-      { id: "y", header: "Y" }
+      { header: "X" },
+      { header: "Y" }
     ]);
 
     expect(manager.getHeaders()).toBe(oldHeaders);
@@ -176,7 +189,7 @@ describe("HeaderManager.rebuild", () => {
 
   it("keeps the old root stable when root preparation fails", () => {
     const manager = new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }],
+      columns: [{ }, { }],
       groups: [{ id: "good", title: "Good", columns: [0, 1] }]
     });
     const oldHeaders = manager.getHeaders();
@@ -184,24 +197,24 @@ describe("HeaderManager.rebuild", () => {
 
     expect(() =>
       manager.prepareRoot(
-        [{ id: "a" }],
+        [{ }],
         [{ id: "bad", title: "Bad", columns: [0, 1] }]
       )
     ).toThrow(CyExcelError);
 
     expect(manager.getHeaders()).toBe(oldHeaders);
     expect(manager.getGroups()).toBe(oldGroups);
-    expect(manager.getHeader(0).title).toBe("a");
+    expect(manager.getHeader(0).title).toBe("A");
     expect(manager.getGroups()[0]?.id).toBe("good");
   });
 
   it("re-resolves headers from a new column list", () => {
-    const manager = new HeaderManager({ columns: [{ id: "a", header: "A" }] });
+    const manager = new HeaderManager({ columns: [{ header: "A" }] });
     expect(manager.getHeaders().map((header) => header.title)).toEqual(["A"]);
 
     manager.replaceRoot(manager.prepareRoot([
-      { id: "a", header: "A" },
-      { id: "b", header: "B" }
+      { header: "A" },
+      { header: "B" }
     ]));
 
     expect(manager.getHeaders().map((header) => header.title)).toEqual(["A", "B"]);
@@ -209,20 +222,20 @@ describe("HeaderManager.rebuild", () => {
 
   it("replaces groups with whatever (possibly empty) groups are supplied to prepareRoot()", () => {
     const manager = new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }],
+      columns: [{ }, { }],
       groups: [{ id: "g", title: "G", columns: [0, 1] }]
     });
     expect(manager.getGroups()).toHaveLength(1);
 
-    manager.replaceRoot(manager.prepareRoot([{ id: "a" }, { id: "b" }, { id: "c" }]));
+    manager.replaceRoot(manager.prepareRoot([{ }, { }, { }]));
 
     expect(manager.getGroups()).toHaveLength(0);
   });
 
   it("getHeader() reflects the replacement root immediately", () => {
-    const manager = new HeaderManager({ columns: [{ id: "a", header: "A" }] });
+    const manager = new HeaderManager({ columns: [{ header: "A" }] });
 
-    manager.replaceRoot(manager.prepareRoot([{ id: "x", header: "X" }]));
+    manager.replaceRoot(manager.prepareRoot([{ header: "X" }]));
 
     expect(manager.getHeader(0).title).toBe("X");
   });
@@ -234,7 +247,7 @@ describe("HeaderManager — arbitrary-depth nested groups (Step 19)", () => {
     // Level 1: "dept" wraps both categories -> [0,3].
     // Level 2: "root" wraps dept -> [0,3].
     return new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }],
+      columns: [{ }, { }, { }, { }],
       groups: [
         {
           id: "root",
@@ -277,10 +290,10 @@ describe("HeaderManager — arbitrary-depth nested groups (Step 19)", () => {
 
   it("groupDepth reflects the deepest branch", () => {
     expect(threeLevelManager().groupDepth).toBe(3);
-    expect(new HeaderManager({ columns: [{ id: "a" }] }).groupDepth).toBe(0);
+    expect(new HeaderManager({ columns: [{ }] }).groupDepth).toBe(0);
     expect(
       new HeaderManager({
-        columns: [{ id: "a" }],
+        columns: [{ }],
         groups: [{ id: "g", title: "G", columns: [0] }]
       }).groupDepth
     ).toBe(1); // Step 9's single-level case is depth 1.
@@ -288,7 +301,7 @@ describe("HeaderManager — arbitrary-depth nested groups (Step 19)", () => {
 
   it("getGroups() with no argument defaults to level 0 — Step 9 behavior unchanged", () => {
     const manager = new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }],
+      columns: [{ }, { }],
       groups: [{ id: "g1", title: "Basics", columns: [0, 1] }]
     });
 
@@ -306,7 +319,7 @@ describe("HeaderManager — arbitrary-depth nested groups (Step 19)", () => {
     // Columns 0-1 are only grouped one level deep ("shallow"); columns 2-3
     // are grouped two levels deep via "wrapper" -> "deep".
     const manager = new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }],
+      columns: [{ }, { }, { }, { }],
       groups: [
         { id: "shallow", title: "Shallow", columns: [0, 1] },
         {
@@ -330,7 +343,7 @@ describe("HeaderManager — arbitrary-depth nested groups (Step 19)", () => {
     expect(
       () =>
         new HeaderManager({
-          columns: [{ id: "a" }, { id: "b" }],
+          columns: [{ }, { }],
           groups: [{ id: "bad", title: "Bad", columns: [0, 1], children: [{ id: "x", title: "X", columns: [0] }] }]
         })
     ).toThrow(CyExcelError);
@@ -340,7 +353,7 @@ describe("HeaderManager — arbitrary-depth nested groups (Step 19)", () => {
     expect(
       () =>
         new HeaderManager({
-          columns: [{ id: "a" }],
+          columns: [{ }],
           groups: [{ id: "bad", title: "Bad" }]
         })
     ).toThrow(CyExcelError);
@@ -350,7 +363,7 @@ describe("HeaderManager — arbitrary-depth nested groups (Step 19)", () => {
     expect(
       () =>
         new HeaderManager({
-          columns: [{ id: "a" }],
+          columns: [{ }],
           groups: [{ id: "bad", title: "Bad", children: [] }]
         })
     ).toThrow(CyExcelError);
@@ -360,7 +373,7 @@ describe("HeaderManager — arbitrary-depth nested groups (Step 19)", () => {
     expect(
       () =>
         new HeaderManager({
-          columns: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }],
+          columns: [{ }, { }, { }, { }],
           groups: [
             {
               id: "parent",
@@ -379,7 +392,7 @@ describe("HeaderManager — arbitrary-depth nested groups (Step 19)", () => {
     expect(
       () =>
         new HeaderManager({
-          columns: [{ id: "a" }, { id: "b" }, { id: "c" }],
+          columns: [{ }, { }, { }],
           groups: [
             {
               id: "parent",
@@ -399,7 +412,7 @@ describe("HeaderManager — arbitrary-depth nested groups (Step 19)", () => {
     expect(manager.groupDepth).toBe(3);
 
     manager.replaceRoot(manager.prepareRoot(
-      [{ id: "a" }, { id: "b" }],
+      [{ }, { }],
       [{ id: "flat", title: "Flat", columns: [0, 1] }]
     ));
 

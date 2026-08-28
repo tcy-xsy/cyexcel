@@ -32,8 +32,8 @@ function createLayout(): LayoutEngine {
 
 function createGridFixture() {
   const columns: readonly ColumnDefinition[] = Object.freeze([
-    Object.freeze({ id: "a", width: 30 }),
-    Object.freeze({ id: "b", width: 40 })
+    Object.freeze({ width: 30 }),
+    Object.freeze({ width: 40 })
   ]);
   const registry = new CellTypeRegistry();
   registerBuiltinCellTypes(registry);
@@ -74,7 +74,7 @@ function createColumnInsertMutation(owner: GridStructureOwner) {
     owner,
     { axis: "column", operation: "insert", start: 1, count: 1 },
     createGridStructurePayload({
-      columns: [{ id: "x", width: 50 }],
+      columns: [{ width: 50 }],
       columnWidths: [50]
     })
   );
@@ -222,9 +222,9 @@ describe("LayoutRootMutation", () => {
 
     const receipt = coordinator.commit(prepared);
 
-    expect(fixture.getColumns().map((column) => column.id)).toEqual(["a", "x", "b"]);
-    expect(fixture.columnManager.getColumns().map((column) => column.id)).toEqual(["a", "x", "b"]);
-    expect(fixture.headerManager.getHeaders().map((header) => header.title)).toEqual(["a", "x", "b"]);
+    expect(fixture.getColumns().map((column) => column.width)).toEqual([30, 50, 40]);
+    expect(fixture.columnManager.getColumns().map((column) => column.width)).toEqual([30, 50, 40]);
+    expect(fixture.headerManager.getHeaders().map((header) => header.title)).toEqual(["A", "B", "C"]);
     expect(fixture.layout.getColumnWidthsSnapshot()).toEqual([30, 50, 75]);
     expect(fixture.layout.columnCount).toBe(3);
     expect(fixture.layout.version).toBe(2);
@@ -255,9 +255,9 @@ describe("LayoutRootMutation", () => {
 
     const receipt = coordinator.commit(prepared);
 
-    expect(fixture.getColumns().map((column) => column.id)).toEqual(["a", "x", "b"]);
-    expect(fixture.columnManager.getColumns().map((column) => column.id)).toEqual(["a", "x", "b"]);
-    expect(fixture.headerManager.getHeaders().map((header) => header.title)).toEqual(["a", "x", "b"]);
+    expect(fixture.getColumns().map((column) => column.width)).toEqual([30, 50, 40]);
+    expect(fixture.columnManager.getColumns().map((column) => column.width)).toEqual([30, 50, 40]);
+    expect(fixture.headerManager.getHeaders().map((header) => header.title)).toEqual(["A", "B", "C"]);
     expect(fixture.layout.getColumnWidthsSnapshot()).toEqual([30, 50, 75]);
     expect(fixture.layout.columnCount).toBe(3);
     expect(fixture.layout.version).toBe(2);
@@ -289,7 +289,7 @@ describe("LayoutRootMutation", () => {
     expect(fixture.headerManager.root).toBe(initialRoot.headers);
     expect(fixture.layout.root).toBe(initialRoot.layout);
     expect(fixture.selection.root).toBe(initialRoot.selection);
-    expect(fixture.getColumns().map((column) => column.id)).toEqual(["a", "b"]);
+    expect(fixture.getColumns().map((column) => column.width)).toEqual([30, 40]);
     expect(fixture.layout.getColumnWidthsSnapshot()).toEqual([30, 40]);
     expect(fixture.layout.columnCount).toBe(2);
     expect(fixture.layout.version).toBe(0);

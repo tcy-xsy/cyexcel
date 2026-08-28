@@ -24,9 +24,9 @@
       const container = document.getElementById("app");
       const fields = ["name", "price", "qty"];
       const columns = [
-        { id: "name", field: "name", width: 120 },
-        { id: "price", field: "price", width: 100 },
-        { id: "qty", field: "qty", width: 100 }
+        { width: 120 },
+        { width: 100 },
+        { width: 100 }
       ];
       const data = Array.from({ length: 50 }, (_unused, index) => ({
         name: `Item ${index}`,

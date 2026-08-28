@@ -48,26 +48,26 @@ function createOwner(columns: readonly ColumnDefinition[]) {
 
 describe("GridStructureOwner", () => {
   it("prepares all column roots without touching live owners", () => {
-    const fixture = createOwner([{ id: "a", width: 30 }, { id: "b", width: 40 }]);
+    const fixture = createOwner([{ width: 30 }, { width: 40 }]);
     fixture.selection.selectColumn(1);
     const before = fixture.owner.getRoot();
     const prepared = fixture.owner.prepare(
       before,
       { axis: "column", operation: "insert", start: 1, count: 1 },
-      { columns: [{ id: "x", width: 50 }], columnWidths: [50] },
+      { columns: [{ width: 50 }], columnWidths: [50] },
       createPrepareContext()
     );
 
     expect(fixture.owner.isCurrent(before)).toBe(true);
-    expect(prepared.nextRoot.columns.map((column) => column.id)).toEqual(["a", "x", "b"]);
-    expect(prepared.nextRoot.runtimeColumns.map((column) => column.id)).toEqual(["a", "x", "b"]);
-    expect(prepared.nextRoot.headers.headers.map((header) => header.title)).toEqual(["a", "x", "b"]);
+    expect(prepared.nextRoot.columns.map((column) => column.width)).toEqual([30, 50, 40]);
+    expect(prepared.nextRoot.runtimeColumns.map((column) => column.width)).toEqual([30, 50, 40]);
+    expect(prepared.nextRoot.headers.headers.map((header) => header.title)).toEqual(["A", "B", "C"]);
     expect(prepared.nextRoot.layout.columnAxis.copyColumnWidths()).toEqual([30, 50, 40]);
     expect(prepared.nextRoot.selection.active.column).toBe(2);
   });
 
   it("prepares a declarative inverse that restores deleted column state", () => {
-    const fixture = createOwner([{ id: "a", width: 30 }, { id: "b", width: 40 }]);
+    const fixture = createOwner([{ width: 30 }, { width: 40 }]);
     const before = fixture.owner.getRoot();
     const forward = fixture.owner.prepare(
       before,
@@ -83,21 +83,21 @@ describe("GridStructureOwner", () => {
       forward.inversePayload,
       createPrepareContext()
     );
-    expect(inverse.nextRoot.columns.map((column) => column.id)).toEqual(["a", "b"]);
+    expect(inverse.nextRoot.columns.map((column) => column.width)).toEqual([30, 40]);
     expect(inverse.nextRoot.layout.columnAxis.copyColumnWidths()).toEqual([30, 40]);
     expect(inverse.nextRoot.selection.active.column).toBe(1);
     expect(inverse.nextRoot.layout.version).toBeGreaterThan(forward.nextRoot.layout.version);
     fixture.owner.replaceRoot(inverse.nextRoot);
-    expect(fixture.getColumns().map((column) => column.id)).toEqual(["a", "b"]);
+    expect(fixture.getColumns().map((column) => column.width)).toEqual([30, 40]);
   });
 
   it("replays history against the current selection instead of restoring a captured selection root", () => {
-    const fixture = createOwner([{ id: "a", width: 30 }, { id: "b", width: 40 }]);
+    const fixture = createOwner([{ width: 30 }, { width: 40 }]);
     fixture.selection.selectColumn(1);
     const forward = fixture.owner.prepare(
       fixture.owner.getRoot(),
       { axis: "column", operation: "insert", start: 0, count: 1 },
-      { columns: [{ id: "x", width: 50 }], columnWidths: [50] },
+      { columns: [{ width: 50 }], columnWidths: [50] },
       createPrepareContext()
     );
     fixture.owner.replaceRoot(forward.nextRoot);
@@ -115,11 +115,11 @@ describe("GridStructureOwner", () => {
   });
 
   it("keeps later width changes on surviving columns when replaying an insert inverse", () => {
-    const fixture = createOwner([{ id: "a", width: 30 }, { id: "b", width: 40 }]);
+    const fixture = createOwner([{ width: 30 }, { width: 40 }]);
     const forward = fixture.owner.prepare(
       fixture.owner.getRoot(),
       { axis: "column", operation: "insert", start: 1, count: 1 },
-      { columns: [{ id: "x", width: 50 }], columnWidths: [50] },
+      { columns: [{ width: 50 }], columnWidths: [50] },
       createPrepareContext()
     );
     fixture.owner.replaceRoot(forward.nextRoot);
@@ -137,21 +137,21 @@ describe("GridStructureOwner", () => {
   });
 
   it("canonicalizes delete history so captured restore data exists only on the inverse insert", () => {
-    const fixture = createOwner([{ id: "a", width: 30 }, { id: "b", width: 40 }]);
+    const fixture = createOwner([{ width: 30 }, { width: 40 }]);
     const forward = fixture.owner.prepare(
       fixture.owner.getRoot(),
       { axis: "column", operation: "delete", start: 0, count: 1 },
-      { columns: [{ id: "unused" }], columnWidths: [999] },
+      { columns: [{ }], columnWidths: [999] },
       createPrepareContext()
     );
 
     expect(forward.forwardPayload).toEqual({});
-    expect(forward.inversePayload.columns?.map((column) => column.id)).toEqual(["a"]);
+    expect(forward.inversePayload.columns?.map((column) => column.width)).toEqual([30]);
     expect(forward.inversePayload.columnWidths).toEqual([30]);
   });
 
   it("increments layout version on every semantic undo and redo prepare", () => {
-    const fixture = createOwner([{ id: "a", width: 30 }, { id: "b", width: 40 }]);
+    const fixture = createOwner([{ width: 30 }, { width: 40 }]);
     const forward = fixture.owner.prepare(
       fixture.owner.getRoot(),
       { axis: "row", operation: "insert", start: 1, count: 1 },
@@ -181,7 +181,7 @@ describe("GridStructureOwner", () => {
   });
 
   it("captures deleted row geometry as a persistent fragment for undo", () => {
-    const fixture = createOwner([{ id: "a", width: 30 }]);
+    const fixture = createOwner([{ width: 30 }]);
     fixture.layout.replaceRoot(fixture.layout.prepareSetRowHeights(new Map([[
       1,
       { height: 47, provenance: "auto" }

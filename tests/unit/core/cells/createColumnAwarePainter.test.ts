@@ -9,8 +9,8 @@ import { RecordingCanvasContext } from "../../../helpers/RecordingCanvasContext"
 
 function textColumn(overrides: Partial<RuntimeColumn> = {}): RuntimeColumn {
   return {
-    id: "c",
-    field: "c",
+    
+    
     width: 100,
     typeName: "text",
     format: (value) => (value === undefined || value === null ? "" : String(value)),
@@ -174,8 +174,8 @@ describe("createColumnAwarePainter — error isolation through ContentLayerRende
       }
     };
     const columns: readonly RuntimeColumn[] = [
-      textColumn({ id: "bad", renderer: throwingRenderer }),
-      textColumn({ id: "good", format: () => "still-fine" })
+      textColumn({ renderer: throwingRenderer }),
+      textColumn({ format: () => "still-fine" })
     ];
     const errors: unknown[] = [];
     const renderer = new ContentLayerRenderer({

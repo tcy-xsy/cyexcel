@@ -125,7 +125,8 @@ export class HeaderManager {
   readonly #columnLetterFallback: boolean;
 
   constructor(options: HeaderManagerOptions) {
-    this.#columnLetterFallback = options.columnLetterFallback ?? false;
+    // 默认 A/B/C（ADR 0004 §3.8.1）——列没有 `id` 之后没有第二个可当默认的答案。
+    this.#columnLetterFallback = options.columnLetterFallback ?? true;
     this.#root = this.prepareRoot(options.columns, options.groups);
   }
 
@@ -154,7 +155,14 @@ export class HeaderManager {
   ): readonly RuntimeHeader[] {
     return Object.freeze(columns.map((column, index) => {
       const declared = column.header;
-      const fallback = columnLetterFallback ? columnIndexToLetter(index) : column.id;
+      /*
+       * 兜底原来是 `column.id`，而列已经没有 `id` 了（ADR 0004 §3.8.2）。剩下
+       * 的两种答案分别对应这个开关的两个值：打开是电子表格字母（A/B/C，默认，
+       * §3.8.1 把默认从 `false` 翻成了 `true`），关掉是**没有标题**——不是回退
+       * 到别的什么名字，而是这一列就不显示标题。关掉它的语义因此从"用 id 当
+       * 标题"变成了"只显示我自己声明的标题"。
+       */
+      const fallback = columnLetterFallback ? columnIndexToLetter(index) : "";
       if (typeof declared === "string") {
         return Object.freeze({ column: index, title: declared });
       }

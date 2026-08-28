@@ -39,7 +39,7 @@ function createLayout(columnCount: number, freeze?: { columns?: number }): Layou
 function threeLevelHeaderManager(): HeaderManager {
   // Level 0: "cat-a"[0,1]/"cat-b"[2,3]. Level 1: "dept"[0,3]. Level 2: "root"[0,3].
   return new HeaderManager({
-    columns: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }],
+    columns: [{ }, { }, { }, { }],
     groups: [
       {
         id: "root",
@@ -110,7 +110,7 @@ describe("hitTestHeaderGroup", () => {
 
   it("returns null when there are no groups at all (groupDepth 0)", () => {
     const layout = createLayout(4);
-    const headerManager = new HeaderManager({ columns: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }] });
+    const headerManager = new HeaderManager({ columns: [{ }, { }, { }, { }] });
 
     const result = hitTestHeaderGroup({ x: 10, y: 0 }, createScene(layout), headerManager);
 
@@ -120,7 +120,7 @@ describe("hitTestHeaderGroup", () => {
   it("returns null for a column whose branch doesn't reach this level (blank background)", () => {
     const layout = createLayout(4);
     const headerManager = new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }],
+      columns: [{ }, { }, { }, { }],
       groups: [
         { id: "shallow", title: "Shallow", columns: [0, 1] },
         { id: "wrapper", title: "Wrapper", children: [{ id: "deep", title: "Deep", columns: [2, 3] }] }

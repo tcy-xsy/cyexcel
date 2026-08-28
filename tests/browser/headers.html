@@ -111,19 +111,17 @@
 
       const fields = ["sku", "name", "price", "qty", "status", "closed"];
       const columns = [
-        { id: "sku", field: "sku", width: 100, header: "SKU" },
-        { id: "name", field: "name", width: 140, header: "Name" },
+        { width: 100, header: "SKU" },
+        { width: 140, header: "Name" },
         {
-          id: "price",
-          field: "price",
           width: 90,
           header: { title: "Price", renderer: priceHeaderRenderer },
           minWidth: 60,
           maxWidth: 200
         },
-        { id: "qty", field: "qty", width: 80, header: "Qty" },
-        { id: "status", field: "status", width: 100, header: { title: "Status", renderer: statusHeaderFactory } },
-        { id: "closed", field: "closed", width: 100, header: { title: "Closed", renderer: closedNativeHeaderFactory } }
+        { width: 80, header: "Qty" },
+        { width: 100, header: { title: "Status", renderer: statusHeaderFactory } },
+        { width: 100, header: { title: "Closed", renderer: closedNativeHeaderFactory } }
       ];
 
       const headerGroups = [

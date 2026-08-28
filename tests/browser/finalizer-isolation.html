@@ -128,15 +128,14 @@
       let throwFormat = false;
       sheet = new CyExcelCore(document.getElementById("app"), {
         columns: [
-          { id: "dom", width: 90, renderer: cellFactory, header: { title: "DOM", renderer: headerFactory } },
+          { width: 90, renderer: cellFactory, header: { title: "DOM", renderer: headerFactory } },
           {
-            id: "wrapped",
             width: 80,
             wrap: true,
             header: "Wrapped",
             type: "throwing"
           },
-          { id: "canvas-intent", width: 80, renderer: canvasIntentRenderer }
+          { width: 80, renderer: canvasIntentRenderer }
         ],
         columnTypes: {
           throwing: {

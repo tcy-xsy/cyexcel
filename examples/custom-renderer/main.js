@@ -45,9 +45,9 @@ const activeRendererFactory = {
 };
 
 const columns = [
-  { id: "name", field: "name", width: 200, header: "Name" },
-  { id: "clicks", field: "clicks", width: 160, header: "Clicks", renderer: clicksRenderer },
-  { id: "active", field: "active", width: 160, header: "Active", renderer: activeRendererFactory }
+  { width: 200, header: "Name" },
+  { width: 160, header: "Clicks", renderer: clicksRenderer },
+  { width: 160, header: "Active", renderer: activeRendererFactory }
 ];
 
 /** The i-th field is the i-th column — a parameter of the import, not of `columns`. */

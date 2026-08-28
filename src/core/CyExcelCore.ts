@@ -213,8 +213,10 @@ export interface CyExcelCoreOptions {
   readonly headerGroups?: readonly HeaderGroupDefinition[];
   /**
    * When a column has no explicit `header`, show its spreadsheet-style
-   * letter (A, B, ..., Z, AA, ...) instead of falling back to its `id`.
-   * Default `false` — unset behavior (fall back to `id`) is unchanged. An
+   * letter (A, B, ..., Z, AA, ...). **Default `true`** (ADR 0004 §3.8.1):
+   * columns no longer have an `id`, so there is no other name to fall back
+   * to. Set it `false` to leave such columns with no title at all — that is
+   * now what "off" means, not "use the id". An
    * explicit `header` always overrides the letter for that one column —
    * letter and custom title are mutually exclusive per column (one row),
    * not a separate always-visible letter row stacked on top — matching
@@ -661,7 +663,7 @@ export class CyExcelCore {
     this.#headerManager = new HeaderManager({
       columns: this.#columns,
       groups: this.#headerGroups,
-      columnLetterFallback: options.columnLetterFallback ?? false
+      columnLetterFallback: options.columnLetterFallback ?? true
     });
     this.#columnHeaderHeight = options.headerHeight ?? 0;
     this.#groupHeaderHeight =

@@ -28,7 +28,7 @@ describe("InsertColumnsCommand", () => {
   it("inserts the given columns and produces a column-structure insert patch", () => {
     const { store } = createStore();
     const manager = createTableCommandManager(store);
-    const command = new InsertColumnsCommand(1, [{ id: "x", field: "x" }]);
+    const command = new InsertColumnsCommand(1, [{ }]);
 
     const patches = manager.execute(command);
 
@@ -41,8 +41,8 @@ describe("InsertColumnsCommand", () => {
     const { store } = createStore();
     const manager = createTableCommandManager(store);
     const command = new InsertColumnsCommand(1, [
-      { id: "x", field: "x" },
-      { id: "y", field: "y" }
+      { },
+      { }
     ]);
     manager.execute(command);
 
@@ -55,7 +55,7 @@ describe("InsertColumnsCommand", () => {
   it("redo (execute again) reinserts the same columns", () => {
     const { store } = createStore();
     const manager = createTableCommandManager(store);
-    const command = new InsertColumnsCommand(1, [{ id: "x", field: "x" }]);
+    const command = new InsertColumnsCommand(1, [{ }]);
     manager.execute(command);
     manager.undo();
 
@@ -160,7 +160,7 @@ describe("column commands — staged transaction view", () => {
     const manager = createTableCommandManager(store, { hooks });
 
     manager.transaction(() => {
-      manager.execute(new InsertColumnsCommand(1, [{ id: "x", field: "x" }]));
+      manager.execute(new InsertColumnsCommand(1, [{ }]));
       manager.execute(new SetCellCommand(0, 1, "X"));
       expect(store.getColumnCount()).toBe(2);
     });
@@ -246,7 +246,7 @@ describe("column commands — beforeColumnsChange cancellation leaves no partial
     const manager = createTableCommandManager(store, { hooks });
 
     expect(() =>
-      manager.execute(new InsertColumnsCommand(1, [{ id: "x", field: "x" }]))
+      manager.execute(new InsertColumnsCommand(1, [{ }]))
     ).toThrow(CyExcelError);
 
     expect(readColumnLabels(store, 3)).toEqual(["A", "B", "C"]);
@@ -291,7 +291,7 @@ describe("column commands — beforeColumnsChange cancellation leaves no partial
 
     expect(() => {
       manager.transaction(() => {
-        manager.execute(new InsertColumnsCommand(0, [{ id: "x", field: "x" }]));
+        manager.execute(new InsertColumnsCommand(0, [{ }]));
         manager.execute(new DeleteColumnsCommand(0, 1));
       });
     }).toThrow(CyExcelError);

@@ -210,9 +210,18 @@ export interface ColumnClipboardPolicy {
  * `../headers/types.ts` re-exports these for anyone browsing that module.
  */
 export interface ColumnDefinition<T = unknown> {
-  readonly id: string;
-  /** Field name in each row object; defaults to `id`. */
-  readonly field?: string;
+  /*
+   * 没有 `id`，也没有 `field`——列在这个模型里没有身份（ADR 0004 §3.8.2）。
+   * 一列**就是**它的下标：公开 API 本来就全是下标制（`getCell(row, column)`、
+   * `setColumnWidth(column, width)`、`sortByColumn(column)`，没有一个吃 `id`），
+   * 而 `field` 随对象数组一起降级成了导入那一刻的参数
+   * （`rowsToWorkbookSnapshot` 的 `fields`，§3.2/§4.5），导入之后存储里只有
+   * `(row, column)`，再没有字段名可对。
+   *
+   * 代价是「结构操作后的列身份」：插一列之后下标全移，持有某列引用的调用方会
+   * 错位。Excel 就是这样（公式靠 remap 而不是 id），仓库里 `Patch` 的
+   * `column-structure` + `remapIndex()` 也已经在做这件事。ADR 已接受。
+   */
   /** Column width in logical pixels; defaults to 120. */
   readonly width?: number;
   /** Lower/upper bound a column-resize drag is clamped to (Step 9). */
@@ -258,8 +267,6 @@ export interface ColumnDefinition<T = unknown> {
  * re-merged during painting — see ColumnManager.
  */
 export interface RuntimeColumn<T = unknown> extends CellType<T> {
-  readonly id: string;
-  readonly field: string;
   readonly width: number;
   readonly typeName: string;
   readonly renderer?: CanvasCellRenderer<T> | DomCellRendererFactory<T>;

@@ -12,10 +12,10 @@ function manager(): ColumnManager {
   registerBuiltinCellTypes(registry);
   return new ColumnManager({
     columns: [
-      { id: "name", type: "text" },
-      { id: "tags", type: "array" },
-      { id: "meta", type: "json" },
-      { id: "secret", type: "text", clipboard: { copy: false } }
+      { type: "text" },
+      { type: "array" },
+      { type: "json" },
+      { type: "text", clipboard: { copy: false } }
     ],
     registry
   });
@@ -74,7 +74,7 @@ describe("buildCellGrid — raw mode", () => {
   it("falls back to String(value) for a type with no serialize()", () => {
     const registry = new CellTypeRegistry();
     registry.register("plain", { format: (v) => String(v ?? "") });
-    const columnManager = new ColumnManager({ columns: [{ id: "n", type: "plain" }], registry });
+    const columnManager = new ColumnManager({ columns: [{ type: "plain" }], registry });
 
     const grid = buildCellGrid(
       { startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 },
@@ -120,7 +120,7 @@ describe("buildCellGrid — column clipboard policy", () => {
     const registry = new CellTypeRegistry();
     registerBuiltinCellTypes(registry);
     const columnManager = new ColumnManager({
-      columns: [{ id: "secret", type: "text", clipboard: { copy: false } }],
+      columns: [{ type: "text", clipboard: { copy: false } }],
       registry
     });
 

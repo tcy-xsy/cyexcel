@@ -75,10 +75,8 @@ function createScene(layout: LayoutEngine, viewport: ViewportState): SceneSnapsh
   });
 }
 
-function textColumn(id: string): RuntimeColumn {
+function textColumn(): RuntimeColumn {
   return {
-    id,
-    field: id,
     width: 50,
     typeName: "text",
     format: (v) => String(v ?? ""),
@@ -89,10 +87,8 @@ function textColumn(id: string): RuntimeColumn {
   };
 }
 
-function domColumn(id: string, factory: DomCellRendererFactory): RuntimeColumn {
+function domColumn(factory: DomCellRendererFactory): RuntimeColumn {
   return {
-    id,
-    field: id,
     width: 50,
     typeName: "text",
     format: (v) => String(v ?? ""),
@@ -136,7 +132,7 @@ describe("DOMCellManager — mounts within the visible range", () => {
     });
     const { manager } = createManager({
       layout,
-      columns: [textColumn("plain"), domColumn("interactive", factory)]
+      columns: [textColumn(), domColumn(factory)]
     });
 
     manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 100, height: 40 }));
@@ -157,7 +153,7 @@ describe("DOMCellManager — mounts within the visible range", () => {
     });
     const { manager, hosts } = createManager({
       layout,
-      columns: [domColumn("native", factory)]
+      columns: [domColumn(factory)]
     });
 
     manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 50, height: 20 }));
@@ -176,7 +172,7 @@ describe("DOMCellManager — reuses instances by renderer identity as cells scro
       rowHeight: 20,
       columnWidths: [50]
     });
-    const { manager } = createManager({ layout, columns: [domColumn("interactive", factory)] });
+    const { manager } = createManager({ layout, columns: [domColumn(factory)] });
 
     manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 50, height: 40 })); // rows ~0-1 visible
     const afterFirstSync = instances.length;
@@ -202,7 +198,7 @@ describe("DOMCellManager — reuses instances by renderer identity as cells scro
     });
     const { manager } = createManager({
       layout,
-      columns: [domColumn("interactive", factory)],
+      columns: [domColumn(factory)],
       commitValue: (row, column, value) => commits.push({ row, column, value })
     });
 
@@ -236,7 +232,7 @@ describe("DOMCellManager — re-syncing an unchanged viewport", () => {
       rowHeight: 20,
       columnWidths: [50]
     });
-    const { manager } = createManager({ layout, columns: [domColumn("interactive", factory)] });
+    const { manager } = createManager({ layout, columns: [domColumn(factory)] });
     const viewport = { scrollTop: 0, scrollLeft: 0, width: 50, height: 40 };
 
     manager.sync(createScene(layout, viewport));
@@ -261,7 +257,7 @@ describe("DOMCellManager — frozen rows/columns", () => {
     });
     const { manager } = createManager({
       layout,
-      columns: [domColumn("frozen-corner", factory), textColumn("plain")]
+      columns: [domColumn(factory), textColumn()]
     });
 
     manager.sync(createScene(layout, { scrollTop: 5000, scrollLeft: 0, width: 100, height: 40 }));
@@ -283,7 +279,7 @@ describe("DOMCellManager — frozen rows/columns", () => {
     });
     const { manager, hosts } = createManager({
       layout,
-      columns: [textColumn("frozen"), domColumn("scrollable", factory)]
+      columns: [textColumn(), domColumn(factory)]
     });
 
     manager.sync(createScene(layout, { scrollTop: 10, scrollLeft: 20, width: 100, height: 40 }));
@@ -307,7 +303,7 @@ describe("DOMCellManager — instance count does not grow with total row count",
       rowHeight: 20,
       columnWidths: [50]
     });
-    const { manager } = createManager({ layout, columns: [domColumn("interactive", factory)] });
+    const { manager } = createManager({ layout, columns: [domColumn(factory)] });
 
     // Keep this focused on DOM pooling, not the current dense SkeletonSnapshot
     // construction cost. A 100k-row layout is still far beyond visible size.
@@ -329,7 +325,7 @@ describe("DOMCellManager.dispose", () => {
       rowHeight: 20,
       columnWidths: [50]
     });
-    const { manager } = createManager({ layout, columns: [domColumn("interactive", factory)] });
+    const { manager } = createManager({ layout, columns: [domColumn(factory)] });
 
     manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 50, height: 40 }));
     manager.sync(createScene(layout, { scrollTop: 2000, scrollLeft: 0, width: 50, height: 40 }));
@@ -353,7 +349,7 @@ describe("DOMCellManager — failed mount cleanup", () => {
       })
     };
     const layout = new LayoutEngine({ rowCount: 1, columnCount: 1, rowHeight: 20, columnWidths: [50] });
-    const { manager, hosts } = createManager({ layout, columns: [domColumn("broken", factory)] });
+    const { manager, hosts } = createManager({ layout, columns: [domColumn(factory)] });
 
     expect(() => manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 50, height: 20 })))
       .toThrow("mount failed");

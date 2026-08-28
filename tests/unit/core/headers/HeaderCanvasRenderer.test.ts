@@ -104,7 +104,7 @@ describe("HeaderCanvasRenderer — leaf headers (先写测试 #1: title/sort/fil
   it("draws each visible column's title by default", () => {
     const ctx = new RecordingCanvasContext();
     const headerManager = new HeaderManager({
-      columns: [{ id: "a", header: "A" }, { id: "b", header: "B" }]
+      columns: [{ header: "A" }, { header: "B" }]
     });
     const renderer = createRenderer({
       ctx,
@@ -123,7 +123,7 @@ describe("HeaderCanvasRenderer — leaf headers (先写测试 #1: title/sort/fil
 
   it("reflects sorted state in the default painter's output", () => {
     const ctx = new RecordingCanvasContext();
-    const headerManager = new HeaderManager({ columns: [{ id: "a", header: "A" }] });
+    const headerManager = new HeaderManager({ columns: [{ header: "A" }] });
     const renderer = createRenderer({
       ctx,
       layout: createLayout(1),
@@ -145,7 +145,7 @@ describe("HeaderCanvasRenderer — leaf headers (先写测试 #1: title/sort/fil
 
   it("reflects filtered state in the default painter's output", () => {
     const ctx = new RecordingCanvasContext();
-    const headerManager = new HeaderManager({ columns: [{ id: "a", header: "A" }] });
+    const headerManager = new HeaderManager({ columns: [{ header: "A" }] });
     const renderer = createRenderer({
       ctx,
       layout: createLayout(1),
@@ -171,7 +171,7 @@ describe("HeaderCanvasRenderer — leaf headers (先写测试 #1: title/sort/fil
       paint: (context) => paintedWith.push(context)
     };
     const headerManager = new HeaderManager({
-      columns: [{ id: "a", header: { title: "A", renderer: custom } }]
+      columns: [{ header: { title: "A", renderer: custom } }]
     });
     const renderer = createRenderer({
       ctx,
@@ -210,7 +210,7 @@ describe("HeaderCanvasRenderer — leaf headers (先写测试 #1: title/sort/fil
   it("clips a partially scrolled leaf header to its canonical scrollable pane", () => {
     const ctx = new RecordingCanvasContext();
     const headerManager = new HeaderManager({
-      columns: [{ id: "frozen", header: "Frozen" }, { id: "scroll", header: "Scroll" }]
+      columns: [{ header: "Frozen" }, { header: "Scroll" }]
     });
     const renderer = createRenderer({
       ctx,
@@ -231,7 +231,7 @@ describe("HeaderCanvasRenderer — two-level groups (先写测试 #4: split at f
   it("draws one group title when it doesn't straddle the frozen boundary", () => {
     const ctx = new RecordingCanvasContext();
     const headerManager = new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }],
+      columns: [{ }, { }],
       groups: [{ id: "g1", title: "Group", columns: [0, 1] }]
     });
     const renderer = createRenderer({
@@ -252,7 +252,7 @@ describe("HeaderCanvasRenderer — two-level groups (先写测试 #4: split at f
   it("draws a group straddling the frozen boundary as two fragments, both showing the group's title", () => {
     const ctx = new RecordingCanvasContext();
     const headerManager = new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }, { id: "c" }],
+      columns: [{ }, { }, { }],
       groups: [{ id: "g1", title: "Group", columns: [0, 1, 2] }]
     });
     const renderer = createRenderer({
@@ -273,7 +273,7 @@ describe("HeaderCanvasRenderer — two-level groups (先写测试 #4: split at f
   it("keeps a frozen group fragment's x unshifted while the scrollable fragment scrolls", () => {
     const ctx = new RecordingCanvasContext();
     const headerManager = new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }, { id: "c" }],
+      columns: [{ }, { }, { }],
       groups: [{ id: "g1", title: "Group", columns: [0, 1, 2] }]
     });
     const renderer = createRenderer({
@@ -298,7 +298,7 @@ describe("HeaderCanvasRenderer — arbitrary-depth nested groups (Step 19)", () 
     // Same tree HeaderManager.test.ts uses: level 0 "cat-a"[0,1]/"cat-b"[2,3],
     // level 1 "dept"[0,3], level 2 "root"[0,3].
     return new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }],
+      columns: [{ }, { }, { }, { }],
       groups: [
         {
           id: "root",
@@ -376,7 +376,7 @@ describe("HeaderCanvasRenderer — arbitrary-depth nested groups (Step 19)", () 
   it("a shallower branch leaves its higher levels blank (no fillText for it there)", () => {
     const ctx = new RecordingCanvasContext();
     const headerManager = new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }],
+      columns: [{ }, { }, { }, { }],
       groups: [
         { id: "shallow", title: "Shallow", columns: [0, 1] },
         { id: "wrapper", title: "Wrapper", children: [{ id: "deep", title: "Deep", columns: [2, 3] }] }
@@ -405,7 +405,7 @@ describe("HeaderCanvasRenderer — arbitrary-depth nested groups (Step 19)", () 
     const noGroups = createRenderer({
       ctx: ctxNoGroups,
       layout: createLayout(2),
-      headerManager: new HeaderManager({ columns: [{ id: "a" }, { id: "b" }] }),
+      headerManager: new HeaderManager({ columns: [{ }, { }] }),
       columnHeaderHeight: 24,
       groupHeaderHeight: 20
     });
@@ -416,7 +416,7 @@ describe("HeaderCanvasRenderer — arbitrary-depth nested groups (Step 19)", () 
       ctx: ctxFlat,
       layout: createLayout(2),
       headerManager: new HeaderManager({
-        columns: [{ id: "a" }, { id: "b" }],
+        columns: [{ }, { }],
         groups: [{ id: "g", title: "G", columns: [0, 1] }]
       }),
       columnHeaderHeight: 24,
@@ -429,7 +429,7 @@ describe("HeaderCanvasRenderer — arbitrary-depth nested groups (Step 19)", () 
 describe("HeaderCanvasRenderer — background/font/border styling", () => {
   it("fills a background rect behind each leaf header before drawing its title", () => {
     const ctx = new RecordingCanvasContext();
-    const headerManager = new HeaderManager({ columns: [{ id: "a", header: "A" }] });
+    const headerManager = new HeaderManager({ columns: [{ header: "A" }] });
     const renderer = createRenderer({
       ctx,
       layout: createLayout(1),
@@ -449,7 +449,7 @@ describe("HeaderCanvasRenderer — background/font/border styling", () => {
 
   it("uses a bold font for the default leaf-header painter", () => {
     const ctx = new RecordingCanvasContext();
-    const headerManager = new HeaderManager({ columns: [{ id: "a", header: "A" }] });
+    const headerManager = new HeaderManager({ columns: [{ header: "A" }] });
     const renderer = createRenderer({
       ctx,
       layout: createLayout(1),
@@ -467,7 +467,7 @@ describe("HeaderCanvasRenderer — background/font/border styling", () => {
 
   it("draws a bottom border spanning the viewport width after the header band", () => {
     const ctx = new RecordingCanvasContext();
-    const headerManager = new HeaderManager({ columns: [{ id: "a", header: "A" }] });
+    const headerManager = new HeaderManager({ columns: [{ header: "A" }] });
     const renderer = createRenderer({
       ctx,
       layout: createLayout(1),
@@ -486,7 +486,7 @@ describe("HeaderCanvasRenderer — background/font/border styling", () => {
   it("draws a background fill for a group fragment too", () => {
     const ctx = new RecordingCanvasContext();
     const headerManager = new HeaderManager({
-      columns: [{ id: "a" }, { id: "b" }],
+      columns: [{ }, { }],
       groups: [{ id: "g1", title: "Group", columns: [0, 1] }]
     });
     const renderer = createRenderer({
@@ -509,7 +509,7 @@ describe("HeaderCanvasRenderer — background/font/border styling", () => {
 describe("HeaderCanvasRenderer — clipping", () => {
   it("wraps each painted region in save/clip/restore", () => {
     const ctx = new RecordingCanvasContext();
-    const headerManager = new HeaderManager({ columns: [{ id: "a", header: "A" }] });
+    const headerManager = new HeaderManager({ columns: [{ header: "A" }] });
     const renderer = createRenderer({
       ctx,
       layout: createLayout(1),
@@ -570,7 +570,7 @@ describe("HeaderCanvasRenderer — the sort carets live in the zone you click", 
 
   function paintOne(state: HeaderState): RecordingCanvasContext {
     const ctx = new RecordingCanvasContext();
-    const headerManager = new HeaderManager({ columns: [{ id: "a", header: "A" }] });
+    const headerManager = new HeaderManager({ columns: [{ header: "A" }] });
     const renderer = createRenderer({
       ctx,
       layout: createLayout(1),

@@ -115,8 +115,6 @@ export class ColumnManager {
 
     const merged: RuntimeColumn = {
       ...cellType,
-      id: definition.id,
-      field: definition.field ?? definition.id,
       width: definition.width ?? DEFAULT_COLUMN_WIDTH,
       typeName,
       ...(definition.renderer !== undefined ? { renderer: definition.renderer } : {}),

@@ -35,8 +35,6 @@
 
       const fields = Array.from({ length: 5 }, (_unused, index) => `c${index}`);
       const columns = [80, 90, 100, 110, 120].map((width, index) => ({
-        id: fields[index],
-        field: fields[index],
         width,
         header: `C${index}`
       }));

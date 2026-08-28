@@ -5,7 +5,7 @@ import {
   ColumnManager,
   registerBuiltinCellTypes
 } from "../../../../src/core/cells";
-import type { RuntimeColumn } from "../../../../src/core/cells";
+import type { ResolveColumnContext, RuntimeColumn } from "../../../../src/core/cells";
 import { HookManager, PRODUCTION_HOOK_REGISTRY } from "../../../../src/core/hooks";
 
 function registryWithMoney(): CellTypeRegistry {
@@ -19,30 +19,26 @@ function registryWithMoney(): CellTypeRegistry {
 }
 
 describe("ColumnManager — structural defaults and column overrides", () => {
-  it("defaults field to the column id and width to 120 when the column doesn't specify them", () => {
-    const manager = new ColumnManager({ columns: [{ id: "sku" }], registry: registryWithMoney() });
+  // 这两条原来还各钉了一半 `field`（默认取 `id`、可被覆盖）。列已经没有 `id`
+  // 也没有 `field` 了（ADR 0004 §3.8.2），剩下的结构性默认值只有宽度这一个。
+  it("defaults width to 120 when the column doesn't specify it", () => {
+    const manager = new ColumnManager({ columns: [{ }], registry: registryWithMoney() });
 
-    const column = manager.getColumn(0);
-
-    expect(column.field).toBe("sku");
-    expect(column.width).toBe(120);
+    expect(manager.getColumn(0).width).toBe(120);
   });
 
   it("lets the column definition override the structural defaults", () => {
     const manager = new ColumnManager({
-      columns: [{ id: "sku", field: "productSku", width: 200 }],
+      columns: [{ width: 200 }],
       registry: registryWithMoney()
     });
 
-    const column = manager.getColumn(0);
-
-    expect(column.field).toBe("productSku");
-    expect(column.width).toBe(200);
+    expect(manager.getColumn(0).width).toBe(200);
   });
 
   it("defaults wrap to false and preserves an explicit true value", () => {
     const manager = new ColumnManager({
-      columns: [{ id: "plain" }, { id: "wrapped", wrap: true }],
+      columns: [{ }, { wrap: true }],
       registry: registryWithMoney()
     });
 
@@ -51,14 +47,14 @@ describe("ColumnManager — structural defaults and column overrides", () => {
   });
 
   it("defaults clipboard.copy and clipboard.paste to true when the column doesn't specify them", () => {
-    const manager = new ColumnManager({ columns: [{ id: "sku" }], registry: registryWithMoney() });
+    const manager = new ColumnManager({ columns: [{ }], registry: registryWithMoney() });
 
     expect(manager.getColumn(0).clipboard).toEqual({ copy: true, paste: true });
   });
 
   it("lets the column definition override clipboard.copy and clipboard.paste independently", () => {
     const manager = new ColumnManager({
-      columns: [{ id: "secret", clipboard: { copy: false } }, { id: "locked", clipboard: { paste: false } }],
+      columns: [{ clipboard: { copy: false } }, { clipboard: { paste: false } }],
       registry: registryWithMoney()
     });
 
@@ -70,7 +66,7 @@ describe("ColumnManager — structural defaults and column overrides", () => {
 describe("ColumnManager — type chain resolution", () => {
   it("resolves format/etc from the registered type, honoring its extends chain", () => {
     const manager = new ColumnManager({
-      columns: [{ id: "price", type: "money" }],
+      columns: [{ type: "money" }],
       registry: registryWithMoney()
     });
 
@@ -83,7 +79,7 @@ describe("ColumnManager — type chain resolution", () => {
   it("defaults to the \"text\" type when the column doesn't specify one", () => {
     const registry = new CellTypeRegistry();
     registry.register("text", { format: (value) => `text:${String(value)}` });
-    const manager = new ColumnManager({ columns: [{ id: "name" }], registry });
+    const manager = new ColumnManager({ columns: [{ }], registry });
 
     expect(manager.getColumn(0).typeName).toBe("text");
     expect(manager.getColumn(0).format("x", { row: 0, column: manager.getColumn(0) })).toBe("text:x");
@@ -97,7 +93,7 @@ describe("ColumnManager — select options", () => {
       extends: "select",
       options: [{ value: "draft", label: "草稿" }]
     });
-    const manager = new ColumnManager({ columns: [{ id: "s", type: "status" }], registry });
+    const manager = new ColumnManager({ columns: [{ type: "status" }], registry });
 
     expect(manager.getColumn(0).options).toEqual([{ value: "draft", label: "草稿" }]);
   });
@@ -109,7 +105,7 @@ describe("ColumnManager — select options", () => {
       options: [{ value: "draft", label: "草稿" }]
     });
     const manager = new ColumnManager({
-      columns: [{ id: "s", type: "status", options: [{ value: "done", label: "完成" }] }],
+      columns: [{ type: "status", options: [{ value: "done", label: "完成" }] }],
       registry
     });
 
@@ -124,7 +120,7 @@ describe("ColumnManager — createEditor", () => {
     const registry = registryWithMoney();
     registry.register("checkbox", { extends: "boolean", createEditor: () => typeEditor });
     const manager = new ColumnManager({
-      columns: [{ id: "c", type: "checkbox", createEditor: () => columnEditor }],
+      columns: [{ type: "checkbox", createEditor: () => columnEditor }],
       registry
     });
 
@@ -134,7 +130,7 @@ describe("ColumnManager — createEditor", () => {
   it("a column can opt into a specific editor without registering a named type for it", () => {
     const columnEditor = {} as never;
     const manager = new ColumnManager({
-      columns: [{ id: "c", createEditor: () => columnEditor }],
+      columns: [{ createEditor: () => columnEditor }],
       registry: registryWithMoney()
     });
 
@@ -151,7 +147,7 @@ describe("ColumnManager — resolveColumn hook", () => {
       format: () => "overridden"
     }));
     const manager = new ColumnManager({
-      columns: [{ id: "price", type: "money", width: 90 }],
+      columns: [{ type: "money", width: 90 }],
       registry: registryWithMoney(),
       hooks
     });
@@ -172,7 +168,7 @@ describe("ColumnManager — shared HookManager", () => {
     }));
 
     const manager = new ColumnManager({
-      columns: [{ id: "price", type: "money", width: 90 }],
+      columns: [{ type: "money", width: 90 }],
       registry: registryWithMoney(),
       hooks
     });
@@ -192,7 +188,7 @@ describe("ColumnManager — shared HookManager", () => {
     }));
 
     const manager = new ColumnManager({
-      columns: [{ id: "price", width: 90 }],
+      columns: [{ width: 90 }],
       registry: registryWithMoney(),
       hooks
     });
@@ -202,25 +198,28 @@ describe("ColumnManager — shared HookManager", () => {
 
   it("hands each tap the declared ColumnDefinition and its index", () => {
     const hooks = new HookManager({ registry: PRODUCTION_HOOK_REGISTRY });
-    const seen: Array<{ id: string; index: number }> = [];
-    hooks.tap<{ definition: { id: string }; index: number }, RuntimeColumn>(
+    // 断言的是「拿到的确实是**这一列自己**声明的那份定义」。原来用 `id` 区分两
+    // 列，列已经没有 id 了（ADR 0004 §3.8.2），改用两个不同的宽度当标记——重点
+    // 从来不是那个值叫什么，而是它和 `index` 对得上。
+    const seen: Array<{ width: number | undefined; index: number }> = [];
+    hooks.tap<ResolveColumnContext, RuntimeColumn>(
       "resolveColumn",
       { name: "observe" },
-      (column: RuntimeColumn, context: { definition: { id: string }; index: number }) => {
-        seen.push({ id: context.definition.id, index: context.index });
+      (column: RuntimeColumn, context: ResolveColumnContext) => {
+        seen.push({ width: context.definition.width, index: context.index });
         return column;
       }
     );
 
     new ColumnManager({
-      columns: [{ id: "a" }, { id: "b" }],
+      columns: [{ width: 10 }, { width: 20 }],
       registry: registryWithMoney(),
       hooks
     });
 
     expect(seen).toEqual([
-      { id: "a", index: 0 },
-      { id: "b", index: 1 }
+      { width: 10, index: 0 },
+      { width: 20, index: 1 }
     ]);
   });
 });
@@ -234,7 +233,7 @@ describe("ColumnManager — resolves once and caches", () => {
       return column;
     });
     const manager = new ColumnManager({
-      columns: [{ id: "a" }, { id: "b" }],
+      columns: [{ }, { }],
       registry: registryWithMoney(),
       hooks
     });
@@ -248,23 +247,25 @@ describe("ColumnManager — resolves once and caches", () => {
   });
 
   it("getColumn() returns the exact same object on repeated calls", () => {
-    const manager = new ColumnManager({ columns: [{ id: "a" }], registry: registryWithMoney() });
+    const manager = new ColumnManager({ columns: [{ }], registry: registryWithMoney() });
 
     expect(manager.getColumn(0)).toBe(manager.getColumn(0));
   });
 
   it("getColumns() returns all resolved columns in order", () => {
+    // 「有序」以前靠 id 序列断言。列没有 id 了（ADR 0004 §3.8.2），换成三个互不
+    // 相同的宽度——同样能把顺序钉死，而且这次钉的是真存在的属性。
     const manager = new ColumnManager({
-      columns: [{ id: "a" }, { id: "b" }, { id: "c" }],
+      columns: [{ width: 10 }, { width: 20 }, { width: 30 }],
       registry: registryWithMoney()
     });
 
-    expect(manager.getColumns().map((column) => column.id)).toEqual(["a", "b", "c"]);
+    expect(manager.getColumns().map((column) => column.width)).toEqual([10, 20, 30]);
   });
 
   it("columnCount reflects the number of resolved columns", () => {
     const manager = new ColumnManager({
-      columns: [{ id: "a" }, { id: "b" }],
+      columns: [{ }, { }],
       registry: registryWithMoney()
     });
 
@@ -274,7 +275,7 @@ describe("ColumnManager — resolves once and caches", () => {
 
 describe("ColumnManager — out-of-range access", () => {
   it("getColumn() throws for an index outside the resolved columns", () => {
-    const manager = new ColumnManager({ columns: [{ id: "a" }], registry: registryWithMoney() });
+    const manager = new ColumnManager({ columns: [{ }], registry: registryWithMoney() });
 
     expect(() => manager.getColumn(1)).toThrow(RangeError);
   });
@@ -283,15 +284,15 @@ describe("ColumnManager — out-of-range access", () => {
 describe("ColumnManager root replacement", () => {
   it("publishes a resolved root from a new column list", () => {
     const manager = new ColumnManager({
-      columns: [{ id: "a" }, { id: "b" }],
+      columns: [{ width: 1 }, { width: 2 }],
       registry: registryWithMoney()
     });
     expect(manager.columnCount).toBe(2);
 
-    manager.replaceRoot(manager.prepareRoot([{ id: "a" }, { id: "b" }, { id: "c" }]));
+    manager.replaceRoot(manager.prepareRoot([{ width: 10 }, { width: 20 }, { width: 30 }]));
 
     expect(manager.columnCount).toBe(3);
-    expect(manager.getColumns().map((column) => column.id)).toEqual(["a", "b", "c"]);
+    expect(manager.getColumns().map((column) => column.width)).toEqual([10, 20, 30]);
   });
 
   it("re-runs the resolveColumn hook for every column in the new list", () => {
@@ -300,20 +301,20 @@ describe("ColumnManager root replacement", () => {
       ...column,
       width: 999
     }));
-    const manager = new ColumnManager({ columns: [{ id: "a" }], registry: registryWithMoney(), hooks });
+    const manager = new ColumnManager({ columns: [{ }], registry: registryWithMoney(), hooks });
 
-    manager.replaceRoot(manager.prepareRoot([{ id: "a" }, { id: "b" }]));
+    manager.replaceRoot(manager.prepareRoot([{ }, { }]));
 
     expect(manager.getColumn(1).width).toBe(999);
   });
 
   it("getColumn()/getColumns() reflect the replacement root immediately", () => {
     const manager = new ColumnManager({
-      columns: [{ id: "a", width: 100 }],
+      columns: [{ width: 100 }],
       registry: registryWithMoney()
     });
 
-    manager.replaceRoot(manager.prepareRoot([{ id: "a", width: 500 }]));
+    manager.replaceRoot(manager.prepareRoot([{ width: 500 }]));
 
     expect(manager.getColumn(0).width).toBe(500);
   });
@@ -322,14 +323,15 @@ describe("ColumnManager root replacement", () => {
 describe("ColumnManager prepared roots", () => {
   it("prepareRoot resolves a complete immutable root without changing live columns", () => {
     const manager = new ColumnManager({
-      columns: [{ id: "live", width: 100 }],
+      columns: [{ width: 100 }],
       registry: registryWithMoney()
     });
 
-    const root = manager.prepareRoot([{ id: "next-a" }, { id: "next-b", width: 240 }]);
+    const root = manager.prepareRoot([{ width: 180 }, { width: 240 }]);
 
-    expect(manager.getColumns().map((column) => column.id)).toEqual(["live"]);
-    expect(root.map((column) => column.id)).toEqual(["next-a", "next-b"]);
+    // 宽度在这里同时充当「哪一份 root」的标记：活的还是那一列 100，备好的是新的两列。
+    expect(manager.getColumns().map((column) => column.width)).toEqual([100]);
+    expect(root.map((column) => column.width)).toEqual([180, 240]);
     expect(Object.isFrozen(root)).toBe(true);
     expect(root.every(Object.isFrozen)).toBe(true);
     expect(root.every((column) => Object.isFrozen(column.clipboard))).toBe(true);
@@ -337,50 +339,49 @@ describe("ColumnManager prepared roots", () => {
 
   it("contains an isolated resolveColumn hook failure inside the prepared root", () => {
     const hooks = new HookManager({ registry: PRODUCTION_HOOK_REGISTRY });
-    const resolved: string[] = [];
+    // 三列的区分标记从 id 换成了声明宽度（ADR 0004 §3.8.2）：钩子只在中间那一列
+    // 上抛，于是它退回自己声明的 2，前后两列照常被改写成 999。
+    const resolved: number[] = [];
     hooks.tap("resolveColumn", { name: "fail-second" }, (column: RuntimeColumn) => {
-      resolved.push(column.id);
-      if (column.id === "bad") {
+      resolved.push(column.width);
+      if (column.width === 2) {
         throw new Error("column resolution failed");
       }
       return { ...column, width: 999 };
     });
     const manager = new ColumnManager({
-      columns: [{ id: "live", width: 100 }],
+      columns: [{ width: 100 }],
       registry: registryWithMoney(),
       hooks
     });
     resolved.length = 0;
 
-    const root = manager.prepareRoot([{ id: "prepared" }, { id: "bad" }, { id: "after" }]);
+    const root = manager.prepareRoot([{ width: 1 }, { width: 2 }, { width: 3 }]);
 
-    expect(resolved).toEqual(["prepared", "bad", "after"]);
-    expect(root.map((column) => column.id)).toEqual(["prepared", "bad", "after"]);
-    expect(root[0]?.width).toBe(999);
-    expect(root[1]?.width).toBe(120);
+    expect(resolved).toEqual([1, 2, 3]);
+    expect(root.map((column) => column.width)).toEqual([999, 2, 999]);
     expect(manager.columnCount).toBe(1);
-    expect(manager.getColumn(0).id).toBe("live");
     expect(manager.getColumn(0).width).toBe(999);
   });
 
   it("does not leak partially resolved columns when later resolution throws", () => {
     const manager = new ColumnManager({
-      columns: [{ id: "live", width: 100 }],
+      columns: [{ width: 100 }],
       registry: registryWithMoney()
     });
     const liveRoot = manager.getColumns();
 
     expect(() =>
       manager.prepareRoot([
-        { id: "resolved", type: "money" },
-        { id: "bad", type: "missing-cell-type" },
-        { id: "unreached" }
+        { type: "money" },
+        { type: "missing-cell-type" },
+        { }
       ])
     ).toThrow('Unknown cell type "missing-cell-type"');
 
     expect(manager.getColumns()).toBe(liveRoot);
     expect(manager.columnCount).toBe(1);
-    expect(manager.getColumn(0).id).toBe("live");
+    expect(manager.getColumn(0).width).toBe(100);
   });
 
   it("replaceRoot swaps only the root and never re-runs resolveColumn hooks", () => {
@@ -391,25 +392,27 @@ describe("ColumnManager prepared roots", () => {
       return { ...column, width: column.width + hookCalls };
     });
     const manager = new ColumnManager({
-      columns: [{ id: "live" }],
+      columns: [{ width: 100 }],
       registry: registryWithMoney(),
       hooks
     });
-    const root = manager.prepareRoot([{ id: "next-a" }, { id: "next-b" }]);
+    const root = manager.prepareRoot([{ width: 200 }, { width: 300 }]);
     const callsAfterPrepare = hookCalls;
 
     manager.replaceRoot(root);
 
     expect(hookCalls).toBe(callsAfterPrepare);
     expect(manager.getColumns()).toBe(root);
-    expect(manager.getColumns().map((column) => column.id)).toEqual(["next-a", "next-b"]);
+    // 每列的宽度里带着「钩子跑到第几次」——replaceRoot 之后它们还是 prepareRoot
+    // 那一轮的 2、3 次，没有被重跑一遍加成 4、5 次。
+    expect(manager.getColumns().map((column) => column.width)).toEqual([202, 303]);
   });
 
 });
 
 describe("ColumnManager — sortable resolution", () => {
   it("treats an ordinary column as sortable without being told", () => {
-    const manager = new ColumnManager({ columns: [{ id: "name" }], registry: registryWithMoney() });
+    const manager = new ColumnManager({ columns: [{ }], registry: registryWithMoney() });
 
     expect(manager.getColumn(0).sortable).toBe(true);
   });
@@ -418,7 +421,7 @@ describe("ColumnManager — sortable resolution", () => {
     // `array`/`json` have no meaningful total order — sorting them would fall
     // back to comparing their string previews, which is a fake sort.
     const manager = new ColumnManager({
-      columns: [{ id: "tags", type: "array" }, { id: "meta", type: "json" }],
+      columns: [{ type: "array" }, { type: "json" }],
       registry: registryWithMoney()
     });
 
@@ -429,8 +432,8 @@ describe("ColumnManager — sortable resolution", () => {
   it("lets a column override the type's own answer in both directions", () => {
     const manager = new ColumnManager({
       columns: [
-        { id: "tags", type: "array", sortable: true },
-        { id: "name", sortable: false }
+        { type: "array", sortable: true },
+        { sortable: false }
       ],
       registry: registryWithMoney()
     });
@@ -442,7 +445,7 @@ describe("ColumnManager — sortable resolution", () => {
   it("inherits sortable through `extends`", () => {
     const registry = registryWithMoney();
     registry.register("tagList", { extends: "array" });
-    const manager = new ColumnManager({ columns: [{ id: "tags", type: "tagList" }], registry });
+    const manager = new ColumnManager({ columns: [{ type: "tagList" }], registry });
 
     expect(manager.getColumn(0).sortable).toBe(false);
   });

@@ -23,8 +23,8 @@
 
       const scenario = new URLSearchParams(location.search).get("scenario");
       const fields = ["wrapped", "keeper"];
-      const wrapColumn = { id: "wrapped", field: "wrapped", width: 70, wrap: true };
-      const keeperColumn = { id: "keeper", field: "keeper", width: 80 };
+      const wrapColumn = { width: 70, wrap: true };
+      const keeperColumn = { width: 80 };
       let columns;
       let data;
 

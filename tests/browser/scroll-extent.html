@@ -23,9 +23,7 @@
 
       const container = document.getElementById("app");
       const fields = Array.from({ length: 4 }, (_unused, index) => `c${index}`);
-      const columns = fields.map((field, index) => ({
-        id: field,
-        field,
+      const columns = fields.map((_unused, index) => ({
         width: 100,
         header: `C${index}`
       }));

@@ -21,8 +21,8 @@ const customCanvasRenderer: CanvasCellRenderer = {
 
 function textColumn(overrides: Partial<RuntimeColumn> = {}): RuntimeColumn {
   return {
-    id: "c",
-    field: "c",
+    
+    
     width: 100,
     typeName: "text",
     format: (value) => (value === undefined || value === null ? "" : String(value)),
@@ -129,8 +129,8 @@ describe("WrapMeasurementService.computeRequiredRowHeight", () => {
   it("takes the tallest column, not the last one", () => {
     const harness = createService({
       columns: [
-        textColumn({ id: "a", wrap: true }),
-        textColumn({ id: "b", wrap: true })
+        textColumn({ wrap: true }),
+        textColumn({ wrap: true })
       ],
       cells: new Map<string, unknown>([
         ["0:0", "aaaaaaaaaaaa bbbbbbbbbbbb cccccccccccc"],

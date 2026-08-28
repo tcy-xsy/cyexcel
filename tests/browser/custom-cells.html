@@ -144,15 +144,15 @@
 
       const fields = ["name", "counter", "toggle", "price", "closedNative", "closedSurface"];
       const columns = [
-        { id: "name", field: "name", width: 120 },
-        { id: "counter", field: "counter", width: 100, renderer: counterRenderer },
-        { id: "toggle", field: "toggle", width: 100, renderer: toggleRendererFactory },
+        { width: 120 },
+        { width: 100, renderer: counterRenderer },
+        { width: 100, renderer: toggleRendererFactory },
         // Built-in "number" CellType, no custom renderer — exercises
         // CellType.parse() on commit (see doc/progress.md's "编辑数字/money
         // 列后单元格变空" patch).
-        { id: "price", field: "price", width: 100, type: "number" },
-        { id: "closedNative", field: "closedNative", width: 100, renderer: closedNativeRendererFactory },
-        { id: "closedSurface", field: "closedSurface", width: 100, renderer: closedSurfaceRendererFactory }
+        { width: 100, type: "number" },
+        { width: 100, renderer: closedNativeRendererFactory },
+        { width: 100, renderer: closedSurfaceRendererFactory }
       ];
 
       const data = Array.from({ length: 200 }, (_unused, index) => ({

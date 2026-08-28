@@ -128,9 +128,11 @@
                 索引就错位了）——点击后菜单会正常关闭、错误打到控制台，不会卡死</li>
               <li>叶子表头里，<code>sku</code>/<code>price</code>/<code>inStock</code>/
                 <code>status</code> 四列配了自定义标题，其余列没配——没配的那几列显示
-                电子表格字母（B、D、E...），不是列 id（<code>columnLetterFallback</code>
-                选项，参考 Univer 的 <code>customizeColumnHeader()</code>：字母和自定义
-                标题同一行二选一，不是字母行 + 标题行两行堆叠）</li>
+                电子表格字母（B、D、E...）——列已经没有 id 可当兜底了（ADR 0004
+                §3.8.2），所以 <code>columnLetterFallback</code> 的默认值翻成了
+                <code>true</code>，关掉它的意思变成"这一列干脆没有标题"。参考 Univer
+                的 <code>customizeColumnHeader()</code>：字母和自定义标题同一行二选一，
+                不是字母行 + 标题行两行堆叠</li>
             </ul>
           </section>
 

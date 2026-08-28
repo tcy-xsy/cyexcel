@@ -93,7 +93,9 @@ export function createBasicContextMenuPlugin(): CyExcelPlugin {
               label: `在左侧插入列${disabledLabel}`,
               disabled: blocked,
               run: () => {
-                context.insertColumns(column, [{ id: `column-${Date.now()}` }]);
+                // 空定义就是一列：列没有身份可给（ADR 0004 §3.8.2），宽度、
+                // 类型、表头字母全部走默认。
+                context.insertColumns(column, [{}]);
               }
             },
             {
@@ -102,7 +104,7 @@ export function createBasicContextMenuPlugin(): CyExcelPlugin {
               label: `在右侧插入列${disabledLabel}`,
               disabled: blocked,
               run: () => {
-                context.insertColumns(column + 1, [{ id: `column-${Date.now()}` }]);
+                context.insertColumns(column + 1, [{}]);
               }
             },
             {

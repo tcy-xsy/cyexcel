@@ -123,8 +123,8 @@ describe("DomHeaderManager — mounts within the visible/frozen column set (先�
     const { factory, instances } = createRecordingFactory();
     const headerManager = new HeaderManager({
       columns: [
-        { id: "plain", header: "Plain" },
-        { id: "interactive", header: { title: "Interactive", renderer: factory } }
+        { header: "Plain" },
+        { header: { title: "Interactive", renderer: factory } }
       ]
     });
     const layout = createLayout(2);
@@ -139,7 +139,7 @@ describe("DomHeaderManager — mounts within the visible/frozen column set (先�
   it("binds surface ownership to the mounted column-header host", () => {
     const { factory } = createRecordingFactory("surface");
     const headerManager = new HeaderManager({
-      columns: [{ id: "surface", header: { title: "Surface", renderer: factory } }]
+      columns: [{ header: { title: "Surface", renderer: factory } }]
     });
     const layout = createLayout(1);
     const { manager, hosts } = createManager({ layout, headerManager });
@@ -154,7 +154,7 @@ describe("DomHeaderManager — mounts within the visible/frozen column set (先�
     const { factory, instances } = createRecordingFactory();
     const headerManager = new HeaderManager({
       columns: [
-        { id: "frozen", header: { title: "Frozen", renderer: factory } },
+        { header: { title: "Frozen", renderer: factory } },
         ...Array.from({ length: 20 }, (_unused, index) => ({ id: `c${index}`, header: `C${index}` }))
       ]
     });
@@ -171,8 +171,8 @@ describe("DomHeaderManager — mounts within the visible/frozen column set (先�
     const { factory } = createRecordingFactory();
     const headerManager = new HeaderManager({
       columns: [
-        { id: "frozen", header: "Frozen" },
-        { id: "scroll", header: { title: "Scroll", renderer: factory } }
+        { header: "Frozen" },
+        { header: { title: "Scroll", renderer: factory } }
       ]
     });
     const layout = createLayout(2, { columns: 1 });
@@ -188,7 +188,7 @@ describe("DomHeaderManager — mounts within the visible/frozen column set (先�
   it("uses canonical column-header fragments without projecting body pane cells", () => {
     const { factory } = createRecordingFactory();
     const headerManager = new HeaderManager({
-      columns: [{ id: "interactive", header: { title: "Interactive", renderer: factory } }]
+      columns: [{ header: { title: "Interactive", renderer: factory } }]
     });
     const layout = createLayout(1);
     const { manager } = createManager({ layout, headerManager });
@@ -243,7 +243,7 @@ describe("DomHeaderManager — scrolling out (先写测试 #6: update or destroy
   it("destroys every instance on dispose()", () => {
     const { factory, instances } = createRecordingFactory();
     const headerManager = new HeaderManager({
-      columns: [{ id: "a", header: { title: "A", renderer: factory } }]
+      columns: [{ header: { title: "A", renderer: factory } }]
     });
     const layout = createLayout(1);
     const { manager } = createManager({ layout, headerManager });
@@ -258,7 +258,7 @@ describe("DomHeaderManager — scrolling out (先写测试 #6: update or destroy
   it("removes a mounted header's node when it's hidden by no longer being needed anywhere", () => {
     const { factory, instances } = createRecordingFactory();
     const headerManager = new HeaderManager({
-      columns: [{ id: "a", header: { title: "A", renderer: factory } }]
+      columns: [{ header: { title: "A", renderer: factory } }]
     });
     const layout = createLayout(1);
     const { manager, hosts } = createManager({ layout, headerManager });
@@ -276,7 +276,7 @@ describe("DomHeaderManager — leaf geometry follows Scene publication", () => {
   it("uses the Scene leaf y instead of deriving it from HeaderManager depth", () => {
     const { factory, instances } = createRecordingFactory();
     const headerManager = new HeaderManager({
-      columns: [{ id: "a", header: { title: "A", renderer: factory } }],
+      columns: [{ header: { title: "A", renderer: factory } }],
       groups: [
         {
           id: "root",
@@ -303,7 +303,7 @@ describe("DomHeaderManager — leaf geometry follows Scene publication", () => {
   it("does not infer an offset merely because HeaderManager has groups", () => {
     const { factory, instances } = createRecordingFactory();
     const headerManager = new HeaderManager({
-      columns: [{ id: "a", header: { title: "A", renderer: factory } }],
+      columns: [{ header: { title: "A", renderer: factory } }],
       groups: [{ id: "g", title: "G", columns: [0] }]
     });
     const layout = createLayout(1);
@@ -328,7 +328,7 @@ describe("DomHeaderManager — failed mount cleanup", () => {
       })
     };
     const headerManager = new HeaderManager({
-      columns: [{ id: "broken", header: { title: "Broken", renderer: factory } }]
+      columns: [{ header: { title: "Broken", renderer: factory } }]
     });
     const layout = createLayout(1);
     const { manager, hosts } = createManager({ layout, headerManager });

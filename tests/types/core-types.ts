@@ -59,7 +59,7 @@ if (rowLayoutChange.type === "row-layout") {
 void emptyRowLayoutChange;
 
 const options: CyExcelCoreOptions = {
-  columns: [{ id: "name", field: "name", width: 120 }],
+  columns: [{ width: 120 }],
   snapshot: rowsToWorkbookSnapshot([{ name: "Ada" }], ["name"]),
   rowHeight: 32,
   rowHeights: new Map([[2, 48]]),

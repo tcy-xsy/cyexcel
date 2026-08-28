@@ -99,7 +99,7 @@ describe("ClipboardService.copy", () => {
   it("writes raw-serialized text when mode is 'raw'", async () => {
     const registry = new CellTypeRegistry();
     registerBuiltinCellTypes(registry);
-    const columnManager = new ColumnManager({ columns: [{ id: "tags", type: "array" }], registry });
+    const columnManager = new ColumnManager({ columns: [{ type: "array" }], registry });
     const sheet = createSheetFromRows([{ tags: ["a", "b", "c", "d"] }], ["tags"]);
     const store = new TableStore(sheet);
     const commandManager = createTableCommandManager(store);
@@ -136,7 +136,7 @@ describe("ClipboardService.copy", () => {
       }
     });
     const columnManager = new ColumnManager({
-      columns: [{ id: "name", type: "watched" }, { id: "age", type: "number" }],
+      columns: [{ type: "watched" }, { type: "number" }],
       registry: s.registry
     });
     const { service, io } = makeService({ ...s, columnManager }, { options: { maxCells: 1 } });
@@ -257,7 +257,7 @@ describe("ClipboardService.paste", () => {
     const registry = new CellTypeRegistry();
     registerBuiltinCellTypes(registry);
     const columnManager = new ColumnManager({
-      columns: [{ id: "name" }, { id: "age", type: "number", clipboard: { paste: false } }],
+      columns: [{ }, { type: "number", clipboard: { paste: false } }],
       registry
     });
     const sheet = createSheetFromRows([{ name: "Alice", age: 30 }], ["name", "age"]);
