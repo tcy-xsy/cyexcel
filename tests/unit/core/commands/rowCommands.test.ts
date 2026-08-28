@@ -46,6 +46,26 @@ describe("InsertRowsCommand", () => {
     expect(readNames(store, 3)).toEqual(["A", "B", "C"]);
   });
 
+  /**
+   * 追加一行空行：一个格子都不用搬，坐标空间只能靠 `blankRows` 涨。
+   *
+   * 从前它原地不动——表还是三行——而布局那边已经是四行了；撤销于是拿
+   * `delete-rows 3,1` 去撞一张三行的表，`validateAxisChange` 直接抛
+   * `delete range is outside axis length`。
+   */
+  it("appends an empty row at the end and undoes it", () => {
+    const { store } = createStore();
+    const manager = createTableCommandManager(store);
+
+    manager.execute(new InsertRowsCommand(3, [[undefined]]));
+    expect(store.getRowCount()).toBe(4);
+    expect(readNames(store, 4)).toEqual(["A", "B", "C", undefined]);
+
+    manager.undo();
+    expect(store.getRowCount()).toBe(3);
+    expect(readNames(store, 3)).toEqual(["A", "B", "C"]);
+  });
+
   it("redo (execute again) reinserts the same rows", () => {
     const { store } = createStore();
     const manager = createTableCommandManager(store);

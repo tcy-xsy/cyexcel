@@ -52,6 +52,26 @@ describe("InsertColumnsCommand", () => {
     expect(readColumnLabels(store, 3)).toEqual(["A", "B", "C"]);
   });
 
+  /**
+   * 追加一列：新列没有任何格子，坐标空间只能靠 `blankColumns` 涨。
+   *
+   * 从前它原地不动——表还是三列——而布局那边已经是四列了；撤销于是拿
+   * `delete-columns 3,1` 去撞一张三列的表，`validateAxisChange` 直接抛
+   * `delete range is outside axis length`。
+   */
+  it("appends a column at the end and undoes it", () => {
+    const { store } = createStore();
+    const manager = createTableCommandManager(store);
+
+    manager.execute(new InsertColumnsCommand(3, [{ }]));
+    expect(store.getColumnCount()).toBe(4);
+    expect(readColumnLabels(store, 4)).toEqual(["A", "B", "C", undefined]);
+
+    manager.undo();
+    expect(store.getColumnCount()).toBe(3);
+    expect(readColumnLabels(store, 3)).toEqual(["A", "B", "C"]);
+  });
+
   it("redo (execute again) reinserts the same columns", () => {
     const { store } = createStore();
     const manager = createTableCommandManager(store);

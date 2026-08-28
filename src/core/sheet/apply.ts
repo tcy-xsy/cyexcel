@@ -49,93 +49,138 @@ export function applySheetMutation(model: SheetModel, mutation: SheetMutation): 
     }
 
     case "insert-rows":
-      model.insertRows(mutation.start, mutation.rows.length);
-      writeRows(model, mutation.start, mutation.rows, undefined);
+      withCoordinateSpace(model, { rows: mutation.rows.length }, () => {
+        model.insertRows(mutation.start, mutation.rows.length);
+        writeRows(model, mutation.start, mutation.rows, undefined);
+      });
       return;
 
     case "restore-rows":
-      model.insertRows(mutation.start, mutation.rows.length);
-      writeRows(model, mutation.start, mutation.rows, mutation.meta);
-      writeTables(model, mutation.start, mutation.tables);
+      withCoordinateSpace(model, { rows: mutation.rows.length }, () => {
+        model.insertRows(mutation.start, mutation.rows.length);
+        writeRows(model, mutation.start, mutation.rows, mutation.meta);
+        writeTables(model, mutation.start, mutation.tables);
+      });
       return;
 
     case "delete-rows":
-      model.deleteRows(mutation.start, mutation.count);
+      withCoordinateSpace(model, { rows: -mutation.count }, () => {
+        model.deleteRows(mutation.start, mutation.count);
+      });
       return;
 
     case "move-rows":
-      model.moveRows(mutation.start, mutation.count, mutation.target);
+      withCoordinateSpace(model, {}, () => {
+        model.moveRows(mutation.start, mutation.count, mutation.target);
+      });
       return;
 
     case "reorder-rows":
-      model.reorderRows(mutation.order);
+      withCoordinateSpace(model, {}, () => {
+        model.reorderRows(mutation.order);
+      });
       return;
 
     case "insert-columns":
-      model.insertColumns(mutation.start, mutation.count);
+      withCoordinateSpace(model, { columns: mutation.count }, () => {
+        model.insertColumns(mutation.start, mutation.count);
+      });
       return;
 
     case "delete-columns":
-      model.deleteColumns(mutation.start, mutation.count);
+      withCoordinateSpace(model, { columns: -mutation.count }, () => {
+        model.deleteColumns(mutation.start, mutation.count);
+      });
       return;
 
-    case "restore-columns": {
-      model.insertColumns(mutation.start, mutation.count);
-      for (let offset = 0; offset < mutation.count; offset += 1) {
-        const column = mutation.cells[offset];
-        if (column) {
-          // `ColumnCells` 的键是**行号**——写成列号就是一次静默转置
-          for (const rowKey of Object.keys(column)) {
-            writeCell(model, Number(rowKey), mutation.start + offset, column[Number(rowKey)]);
+    case "restore-columns":
+      withCoordinateSpace(model, { columns: mutation.count }, () => {
+        model.insertColumns(mutation.start, mutation.count);
+        for (let offset = 0; offset < mutation.count; offset += 1) {
+          const column = mutation.cells[offset];
+          if (column) {
+            // `ColumnCells` 的键是**行号**——写成列号就是一次静默转置
+            for (const rowKey of Object.keys(column)) {
+              writeCell(model, Number(rowKey), mutation.start + offset, column[Number(rowKey)]);
+            }
+          }
+          const meta = mutation.meta[offset];
+          if (meta !== undefined) {
+            model.setColumnMeta(mutation.start + offset, meta);
           }
         }
-        const meta = mutation.meta[offset];
-        if (meta !== undefined) {
-          model.setColumnMeta(mutation.start + offset, meta);
-        }
-      }
-      writeTables(model, mutation.start, mutation.tables);
+        writeTables(model, mutation.start, mutation.tables);
+      });
       return;
-    }
 
     case "move-columns":
-      model.moveColumns(mutation.start, mutation.count, mutation.target);
+      withCoordinateSpace(model, {}, () => {
+        model.moveColumns(mutation.start, mutation.count, mutation.target);
+      });
       return;
 
+    // 元数据写也是"值写"那一类：行高、列宽、隐藏位改不了表有多少行。`rowData` /
+    // `columnData` 是登记在册的侧表，占用范围算它们一份（`#rowExtentIncludingTables`），
+    // 所以给尾部空白区里的一行设行高会把轴推长——正是这里要挡住的。
     case "set-row-meta":
-      if (mutation.meta === undefined) {
-        model.deleteRowMeta(mutation.row);
-      } else {
-        model.setRowMeta(mutation.row, mutation.meta);
-      }
+      writeValues(model, () => {
+        if (mutation.meta === undefined) {
+          model.deleteRowMeta(mutation.row);
+        } else {
+          model.setRowMeta(mutation.row, mutation.meta);
+        }
+      });
       return;
 
     case "set-column-meta":
-      if (mutation.meta === undefined) {
-        model.deleteColumnMeta(mutation.column);
-      } else {
-        model.setColumnMeta(mutation.column, mutation.meta);
-      }
+      writeValues(model, () => {
+        if (mutation.meta === undefined) {
+          model.deleteColumnMeta(mutation.column);
+        } else {
+          model.setColumnMeta(mutation.column, mutation.meta);
+        }
+      });
       return;
   }
 }
 
 /**
- * 跑一段**只写值**的改动，并保证坐标空间与跑之前一样大。
+ * 跑一条变更，并把坐标空间钉到它**应该**变成的那个大小：`之前 + delta`。
  *
- * 轴只能由结构变更改动，值写不行——理由与实现都在 `SheetModel.pinCoordinateSpace`
- * 的注释里。钉在整条变更的两端而不是每个格子上：`set-range` 中途的状态（清了一半
- * 的尾行）不是任何人观察得到的状态，逐格去钉会把 `blank` 在循环里推来推去，还会让
- * "先清后写"的顺序影响最终结果。
+ * **每一条变更都从这里走，`delta` 就是那张表**——一条变更把轴改动多少，只由它是
+ * 哪一条决定，不由它恰好搬动了多少占用范围决定。轴是派生量
+ * （`maxOccupied + 1 + blank`，spec §3.3），两者在占用范围的边界上分家，两个方向
+ * 都会：
  *
- * `restore-*` 里的写值**不**从这里走：那两条变更本来就在改坐标空间（它们先插行/插
- * 列），钉住会把插入的效果抵消掉。
+ * - **值写让轴变了**：清空最后一行的每一个格子，`maxOccupied` 退回去，轴跟着缩；
+ *   往尾部空白区里写第一个值，轴凭空多一行。理由与实现在
+ *   `SheetModel.pinCoordinateSpace` 的注释里。
+ * - **结构变更让轴变得不对**：`insert-rows` 是"插空行 ＋ 写回内容"的组合，
+ *   `SheetModel.insertRows` 把轴涨了 `count`，随后的写值又把占用范围推上去，轴于是
+ *   涨了两次——影子模型里插一行，`getRowCount()` 从 1 变成 3。`restore-*` 同理。
+ *
+ * 所以钉在**整条变更的两端**，而不是每个格子上，也不是只在 `SheetModel` 那一层：
+ * 中途的状态（插好了空行还没写回内容、清了一半的尾行）不是任何人观察得到的状态，
+ * 逐格去钉会把 `blank` 在循环里推来推去，还会让"先清后写"的顺序影响最终结果。
+ *
+ * `SheetModel` 的那几个结构方法各自也钉一次，两者不冲突：那一层守的是**直接调用
+ * 它的人**拿到的契约（"插 n 行，轴就长 n 行"），这一层守的是**组合**出来的整条
+ * 变更。同一个目标值钉两次是幂等的。
  */
-function writeValues(model: SheetModel, write: () => void): void {
+function withCoordinateSpace(
+  model: SheetModel,
+  delta: { readonly rows?: number; readonly columns?: number },
+  run: () => void
+): void {
   const rowCount = model.rowCount();
   const columnCount = model.columnCount();
-  write();
-  model.pinCoordinateSpace(rowCount, columnCount);
+  run();
+  model.pinCoordinateSpace(rowCount + (delta.rows ?? 0), columnCount + (delta.columns ?? 0));
+}
+
+/** 只写值的那几条：轴与跑之前一样大。 */
+function writeValues(model: SheetModel, write: () => void): void {
+  withCoordinateSpace(model, {}, write);
 }
 
 function writeCell(model: SheetModel, row: number, column: number, record: CellRecord | undefined): void {

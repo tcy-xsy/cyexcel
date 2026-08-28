@@ -9,7 +9,9 @@ import { SheetModel } from "../../../../src/core/sheet/SheetModel";
  * 每一条"施加 m、再施加逆、比 `WorkbookModel.toSnapshot()`"的往返用例施加的都是这份
  * 生产代码，13 个成员一条不落。在这里再抄一遍等于两份测试测同一件事。
  *
- * 这个文件只装两样它测不到的东西：`writeTables` 那道守卫，和 `estimateSheetMutationBytes`。
+ * 这个文件只装三样它测不到的东西：`writeTables` 那道守卫、坐标空间的钉法，和
+ * `estimateSheetMutationBytes`。坐标空间那一组之所以在这里而不在往返用例里，是因为
+ * 往返是**对称**的：轴多涨了 1 再多缩 1，快照仍然逐字段一致，往返查不出来。
  */
 
 function modelWithoutTables(): SheetModel {
@@ -33,6 +35,51 @@ describe("applySheetMutation — writeTables 的守卫", () => {
     expect(() => {
       applySheetMutation(modelWithoutTables(), mutation);
     }).toThrow(CyExcelError);
+  });
+});
+
+/**
+ * 一条变更把轴改动多少，只由它是**哪一条**决定，不由它恰好搬动了多少占用范围决定。
+ * 见 `withCoordinateSpace` 的注释。
+ */
+describe("applySheetMutation — 坐标空间", () => {
+  function twoByTwo(): SheetModel {
+    const model = SheetModel.createEmpty({ blankRows: 0, blankColumns: 0 });
+    model.setRecord(0, 0, { v: "a" });
+    model.setRecord(1, 1, { v: "b" });
+    return model;
+  }
+
+  it("插一行带内容的：轴只涨 1，不是插入与写值各涨一次", () => {
+    const model = twoByTwo();
+    // 追加在末尾且带内容：`insertRows` 把轴涨到 3，随后的写值把占用范围也推到 3,
+    // 不钉住的话 `blank` 留在原地，轴变成 4
+    applySheetMutation(model, { type: "insert-rows", start: 2, rows: [{ 0: { v: "c" } }] });
+
+    expect(model.rowCount()).toBe(3);
+    expect(model.getCell(2, 0)).toBe("c");
+  });
+
+  it("插一列：轴涨 1，行轴不动", () => {
+    const model = twoByTwo();
+    applySheetMutation(model, { type: "insert-columns", start: 2, count: 1 });
+
+    expect([model.rowCount(), model.columnCount()]).toEqual([2, 3]);
+  });
+
+  it("写元数据不改轴——哪怕写的是空白区里的那一行", () => {
+    const model = SheetModel.createEmpty({ blankRows: 4, blankColumns: 4 });
+    model.setRecord(0, 0, { v: "a" });
+    expect([model.rowCount(), model.columnCount()]).toEqual([5, 5]);
+
+    // `rowData` / `columnData` 是登记在册的侧表，占用范围算它们一份——不钉的话
+    // 给第 3 行设个行高就能把轴推到 8
+    applySheetMutation(model, { type: "set-row-meta", row: 3, meta: { h: 44 } });
+    applySheetMutation(model, { type: "set-column-meta", column: 3, meta: { w: 90 } });
+
+    expect([model.rowCount(), model.columnCount()]).toEqual([5, 5]);
+    expect(model.getRowMeta(3)).toEqual({ h: 44 });
+    expect(model.getColumnMeta(3)).toEqual({ w: 90 });
   });
 });
 

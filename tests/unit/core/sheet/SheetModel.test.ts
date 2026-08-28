@@ -129,4 +129,84 @@ describe("SheetModel", () => {
       expect(model.rowCount()).toBe(5);
     });
   });
+
+  /**
+   * 插/删改坐标空间，改的量是 `count`，与插在哪里无关。
+   *
+   * 从前它只在**占用范围里**成立：轴是派生量，插在占用范围之外（尾部空白区里）
+   * 没有格子要搬，`extent` 与 `blank` 都不动，轴就原地不动。默认的 1000 行空白让
+   * 这个洞平时只表现为"末尾插入不生效"，把空白调到 0 才看得见。
+   */
+  describe("coordinate space under structural changes", () => {
+    it("grows and shrinks by count when the change lands inside the occupied range", () => {
+      const model = SheetModel.createEmpty({ blankRows: 0, blankColumns: 0 });
+      model.setCell(2, 2, "a");
+      expect([model.rowCount(), model.columnCount()]).toEqual([3, 3]);
+
+      model.insertRows(1, 2);
+      model.insertColumns(0, 1);
+      expect([model.rowCount(), model.columnCount()]).toEqual([5, 4]);
+
+      model.deleteRows(0, 1);
+      model.deleteColumns(0, 1);
+      expect([model.rowCount(), model.columnCount()]).toEqual([4, 3]);
+    });
+
+    it("grows and shrinks by count when the change lands in the blank tail", () => {
+      const model = SheetModel.createEmpty({ blankRows: 0, blankColumns: 0 });
+      model.setCell(1, 1, "a");
+      expect([model.rowCount(), model.columnCount()]).toEqual([2, 2]);
+
+      // 追加在末尾：一个格子都不用搬，从前这两句什么也不会改变
+      model.insertRows(2, 1);
+      model.insertColumns(2, 1);
+      expect([model.rowCount(), model.columnCount()]).toEqual([3, 3]);
+      expect(model.getCell(1, 1)).toBe("a");
+
+      model.deleteRows(2, 1);
+      model.deleteColumns(2, 1);
+      expect([model.rowCount(), model.columnCount()]).toEqual([2, 2]);
+      expect(model.getCell(1, 1)).toBe("a");
+    });
+
+    it("keeps the blank tail intact when the change lands inside the occupied range", () => {
+      const model = SheetModel.createEmpty({ blankRows: 5, blankColumns: 5 });
+      model.setCell(1, 1, "a");
+      expect([model.rowCount(), model.columnCount()]).toEqual([7, 7]);
+
+      model.insertRows(0, 3);
+      expect(model.rowCount()).toBe(10);
+      // 占用范围自己涨了 3，空白不该跟着一起涨
+      expect(model.toSnapshot().blankRows).toBe(5);
+    });
+
+    it("round-trips through a snapshot after appending past the occupied range", () => {
+      const model = SheetModel.createEmpty({ blankRows: 0, blankColumns: 0 });
+      model.setCell(0, 0, "a");
+      model.insertRows(1, 4);
+      model.insertColumns(1, 2);
+
+      const restored = SheetModel.fromSnapshot(model.toSnapshot());
+      expect([restored.rowCount(), restored.columnCount()]).toEqual([5, 3]);
+    });
+
+    /**
+     * 移动与重排把仅有的那一行/列占用挪到更前面，占用范围自己就缩了；轴长是
+     * 派生量，不钉的话会跟着凭空变短——移动改变了行数。
+     */
+    it("leaves the axis alone for move and reorder", () => {
+      const model = SheetModel.createEmpty({ blankRows: 2, blankColumns: 2 });
+      model.setCell(1, 1, "a");
+      expect([model.rowCount(), model.columnCount()]).toEqual([4, 4]);
+
+      model.moveRows(1, 1, 0);
+      model.moveColumns(1, 1, 0);
+      expect([model.rowCount(), model.columnCount()]).toEqual([4, 4]);
+      expect(model.getCell(0, 0)).toBe("a");
+
+      model.reorderRows(Int32Array.from([3, 1, 2, 0]));
+      expect([model.rowCount(), model.columnCount()]).toEqual([4, 4]);
+      expect(model.getCell(3, 0)).toBe("a");
+    });
+  });
 });

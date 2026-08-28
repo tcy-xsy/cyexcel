@@ -354,6 +354,38 @@ export class SheetModel {
   }
 
   /**
+   * 结构操作之后把坐标空间钉到它**应该**是的那个数：插/删是 `之前 ± count`，
+   * 移动与重排是 `之前`。差额由 `blank*` 吸收。
+   *
+   * **为什么每一个结构方法都要显式钉一次。** 轴是派生量
+   * （`maxOccupied + 1 + blank`，spec §3.3），而这些方法搬的是**占用范围**——
+   * 于是轴的变化量由"占用范围恰好被搬动了多少"决定，而不是由操作本身决定，
+   * 两者在占用范围的边界上就分家：
+   *
+   * - **插在占用范围之外**（尾部空白区里，`start >= extent`）：没有格子要搬，
+   *   `extent` 与 `blank` 都不动，轴原地不动——插了一行而轴没变长。删同理。
+   * - **把仅有的占用行往回移**：`extent` 自己缩了，`blank` 不动，轴凭空变短——
+   *   移动改变了行数。
+   *
+   * 平时被默认的 1000 行/列空白盖住，看起来只是"末尾插入不生效"；把空白调到 0
+   * 就直接坏给你看，而且**撤销会抛**：`InsertColumnsCommand(3, …)` 在三列的表上让
+   * 布局涨到 4 列而模型仍是 3，逆变更于是拿 `delete-columns 3,1` 去撞一张三列的表，
+   * `validateAxisChange` 报 `delete range is outside axis length`。
+   *
+   * 口径与 `pinCoordinateSpace` 是同一条——"占用范围变了多少，空白就反向变多少"，
+   * 只是这里的目标轴长是显式给出的，而不是"保持不变"。因此它对落在占用范围
+   * **里面**的操作是恒等的（`extent` 自己动了那么多，`blank` 不动），只在空白区
+   * 那一侧才真的改 `blank`。
+   */
+  #pinRowSpace(target: number): void {
+    this.#blankRows = blankFor(target, this.#rowExtentIncludingTables(), "row");
+  }
+
+  #pinColumnSpace(target: number): void {
+    this.#blankColumns = blankFor(target, this.#columnExtentIncludingTables(), "column");
+  }
+
+  /**
    * 六个结构方法共用的参数防线，复用被替换的 `ArrayDataSource` 那一份
    * （`../layout/structuralChange`），不另写。三条口径：
    *
@@ -372,27 +404,33 @@ export class SheetModel {
    * `moveColumns(0, 2, 1)` 算出 `insertAt = -1`，产出负的列键。
    */
   insertRows(start: number, count: number): void {
-    validateAxisChange({ axis: "row", operation: "insert", start, count }, this.rowCount());
+    const space = this.rowCount();
+    validateAxisChange({ axis: "row", operation: "insert", start, count }, space);
     this.#assertNoMerges("insertRows");
     const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildInsertRowsPlan(extent, start, count), extent);
+    this.#pinRowSpace(space + count);
   }
 
   deleteRows(start: number, count: number): void {
-    validateAxisChange({ axis: "row", operation: "delete", start, count }, this.rowCount());
+    const space = this.rowCount();
+    validateAxisChange({ axis: "row", operation: "delete", start, count }, space);
     this.#assertNoMerges("deleteRows");
     const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildDeleteRowsPlan(extent, start, count), extent);
+    this.#pinRowSpace(space - count);
   }
 
   moveRows(start: number, count: number, target: number): void {
+    const space = this.rowCount();
     validateAxisChange(
       { axis: "row", operation: "move", start, count, target, targetSpace: "pre-removal" },
-      this.rowCount()
+      space
     );
     this.#assertNoMerges("moveRows");
     const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildMoveRowsPlan(extent, start, count, target), extent);
+    this.#pinRowSpace(space);
   }
 
   /**
@@ -411,6 +449,7 @@ export class SheetModel {
    * 幂等，多调一次没有副作用。
    */
   reorderRows(order: Int32Array): void {
+    const space = this.rowCount();
     const extent = this.#rowExtentIncludingTables();
     if (extent > order.length) {
       throw new CyExcelError(
@@ -422,6 +461,9 @@ export class SheetModel {
     this.#assertNoMerges("reorderRows");
     this.#matrix.reorderRows(order);
     this.#tables.applyRowPlan(order);
+    // 重排也要钉：把仅有的那一行占用行排到前面去，`extent` 就自己缩了，轴会跟着
+    // 凭空变短（`#pinRowSpace` 的注释里的第二种情形）。
+    this.#pinRowSpace(space);
   }
 
   /**
@@ -430,36 +472,36 @@ export class SheetModel {
    * 0–4 列时全部 `< 10`，原样不动。所以列轴只补上面那道参数校验。
    */
   insertColumns(start: number, count: number): void {
-    validateAxisChange(
-      { axis: "column", operation: "insert", start, count },
-      this.columnCount()
-    );
+    const space = this.columnCount();
+    validateAxisChange({ axis: "column", operation: "insert", start, count }, space);
     this.#assertNoMerges("insertColumns");
     const shift = buildInsertColumnsShift(start, count);
     this.#matrix.insertColumns(start, count);
     this.#tables.applyColumnShift(shift);
+    this.#pinColumnSpace(space + count);
   }
 
   deleteColumns(start: number, count: number): void {
-    validateAxisChange(
-      { axis: "column", operation: "delete", start, count },
-      this.columnCount()
-    );
+    const space = this.columnCount();
+    validateAxisChange({ axis: "column", operation: "delete", start, count }, space);
     this.#assertNoMerges("deleteColumns");
     const shift = buildDeleteColumnsShift(start, count);
     this.#matrix.deleteColumns(start, count);
     this.#tables.applyColumnShift(shift);
+    this.#pinColumnSpace(space - count);
   }
 
   moveColumns(start: number, count: number, target: number): void {
+    const space = this.columnCount();
     validateAxisChange(
       { axis: "column", operation: "move", start, count, target, targetSpace: "pre-removal" },
-      this.columnCount()
+      space
     );
     this.#assertNoMerges("moveColumns");
     const shift = buildMoveColumnsShift(start, count, target);
     this.#matrix.moveColumns(start, count, target);
     this.#tables.applyColumnShift(shift);
+    this.#pinColumnSpace(space);
   }
 
   /**
