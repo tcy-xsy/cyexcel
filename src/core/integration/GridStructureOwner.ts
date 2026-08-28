@@ -4,11 +4,7 @@ import type { ColumnDefinition } from "../cells/types";
 import { CyExcelError, CyExcelErrorCode } from "../errors";
 import type { HeaderManager, HeaderManagerRoot } from "../headers/HeaderManager";
 import type { HeaderGroupDefinition } from "../headers/types";
-import type {
-  LayoutRoot,
-  LayoutStructurePayload,
-  RowHeightProvenance
-} from "../layout/LayoutEngine";
+import type { LayoutRoot, LayoutStructurePayload } from "../layout/LayoutEngine";
 import type { LayoutEngine } from "../layout/LayoutEngine";
 import type { RowMetricsFragment } from "../layout/RowMetrics";
 import type { AxisChangeDescriptor, StructuralChange } from "../layout/structuralChange";
@@ -31,10 +27,13 @@ export interface GridStructurePayload {
   readonly columns?: readonly ColumnDefinition[];
   readonly rowHeights?: ReadonlyMap<number, number>;
   readonly rowMetricsFragment?: RowMetricsFragment;
-  readonly rowHeightProvenance?: ReadonlyMap<
-    number,
-    Exclude<RowHeightProvenance, "default">
-  >;
+  /**
+   * 没有 `rowHeightProvenance`：行高来源的权威在 `SheetModel` 的 `rowData[row].hp`，
+   * 而 `rowData` 是登记在 `IndexedTableRegistry` 里的侧表——插入/删除/移动会连同
+   * `h`/`hp` 一起搬走，删除的逆（`restore-rows`）也会把整条 `RowMeta` 带回来。
+   * 这边只需要搬**索引**（`RowMetrics`），来源那半边一个字节都不用它管
+   * （ADR 0004 阶段 4B T8，设计稿 §4.1）。
+   */
   readonly columnWidths?: readonly number[];
   readonly hiddenColumnOffsets?: ReadonlyMap<number, number>;
 }
@@ -158,10 +157,6 @@ export class GridStructureOwner
   ): PreparedStructureIntegration<GridStructureRoot, GridStructurePayload> {
     const structuralChange = toStructuralChange(change);
     let inverseRowMetricsFragment: RowMetricsFragment | undefined;
-    let inverseRowHeightProvenance: ReadonlyMap<
-      number,
-      Exclude<RowHeightProvenance, "default">
-    > | undefined;
     let inverseColumns: readonly ColumnDefinition[] | undefined;
     let inverseColumnWidths: readonly number[] | undefined;
     let inverseHiddenColumnOffsets: ReadonlyMap<number, number> | undefined;
@@ -175,33 +170,17 @@ export class GridStructureOwner
       if (change.operation === "insert") {
         layoutPayload = {
           rowHeights: payload.rowHeights,
-          rowMetricsFragment: payload.rowMetricsFragment,
-          rowHeightProvenance: payload.rowHeightProvenance
+          rowMetricsFragment: payload.rowMetricsFragment
         };
         forwardPayload = createGridStructurePayload(
           payload.rowMetricsFragment !== undefined
-            ? {
-                rowMetricsFragment: payload.rowMetricsFragment,
-                ...(payload.rowHeightProvenance !== undefined
-                  ? { rowHeightProvenance: payload.rowHeightProvenance }
-                  : {})
-              }
+            ? { rowMetricsFragment: payload.rowMetricsFragment }
             : payload.rowHeights !== undefined
-              ? {
-                  rowHeights: payload.rowHeights,
-                  ...(payload.rowHeightProvenance !== undefined
-                    ? { rowHeightProvenance: payload.rowHeightProvenance }
-                    : {})
-                }
+              ? { rowHeights: payload.rowHeights }
               : {}
         );
       } else if (change.operation === "delete") {
         inverseRowMetricsFragment = root.layout.rowMetrics.slice(change.start, change.count);
-        inverseRowHeightProvenance = new Map(
-          Array.from(root.layout.rowHeightProvenance)
-            .filter(([row]) => row >= change.start && row < change.start + change.count)
-            .map(([row, provenance]) => [row - change.start, provenance])
-        );
       }
     } else {
       if (this.#headerGroups.length > 0) {
@@ -272,9 +251,6 @@ export class GridStructureOwner
         ...(inverseRowMetricsFragment !== undefined
           ? { rowMetricsFragment: inverseRowMetricsFragment }
           : {}),
-        ...(inverseRowHeightProvenance !== undefined
-          ? { rowHeightProvenance: inverseRowHeightProvenance }
-          : {}),
         ...(inverseColumns !== undefined ? { columns: inverseColumns } : {}),
         ...(inverseColumnWidths !== undefined ? { columnWidths: inverseColumnWidths } : {}),
         ...(inverseHiddenColumnOffsets !== undefined
@@ -300,9 +276,6 @@ export function createGridStructurePayload(payload: GridStructurePayload = {}): 
     ...(payload.rowHeights !== undefined ? { rowHeights: new Map(payload.rowHeights) } : {}),
     ...(payload.rowMetricsFragment !== undefined
       ? { rowMetricsFragment: payload.rowMetricsFragment }
-      : {}),
-    ...(payload.rowHeightProvenance !== undefined
-      ? { rowHeightProvenance: new Map(payload.rowHeightProvenance) }
       : {}),
     ...(payload.columnWidths !== undefined ? { columnWidths: Object.freeze([...payload.columnWidths]) } : {}),
     ...(payload.hiddenColumnOffsets !== undefined

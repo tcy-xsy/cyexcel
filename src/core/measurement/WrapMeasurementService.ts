@@ -12,6 +12,21 @@ import type { SceneSnapshot } from "../scene";
  * caller must be able to prove afterwards that the basis it measured against
  * is still the basis it is about to write to.
  */
+/**
+ * 行高来源的只读视图。
+ *
+ * 以前这里收的是 `LayoutRoot.rowHeightProvenance` 那张 Map。ADR 0004 阶段 4B T8
+ * 之后来源的权威是 `SheetModel` 的 `rowData[row].hp`，没有一张现成的 Map 可交
+ * ——而为了传参现造一张，就等于又造出一份能与权威分叉的存储，正是这次迁移要
+ * 消灭的东西（设计稿 §4.1）。所以收的是**能力**，不是容器：一次点查加一次
+ * 「谁是 auto」的遍历，恰好是这个服务用到的全部。
+ */
+export interface RowHeightProvenanceView {
+  provenanceOf(row: number): RowHeightProvenance;
+  /** 来源为 `auto` 的行。只遍历真实存在的条目，不遍历坐标空间。 */
+  autoRows(): Iterable<number>;
+}
+
 export interface WrapMeasurementBasis {
   readonly scene: SceneSnapshot;
   /** Live model version, asserted against `scene.modelVersion`. */
@@ -19,7 +34,7 @@ export interface WrapMeasurementBasis {
   /** Live layout root version, asserted against `scene.layoutVersion`. */
   readonly layoutVersion: number;
   readonly defaultRowHeight: number;
-  readonly rowHeightProvenance: ReadonlyMap<number, Exclude<RowHeightProvenance, "default">>;
+  readonly rowHeightProvenance: RowHeightProvenanceView;
 }
 
 /**
@@ -155,12 +170,12 @@ export class WrapMeasurementService {
    */
   rowsNeedingDefaultReset(
     scene: SceneSnapshot,
-    rowHeightProvenance: ReadonlyMap<number, Exclude<RowHeightProvenance, "default">>,
+    rowHeightProvenance: RowHeightProvenanceView,
     defaultRowHeight: number
   ): readonly number[] {
     const rows: number[] = [];
-    for (const [row, provenance] of rowHeightProvenance) {
-      if (provenance === "auto" && scene.getRowHeight(row) !== defaultRowHeight) {
+    for (const row of rowHeightProvenance.autoRows()) {
+      if (scene.getRowHeight(row) !== defaultRowHeight) {
         rows.push(row);
       }
     }
@@ -185,7 +200,7 @@ export class WrapMeasurementService {
     scene: SceneSnapshot,
     options: {
       readonly hasColumnStructureChange: boolean;
-      readonly rowHeightProvenance: ReadonlyMap<number, Exclude<RowHeightProvenance, "default">>;
+      readonly rowHeightProvenance: RowHeightProvenanceView;
       readonly defaultRowHeight: number;
     }
   ): { readonly rows: ReadonlySet<number>; readonly visibleUnmeasuredCount: number } {
@@ -227,7 +242,7 @@ export class WrapMeasurementService {
     const updates: RowHeightMeasurement[] = [];
     const measuredWithoutResize: number[] = [];
     for (const row of rows) {
-      if ((basis.rowHeightProvenance.get(row) ?? "default") === "manual") {
+      if (basis.rowHeightProvenance.provenanceOf(row) === "manual") {
         measuredWithoutResize.push(row);
         continue;
       }

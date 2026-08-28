@@ -5,7 +5,7 @@ import { applySheetMutation, estimateSheetMutationBytes } from "./apply";
 import { invertSheetMutation } from "./invert";
 import type { SheetMutation } from "./mutation";
 import type { SheetModel } from "./SheetModel";
-import type { CellRecord } from "./types";
+import type { CellRecord, ColumnMeta, RowMeta } from "./types";
 
 /**
  * 一条已暂存、尚未写进活模型的变更。
@@ -110,6 +110,28 @@ export class SheetTransaction implements TransactionReadView {
   getRecord(row: number, column: number): CellRecord | undefined {
     this.#assertActive();
     return this.#shadow.getRecord(row, column);
+  }
+
+  /**
+   * 影子上的行 / 列元数据。
+   *
+   * 与 `getRecord` 同一条理由、同一个位置：这两个也是**变更层**要的读，不是读视图
+   * 的一部分。`set-row-meta` 载的是整条 `RowMeta`，所以一次只改行高的变更要保住这一
+   * 行已有的 `hd`，就得先读到它；而**必须读影子**——同一个事务里先隐藏再改高的两条
+   * 变更，第二条若读活模型就会拿到没被第一条更新过的旧条目，把隐藏悄悄盖掉。
+   *
+   * 这也是 ADR 0004 阶段 4B T8 之后「行高的权威在模型」能成立的前提：布局层的
+   * `prepare*` 只算索引，权威那一半由这里读出来、再作为 `set-row-meta` 写回去，
+   * 两半在同一个事务里（设计稿 §4.3）。
+   */
+  getRowMeta(row: number): RowMeta | undefined {
+    this.#assertActive();
+    return this.#shadow.getRowMeta(row);
+  }
+
+  getColumnMeta(column: number): ColumnMeta | undefined {
+    this.#assertActive();
+    return this.#shadow.getColumnMeta(column);
   }
 
   /**

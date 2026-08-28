@@ -2,7 +2,7 @@ import { CyExcelError, CyExcelErrorCode } from '../errors';
 import { ColumnAxisSnapshot } from './ColumnAxisSnapshot';
 import { RowMetrics, type RowMetricsFragment } from './RowMetrics';
 import type { ColumnStructureChange } from './columnStructure';
-import { assertValidRowOrder, invertRowOrder } from './rowOrder';
+import { assertValidRowOrder } from './rowOrder';
 import {
   remapIndex,
   validateAxisChange,
@@ -26,12 +26,15 @@ export interface LayoutOptions {
   readonly overscanColumns?: number;
 }
 
+/**
+ * 行高来源。
+ *
+ * 这个类型留在布局层，是因为「行高从哪来」是布局与测量之间的词汇；但它的**权威
+ * 存储**在 ADR 0004 阶段 4B T8 之后是 `SheetModel` 的 `rowData[row].hp`
+ * （`RowHeightSource` 恰好就是本类型去掉 `'default'`）。`LayoutEngine` 自己不再
+ * 存 provenance——见本文件 `#root` 上的注释与设计稿 §4.1/§4.2。
+ */
 export type RowHeightProvenance = 'default' | 'auto' | 'manual';
-
-export interface LayoutRowHeightUpdate {
-  readonly height: number;
-  readonly provenance: RowHeightProvenance;
-}
 
 export interface ViewportState {
   readonly scrollTop: number;
@@ -57,7 +60,6 @@ export interface LayoutRootSnapshot {
   readonly version: number;
   readonly rowCount: number;
   readonly rowMetrics: RowMetrics;
-  readonly rowHeightProvenance: ReadonlyMap<number, Exclude<RowHeightProvenance, 'default'>>;
   readonly columnAxis: ColumnAxisSnapshot;
 }
 
@@ -66,8 +68,6 @@ export interface LayoutRoot {
   readonly rowCount: number;
   readonly columnCount: number;
   readonly rowMetrics: RowMetrics;
-  /** Sparse ownership metadata. Missing rows have `default` provenance. */
-  readonly rowHeightProvenance: ReadonlyMap<number, Exclude<RowHeightProvenance, 'default'>>;
   readonly columnAxis: ColumnAxisSnapshot;
   readonly frozenRowCount: number;
   readonly frozenColumnCount: number;
@@ -78,8 +78,6 @@ export type PreparedLayoutRoot = LayoutRoot;
 export interface LayoutStructurePayload {
   readonly rowHeights?: ReadonlyMap<number, number> | undefined;
   readonly rowMetricsFragment?: RowMetricsFragment | undefined;
-  /** Row offsets within an inserted fragment. Missing offsets are `default`. */
-  readonly rowHeightProvenance?: ReadonlyMap<number, Exclude<RowHeightProvenance, 'default'>> | undefined;
   readonly columnWidths?: readonly number[] | undefined;
   readonly hiddenColumnOffsets?: ReadonlyMap<number, number> | undefined;
 }
@@ -106,43 +104,6 @@ function invalidLayoutOption(field: string, value: unknown): CyExcelError {
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
-
-function createReadonlyMap<K, V>(source: ReadonlyMap<K, V>): ReadonlyMap<K, V> {
-  const snapshot = new Map(source);
-  const readonlyMap = {
-    get size() {
-      return snapshot.size;
-    },
-    get(key: K): V | undefined {
-      return snapshot.get(key);
-    },
-    has(key: K): boolean {
-      return snapshot.has(key);
-    },
-    entries() {
-      return snapshot.entries();
-    },
-    keys() {
-      return snapshot.keys();
-    },
-    values() {
-      return snapshot.values();
-    },
-    forEach(
-      callback: (value: V, key: K, map: ReadonlyMap<K, V>) => void,
-      thisArg?: unknown,
-    ) {
-      for (const [key, value] of snapshot) {
-        callback.call(thisArg, value, key, readonlyMap);
-      }
-    },
-    [Symbol.iterator]() {
-      return snapshot[Symbol.iterator]();
-    },
-  } as ReadonlyMap<K, V>;
-  return Object.freeze(readonlyMap);
-}
-
 
 function validateLayoutOptions(options: LayoutOptions): void {
   if (!isNonNegativeInteger(options.rowCount)) {
@@ -209,8 +170,20 @@ function validateLayoutOptions(options: LayoutOptions): void {
  * `toPhysicalPixelSize` (./dpr.ts) for the physical-pixel concern.
  */
 export class LayoutEngine {
+  /**
+   * 派生索引，**不是权威**（ADR 0004 阶段 4B T8，设计稿 §4.1/§4.2）。
+   *
+   * 行高的权威是 `SheetModel` 的 `rowData[row].h`，来源是 `rowData[row].hp`；
+   * `#root.rowMetrics` 只是那份稀疏权威的一个带前缀和的稠密索引，存在的理由是
+   * `rowAtOffset` 要 O(log n)，而重建一次是 O(rowCount)、坐标空间可以到百万级，
+   * 所以它增量维护、不重建。改行高必须两边一起改，且要走同一个事务——这就是
+   * `set-row-meta` 存在的原因（设计稿 §4.3）。
+   *
+   * provenance 这边**连索引都不留**：`getRowHeightProvenance` 已删除，要问来源
+   * 一律读 `model.getRowMeta(row)?.hp ?? "default"`。少一份存储，就少一处能分叉。
+   */
   #root: LayoutRoot;
-  /** Default height for inserted/grown rows; #root.rowMetrics is the source of truth. */
+  /** 没有显式行高的行用它——**默认值是配置，不是模型状态**：模型只存偏离默认的那些行。 */
   readonly #rowHeight: number;
   /** The freeze.rows the caller originally asked for, before clamping to the current rowCount — structural root replacements re-clamp against this, so a shrink-then-grow sequence can recover frozen rows instead of only ever losing them. */
   readonly #requestedFrozenRows: number;
@@ -235,9 +208,6 @@ export class LayoutEngine {
         options.rowCount,
         options.rowHeight,
         options.rowHeights ?? new Map(),
-      ),
-      new Map(
-        Array.from(options.rowHeights?.keys() ?? [], (row) => [row, 'manual' as const]),
       ),
       columnAxis,
     );
@@ -295,13 +265,6 @@ export class LayoutEngine {
     return this.#root.rowMetrics.heightAt(row);
   }
 
-  getRowHeightProvenance(row: number): RowHeightProvenance {
-    if (!isNonNegativeInteger(row) || row >= this.#root.rowCount) {
-      throw invalidLayoutOption('row', row);
-    }
-    return this.#root.rowHeightProvenance.get(row) ?? 'default';
-  }
-
   /** Explicit O(rowCount) serialization boundary. Never use inside layout transactions. */
   exportDenseRowHeights(): Float64Array {
     return this.#root.rowMetrics.exportDenseValues();
@@ -343,7 +306,7 @@ export class LayoutEngine {
   }
 
   /** Applies several explicit row heights with one dense snapshot/root build. */
-  setRowHeights(updates: ReadonlyMap<number, LayoutRowHeightUpdate>): void {
+  setRowHeights(updates: ReadonlyMap<number, number>): void {
     this.replaceRoot(this.prepareSetRowHeights(updates));
   }
 
@@ -439,7 +402,6 @@ export class LayoutEngine {
       version: this.#root.version,
       rowCount: this.#root.rowCount,
       rowMetrics: this.#root.rowMetrics,
-      rowHeightProvenance: this.#root.rowHeightProvenance,
       columnAxis: this.#root.columnAxis,
     });
   }
@@ -449,7 +411,6 @@ export class LayoutEngine {
       this.#root.version + 1,
       snapshot.rowCount,
       snapshot.rowMetrics,
-      snapshot.rowHeightProvenance,
       snapshot.columnAxis,
     );
   }
@@ -478,7 +439,6 @@ export class LayoutEngine {
       base.version + 1,
       base.rowCount,
       base.rowMetrics,
-      base.rowHeightProvenance,
       this.#createColumnAxis(columnWidths, hiddenColumnWidths),
     );
   }
@@ -488,38 +448,32 @@ export class LayoutEngine {
     height: number,
     base: LayoutRoot = this.#root,
   ): PreparedLayoutRoot {
-    return this.prepareSetRowHeights(
-      new Map([[row, Object.freeze({ height, provenance: 'manual' as const })]]),
-      base,
-    );
+    return this.prepareSetRowHeights(new Map([[row, height]]), base);
   }
 
-  /** Prepares a batch without publishing a partially updated live root. */
+  /**
+   * Prepares a batch without publishing a partially updated live root.
+   *
+   * 只收高度，不收 provenance：来源写进 `rowData[row].hp`，那条写由
+   * `RowHeightMutation` / `LayoutRootMutation` 在同一个事务里发出（设计稿 §4.3）。
+   * 于是「高度变了但来源没变」这种只改 provenance 的调用在这里根本表达不出来，
+   * 也就不会有一个只更新了索引、没更新权威的根。
+   */
   prepareSetRowHeights(
-    updates: ReadonlyMap<number, LayoutRowHeightUpdate>,
+    updates: ReadonlyMap<number, number>,
     base: LayoutRoot = this.#root,
   ): PreparedLayoutRoot {
     let changed = false;
     const heights = new Map<number, number>();
-    const rowHeightProvenance = new Map(base.rowHeightProvenance);
-    for (const [row, update] of updates) {
+    for (const [row, height] of updates) {
       if (!isNonNegativeInteger(row) || row >= base.rowCount) {
         throw invalidLayoutOption('row', row);
       }
-      if (!isPositiveFinite(update.height)) {
-        throw invalidLayoutOption('height', update.height);
+      if (!isPositiveFinite(height)) {
+        throw invalidLayoutOption('height', height);
       }
-      if (update.provenance !== 'default' && update.provenance !== 'auto' && update.provenance !== 'manual') {
-        throw invalidLayoutOption('row height provenance', update.provenance);
-      }
-      heights.set(row, update.height);
-      changed ||= base.rowMetrics.heightAt(row) !== update.height ||
-        (base.rowHeightProvenance.get(row) ?? 'default') !== update.provenance;
-      if (update.provenance === 'default') {
-        rowHeightProvenance.delete(row);
-      } else {
-        rowHeightProvenance.set(row, update.provenance);
-      }
+      heights.set(row, height);
+      changed ||= base.rowMetrics.heightAt(row) !== height;
     }
     if (updates.size === 0) {
       return base;
@@ -534,7 +488,6 @@ export class LayoutEngine {
       base.version + 1,
       base.rowCount,
       rowMetrics,
-      rowHeightProvenance,
       base.columnAxis,
     );
   }
@@ -552,14 +505,10 @@ export class LayoutEngine {
             RowMetrics.uniform(rowCount - this.#root.rowCount, this.#rowHeight),
           )
         : this.#root.rowMetrics;
-    const rowHeightProvenance = new Map(
-      Array.from(this.#root.rowHeightProvenance).filter(([row]) => row < rowCount),
-    );
     return this.#createRoot(
       this.#root.version + 1,
       rowCount,
       rowMetrics,
-      rowHeightProvenance,
       this.#root.columnAxis,
     );
   }
@@ -569,12 +518,9 @@ export class LayoutEngine {
     count: number,
     heights?: ReadonlyMap<number, number>,
   ): PreparedLayoutRoot {
-    const rowHeightProvenance = heights === undefined
-      ? undefined
-      : new Map(Array.from(heights.keys(), (row) => [row, 'manual' as const]));
     return this.prepareStructureRoot(
       { axis: 'row', operation: 'insert', start, count },
-      heights === undefined ? {} : { rowHeights: heights, rowHeightProvenance },
+      heights === undefined ? {} : { rowHeights: heights },
     );
   }
 
@@ -603,29 +549,22 @@ export class LayoutEngine {
 
   /**
    * Physically reorders rows (`order[newPosition] = oldPosition`), carrying
-   * each row's height and height-provenance with it.
+   * each row's height with it.
    *
-   * The two remaps run in opposite directions on purpose: `rowMetrics.reorder`
-   * consumes `order` directly, because it pulls each new row's height from
-   * `order[newPosition]`. `rowHeightProvenance` is keyed by the *old* row
-   * index, so each entry has to be pushed to its new position instead, which
-   * means keying by `invertRowOrder(order)[oldRow]`.
+   * 权威那一半由 `SheetModel.reorderRows` 搬：`rowData` 是登记在
+   * `IndexedTableRegistry` 里的侧表，`applyRowPlan` 会把 `h`/`hp` 一起搬到新位置，
+   * 所以这里只需要搬索引。两边搬的是同一个排列，§4.2 的不变量因此在 reorder
+   * 之后仍然成立。
    */
   prepareReorderRows(
     order: Int32Array,
     base: LayoutRoot = this.#root,
   ): PreparedLayoutRoot {
     assertValidRowOrder(order, base.rowCount);
-    const inverse = invertRowOrder(order);
-    const rowHeightProvenance = new Map<number, Exclude<RowHeightProvenance, 'default'>>();
-    for (const [row, value] of base.rowHeightProvenance) {
-      rowHeightProvenance.set(inverse[row] as number, value);
-    }
     return this.#createRoot(
       base.version + 1,
       base.rowCount,
       base.rowMetrics.reorder(order),
-      rowHeightProvenance,
       base.columnAxis,
     );
   }
@@ -677,7 +616,6 @@ export class LayoutEngine {
       base.version + 1,
       base.rowCount,
       base.rowMetrics,
-      base.rowHeightProvenance,
       this.#createColumnAxis(columnWidths, hiddenColumnWidths),
     );
   }
@@ -694,7 +632,6 @@ export class LayoutEngine {
         base.version + 1,
         base.rowCount,
         base.rowMetrics,
-        base.rowHeightProvenance,
         this.#createColumnAxis(
           base.columnAxis.copyColumnWidths(),
           base.columnAxis.copyHiddenColumnWidths(),
@@ -709,7 +646,6 @@ export class LayoutEngine {
       base.version + 1,
       base.rowCount,
       base.rowMetrics,
-      base.rowHeightProvenance,
       this.#createColumnAxis(columnWidths, hiddenColumnWidths),
     );
   }
@@ -726,10 +662,6 @@ export class LayoutEngine {
 
     if (change.axis === 'row') {
       let rowMetrics: RowMetrics;
-      const rowHeightProvenance = this.#remapRowHeightProvenance(
-        base.rowHeightProvenance,
-        change,
-      );
       if (change.operation === 'insert') {
         const inserted = payload.rowMetricsFragment ?? RowMetrics.create(
           change.count,
@@ -738,18 +670,6 @@ export class LayoutEngine {
         );
         if (inserted.rowCount !== change.count) {
           throw invalidLayoutOption('rowMetricsFragment.rowCount', inserted.rowCount);
-        }
-        const insertedProvenance = payload.rowHeightProvenance ?? new Map(
-          Array.from(payload.rowHeights?.keys() ?? [], (row) => [row, 'manual' as const]),
-        );
-        for (const [offset, provenance] of insertedProvenance) {
-          if (!isNonNegativeInteger(offset) || offset >= change.count) {
-            throw invalidLayoutOption('rowHeightProvenance key', offset);
-          }
-          if (provenance !== 'auto' && provenance !== 'manual') {
-            throw invalidLayoutOption('rowHeightProvenance value', provenance);
-          }
-          rowHeightProvenance.set(change.start + offset, provenance);
         }
         rowMetrics = base.rowMetrics.insert(change.start, inserted);
       } else if (change.operation === 'delete') {
@@ -762,7 +682,6 @@ export class LayoutEngine {
         base.version + 1,
         rowMetrics.rowCount,
         rowMetrics,
-        rowHeightProvenance,
         base.columnAxis,
       );
     }
@@ -822,7 +741,6 @@ export class LayoutEngine {
       base.version + 1,
       base.rowCount,
       base.rowMetrics,
-      base.rowHeightProvenance,
       this.#createColumnAxis(columnWidths, hiddenColumnWidths),
     );
   }
@@ -831,7 +749,6 @@ export class LayoutEngine {
     version: number,
     rowCount: number,
     rowMetrics: RowMetrics,
-    rowHeightProvenance: ReadonlyMap<number, Exclude<RowHeightProvenance, 'default'>>,
     columnAxis: ColumnAxisSnapshot,
   ): LayoutRoot {
     if (!isNonNegativeInteger(version)) {
@@ -853,22 +770,11 @@ export class LayoutEngine {
       throw invalidLayoutOption('columnAxis.frozenColumnCount', columnAxis.frozenColumnCount);
     }
 
-    const provenance = new Map<number, Exclude<RowHeightProvenance, 'default'>>();
-    for (const [row, value] of rowHeightProvenance) {
-      if (!isNonNegativeInteger(row) || row >= rowCount) {
-        throw invalidLayoutOption('rowHeightProvenance key', row);
-      }
-      if (value !== 'auto' && value !== 'manual') {
-        throw invalidLayoutOption('rowHeightProvenance value', value);
-      }
-      provenance.set(row, value);
-    }
     return Object.freeze({
       version,
       rowCount,
       columnCount: columnAxis.columnCount,
       rowMetrics,
-      rowHeightProvenance: createReadonlyMap(provenance),
       columnAxis,
       frozenRowCount: Math.min(this.#requestedFrozenRows, rowCount),
       frozenColumnCount: columnAxis.frozenColumnCount,
@@ -891,24 +797,6 @@ export class LayoutEngine {
       }
       throw error;
     }
-  }
-
-  #remapRowHeightProvenance(
-    provenance: ReadonlyMap<number, Exclude<RowHeightProvenance, 'default'>>,
-    change: AxisChangeDescriptor,
-  ): Map<number, Exclude<RowHeightProvenance, 'default'>> {
-    const remapped = new Map<number, Exclude<RowHeightProvenance, 'default'>>();
-    for (const [row, value] of provenance) {
-      if (
-        change.operation === 'delete' &&
-        row >= change.start &&
-        row < change.start + change.count
-      ) {
-        continue;
-      }
-      remapped.set(remapIndex(row, change), value);
-    }
-    return remapped;
   }
 
   #remapHiddenColumns(

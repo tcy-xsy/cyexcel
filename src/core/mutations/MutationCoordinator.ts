@@ -85,6 +85,8 @@ export class MutationCoordinator {
       baseRevision,
       model: resources.model,
       prepareData: resources.prepareData,
+      readRowMeta: resources.readRowMeta,
+      readColumnMeta: resources.readColumnMeta,
       roots: this.#createRootDraftRegistry()
     };
 
@@ -140,8 +142,19 @@ export class MutationCoordinator {
     };
   }
 
-  prepare(transactionId: string, mutations: readonly Mutation[]): PreparedTransaction {
-    const session = this.begin(transactionId);
+  /**
+   * `begin` + 逐条 stage + `seal` 的合并写法。
+   *
+   * `createResources` 与 `begin` 的同名参数是同一个东西，原样转交：一条要写模型的
+   * 变更（比如行高——权威在 `rowData`，见 ADR 0004 阶段 4B T8）没有影子模型就
+   * prepare 不了，而这个便捷方法此前把那个参数吃掉了。
+   */
+  prepare(
+    transactionId: string,
+    mutations: readonly Mutation[],
+    createResources?: (baseRevision: ModelRevision) => MutationPlanningResources
+  ): PreparedTransaction {
+    const session = this.begin(transactionId, createResources);
     try {
       for (const mutation of mutations) {
         session.stage(mutation);
@@ -228,8 +241,12 @@ export class MutationCoordinator {
     this.#state = "idle";
   }
 
-  execute(transactionId: string, mutations: readonly Mutation[]): CommitReceipt {
-    return this.commit(this.prepare(transactionId, mutations));
+  execute(
+    transactionId: string,
+    mutations: readonly Mutation[],
+    createResources?: (baseRevision: ModelRevision) => MutationPlanningResources
+  ): CommitReceipt {
+    return this.commit(this.prepare(transactionId, mutations, createResources));
   }
 
   dispose(): void {
@@ -254,6 +271,8 @@ export class MutationCoordinator {
         getCell: unsupported
       },
       prepareData: unsupported,
+      readRowMeta: unsupported,
+      readColumnMeta: unsupported,
       dispose: () => {}
     };
   }

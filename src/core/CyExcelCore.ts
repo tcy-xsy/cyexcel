@@ -98,6 +98,7 @@ import {
   validateAxisChange,
   ViewportSnapshot,
   type LayoutRoot,
+  type RowHeightProvenance,
   type ViewportState
 } from "./layout";
 import { InitializationRollback } from "./lifecycle";
@@ -113,7 +114,7 @@ import {
   type SurfaceId,
   type SurfaceSetSnapshot
 } from "./scene";
-import { WrapMeasurementService } from "./measurement";
+import { WrapMeasurementService, type RowHeightProvenanceView } from "./measurement";
 import { ShortcutRegistry, type ShortcutHandler } from "./shortcuts";
 import { computeSortOrder, createDefaultSortCompare, nextSortDirection, type SortState } from "./sort";
 import {
@@ -571,6 +572,17 @@ export class CyExcelCore {
   readonly #store: TableStore;
   readonly #commandManager: CommandManager;
   readonly #layout: LayoutEngine;
+  /**
+   * 交给测量服务的行高来源视图。
+   *
+   * 读的是权威——`SheetModel` 的 `rowData[row].hp`，不是布局根上的索引：ADR 0004
+   * 阶段 4B T8 之后布局层连一份来源的副本都不留（设计稿 §4.1/§4.2）。两个箭头函数
+   * 都只在被调用时才碰 `#sheet`，所以放在字段初始化里是安全的。
+   */
+  readonly #rowHeightProvenance: RowHeightProvenanceView = {
+    provenanceOf: (row: number): RowHeightProvenance => this.#sheet.getRowMeta(row)?.hp ?? "default",
+    autoRows: (): Iterable<number> => this.#autoHeightRows()
+  };
   #scene!: SceneSnapshot;
   /**
    * Publication identity, independent from the model/layout identities held
@@ -1477,7 +1489,7 @@ export class CyExcelCore {
         row >= 0 &&
         row < this.#layout.rowCount &&
         this.#layout.getRowHeight(row) === height &&
-        this.#layout.getRowHeightProvenance(row) === "manual"
+        this.#rowHeightProvenance.provenanceOf(row) === "manual"
       ) {
         return;
       }
@@ -1830,7 +1842,7 @@ export class CyExcelCore {
 
         const measurement = this.#measurement.rowsToMeasureFor(receiptScene, {
           hasColumnStructureChange: hasColumnStructure,
-          rowHeightProvenance: this.#layout.root.rowHeightProvenance,
+          rowHeightProvenance: this.#rowHeightProvenance,
           defaultRowHeight: this.#layout.rowHeight
         });
         const rowResizeScheduled = measurementPassesRemaining > 0 && measurement.rows.size > 0
@@ -1874,6 +1886,15 @@ export class CyExcelCore {
     this.#contentCanvas.style.outline = "";
   };
 
+  /** 来源为 `auto` 的行。只走稀疏表里真实存在的条目，不扫坐标空间。 */
+  *#autoHeightRows(): IterableIterator<number> {
+    for (const [row, meta] of this.#sheet.rowMetaEntries()) {
+      if (meta.hp === "auto") {
+        yield row;
+      }
+    }
+  }
+
   #runFinalizer(name: string, run: () => void): boolean {
     try {
       run();
@@ -1897,7 +1918,7 @@ export class CyExcelCore {
       modelVersion: basisModelVersion,
       layoutVersion: basisLayoutRoot.version,
       defaultRowHeight: this.#layout.rowHeight,
-      rowHeightProvenance: basisLayoutRoot.rowHeightProvenance
+      rowHeightProvenance: this.#rowHeightProvenance
     });
     if (plan.updates.length === 0) {
       return false;

@@ -3,5 +3,6 @@ export {
   type WrapMeasurementBasis,
   type WrapMeasurementPlan,
   type WrapMeasurementServiceOptions,
-  type RowHeightMeasurement
+  type RowHeightMeasurement,
+  type RowHeightProvenanceView
 } from "./WrapMeasurementService";

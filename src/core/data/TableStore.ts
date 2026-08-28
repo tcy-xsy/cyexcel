@@ -13,7 +13,7 @@ import { rowValuesToCells, valueToRecord } from "../sheet/import";
 import type { SheetMutation } from "../sheet/mutation";
 import { changesForSheetMutation, type SheetAxisSpace } from "../sheet/patches";
 import type { SheetModel } from "../sheet/SheetModel";
-import { SheetTransaction } from "../sheet/SheetTransaction";
+import { createSheetPlanningResources } from "../sheet/planning";
 import type { CellRange, Patch } from "../types";
 import { assertValidCoordinate, assertValidRange } from "../validation";
 import type { ChangeSet } from "./changes";
@@ -146,22 +146,10 @@ export class TableStore {
   }
 
   beginMutationSession(transactionId: string): MutationPrepareSession {
-    return this.#coordinator.begin(transactionId, (baseRevision) => {
-      // 影子模型在这里克隆出来（`SheetTransaction` 的构造函数），此后到 commit 之前
-      // 活模型一个字节都不会动。`baseRevision` 直接交给它，所以不存在"事务的基准版本
-      // 与协调器对不上"这种情况——那是数据源自己开事务时代的检查。
-      const transaction = new SheetTransaction(this.#sheet, baseRevision);
-      return {
-        model: transaction,
-        prepareData: (source, mutation) => {
-          if (source !== this.#sheet) {
-            throw new CyExcelError(CyExcelErrorCode.MutationConflict, "Mutation targets another sheet");
-          }
-          return transaction.prepareMutation(mutation);
-        },
-        dispose: () => transaction.dispose()
-      };
-    });
+    return this.#coordinator.begin(
+      transactionId,
+      (baseRevision) => createSheetPlanningResources(this.#sheet, baseRevision)
+    );
   }
 
   getRowCount(): number {

@@ -1,6 +1,9 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
 import type { LayoutEngine, LayoutRoot, RowHeightProvenance } from "../layout";
+import type { SheetModel } from "../sheet/SheetModel";
+import type { PreparedSheetMutation } from "../sheet/SheetTransaction";
 import type { Patch } from "../types";
+import { rowHeightOf, rowHeightProvenanceOf, withRowHeight } from "./rowHeightMeta";
 import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types";
 
 export interface RowHeightMutationUpdate {
@@ -73,16 +76,25 @@ function patchesFor(
   })]);
 }
 
-/** Atomic row-height batch whose prepare composes through the transaction-local Layout root. */
+/**
+ * Atomic row-height batch whose prepare composes through the transaction-local Layout root.
+ *
+ * 一条变更改的是**两处**状态：权威（`rowData[row].h`/`.hp`，走 `set-row-meta`）与
+ * 索引（`RowMetrics`，走事务局部的布局根）。它们由同一个参与者一起 commit、一起
+ * rollback，所以不存在「索引前进了而权威没有」的中间态——ADR 0004 阶段 4B T8 的
+ * 不变量（设计稿 §4.2）靠的正是这一点。
+ */
 export class RowHeightMutation implements Mutation {
   readonly type = "row-heights";
   readonly updates: readonly RowHeightMutationUpdate[];
   readonly policy: RowHeightMutationPolicy;
   readonly changes: readonly Patch[];
   readonly #layout: LayoutEngine;
+  readonly #sheet: SheetModel;
 
   constructor(
     layout: LayoutEngine,
+    sheet: SheetModel,
     updates: readonly RowHeightMutationUpdate[],
     policy: RowHeightMutationPolicy = "overwrite",
     changes?: readonly Patch[]
@@ -91,6 +103,7 @@ export class RowHeightMutation implements Mutation {
       throw invalidUpdate(`Invalid row-height mutation policy: ${String(policy)}`);
     }
     this.#layout = layout;
+    this.#sheet = sheet;
     this.updates = snapshotUpdates(updates);
     this.policy = policy;
     this.changes = changes === undefined
@@ -101,56 +114,93 @@ export class RowHeightMutation implements Mutation {
 
   prepare(context: MutationPrepareContext): PreparedMutationParticipant {
     const previousRoot = context.roots.get(this.#layout, () => this.#layout.root);
-    const updates = this.updates.filter(
-      (update) => {
-        const previousProvenance = previousRoot.rowHeightProvenance.get(update.row) ?? "default";
-        if (this.policy === "preserve-manual" && previousProvenance === "manual") {
-          return false;
-        }
-        return previousRoot.rowMetrics.heightAt(update.row) !== update.height ||
-          previousProvenance !== update.provenance;
+    const defaultRowHeight = this.#layout.rowHeight;
+    // 读的是影子里的权威，不是 `previousRoot` 的索引：同一个事务里前一条变更已经
+    // 改过它了，而索引与权威在这一刻按不变量是同一个答案——既然如此，就读那个说了算的。
+    const previousMeta = new Map<number, ReturnType<MutationPrepareContext["readRowMeta"]>>();
+    const metaOf = (row: number) => {
+      if (!previousMeta.has(row)) {
+        previousMeta.set(row, context.readRowMeta(this.#sheet, row));
       }
-    );
+      return previousMeta.get(row);
+    };
+
+    const updates = this.updates.filter((update) => {
+      const meta = metaOf(update.row);
+      const previousProvenance = rowHeightProvenanceOf(meta);
+      if (this.policy === "preserve-manual" && previousProvenance === "manual") {
+        return false;
+      }
+      return rowHeightOf(meta, defaultRowHeight) !== update.height ||
+        previousProvenance !== update.provenance;
+    });
     const changedUpdates = snapshotUpdates(updates);
-    const nextRoot = changedUpdates.length === 0
-      ? previousRoot
-      : this.#layout.prepareSetRowHeights(
-          new Map(changedUpdates.map((update) => [update.row, Object.freeze({
-            height: update.height,
-            provenance: update.provenance
-          })])),
-          previousRoot
-        );
+
+    const staged: PreparedSheetMutation[] = [];
+    let nextRoot = previousRoot;
+    try {
+      for (const update of changedUpdates) {
+        staged.push(context.prepareData(this.#sheet, {
+          type: "set-row-meta",
+          row: update.row,
+          meta: withRowHeight(metaOf(update.row), update.height, update.provenance)
+        }));
+      }
+      nextRoot = changedUpdates.length === 0
+        ? previousRoot
+        : this.#layout.prepareSetRowHeights(
+            new Map(changedUpdates.map((update) => [update.row, update.height])),
+            previousRoot
+          );
+    } catch (error) {
+      for (const prepared of staged) {
+        prepared.dispose();
+      }
+      throw error;
+    }
     if (nextRoot !== previousRoot) {
       context.roots.set(this.#layout, nextRoot);
     }
 
     const changes = patchesFor(changedUpdates, nextRoot);
-    const inverseUpdates = snapshotUpdates(changedUpdates.map((update) => ({
-      row: update.row,
-      height: previousRoot.rowMetrics.heightAt(update.row),
-      provenance: previousRoot.rowHeightProvenance.get(update.row) ?? "default"
-    })));
+    const inverseUpdates = snapshotUpdates(changedUpdates.map((update) => {
+      const meta = metaOf(update.row);
+      return {
+        row: update.row,
+        height: rowHeightOf(meta, defaultRowHeight),
+        provenance: rowHeightProvenanceOf(meta)
+      };
+    }));
     // Receipt replay is exact: only the initial auto-measurement prepare protects manual rows.
-    const forward = new RowHeightMutation(this.#layout, changedUpdates, "overwrite", changes);
-    const inverse = new RowHeightMutation(this.#layout, inverseUpdates, "overwrite", changes);
+    const forward = new RowHeightMutation(this.#layout, this.#sheet, changedUpdates, "overwrite", changes);
+    const inverse = new RowHeightMutation(this.#layout, this.#sheet, inverseUpdates, "overwrite", changes);
     let commitStarted = false;
     let rolledBack = false;
 
     return {
-      hasEffect: nextRoot !== previousRoot,
+      // 只改来源、不改高度也是有效果的：`nextRoot === previousRoot`（索引不动），
+      // 但权威里的 `hp` 变了。所以效果看的是 `changedUpdates`，不是根的同一性。
+      hasEffect: changedUpdates.length > 0,
       forward,
       inverse,
-      estimatedBytes: changedUpdates.length === 0 ? 0 : 64 + changedUpdates.length * 32,
+      estimatedBytes: changedUpdates.length === 0
+        ? 0
+        : 64 + changedUpdates.length * 32 +
+          staged.reduce((total, prepared) => total + prepared.estimatedBytes, 0),
       commit: () => {
         if (this.#layout.root !== previousRoot) {
           throw new CyExcelError(CyExcelErrorCode.MutationConflict, "Layout root changed after row-height prepare");
         }
-        if (nextRoot === previousRoot) {
+        if (changedUpdates.length === 0) {
           return;
         }
         commitStarted = true;
-        this.#layout.replaceRoot(nextRoot);
+        for (const prepared of staged) {
+          prepared.commit();
+        }
+        if (nextRoot !== previousRoot) {
+          this.#layout.replaceRoot(nextRoot);
+        }
       },
       rollback: () => {
         if (!commitStarted || rolledBack) {
@@ -158,8 +208,15 @@ export class RowHeightMutation implements Mutation {
         }
         rolledBack = true;
         this.#layout.replaceRoot(previousRoot);
+        for (let index = staged.length - 1; index >= 0; index -= 1) {
+          staged[index]!.rollback();
+        }
       },
-      dispose: () => {}
+      dispose: () => {
+        for (const prepared of staged) {
+          prepared.dispose();
+        }
+      }
     };
   }
 }

@@ -182,10 +182,7 @@ describe("GridStructureOwner", () => {
 
   it("captures deleted row geometry as a persistent fragment for undo", () => {
     const fixture = createOwner([{ width: 30 }]);
-    fixture.layout.replaceRoot(fixture.layout.prepareSetRowHeights(new Map([[
-      1,
-      { height: 47, provenance: "auto" }
-    ]])));
+    fixture.layout.replaceRoot(fixture.layout.prepareSetRowHeights(new Map([[1, 47]])));
     const before = fixture.owner.getRoot();
     const forward = fixture.owner.prepare(
       before,
@@ -198,7 +195,8 @@ describe("GridStructureOwner", () => {
       new Float64Array([47])
     );
     expect(forward.inversePayload.rowHeights).toBeUndefined();
-    expect(forward.inversePayload.rowHeightProvenance).toEqual(new Map([[0, "auto"]]));
+    // 来源不再由这条载荷搬：`rowData` 是注册侧表，`h`/`hp` 跟着 `restore-rows`
+    // 一起回来（ADR 0004 阶段 4B T8）。
 
     fixture.owner.replaceRoot(forward.nextRoot);
     const inverse = fixture.owner.prepare(
@@ -210,6 +208,5 @@ describe("GridStructureOwner", () => {
     expect(inverse.nextRoot.layout.rowMetrics.exportDenseValues()).toEqual(
       new Float64Array([20, 47, 20])
     );
-    expect(inverse.nextRoot.layout.rowHeightProvenance.get(1)).toBe("auto");
   });
 });

@@ -22,6 +22,7 @@ import type { LayoutEngine } from "../layout/LayoutEngine";
 import { LayoutRootMutation, type LayoutRootAction } from "../mutations/LayoutRootMutation";
 import { RowHeightMutation } from "../mutations/RowHeightMutation";
 import { StructureIntegrationMutation } from "../mutations/StructureIntegrationMutation";
+import type { SheetModel } from "../sheet/SheetModel";
 import type { CommitReceipt, Mutation, MutationPrepareSession, PreparedTransaction } from "../mutations/types";
 import type { CellRange } from "../types";
 import { checkBeforeColumnsChange } from "../commands/checkBeforeColumnsChange";
@@ -104,13 +105,16 @@ export class TableDataCommandMutationFactory implements DataCommandMutationFacto
 
 export class GridLayoutCommandMutationFactory implements LayoutCommandMutationFactory {
   readonly #layout: LayoutEngine;
+  /** 行高的权威在模型里（ADR 0004 阶段 4B T8），所以造行高变更也要拿到那张表。 */
+  readonly #sheet: SheetModel;
 
-  constructor(layout: LayoutEngine) {
+  constructor(layout: LayoutEngine, sheet: SheetModel) {
     this.#layout = layout;
+    this.#sheet = sheet;
   }
 
   createLayoutMutation(action: LayoutRootAction): Mutation {
-    return new LayoutRootMutation(this.#layout, action);
+    return new LayoutRootMutation(this.#layout, this.#sheet, action);
   }
 
   createRowHeightMutation(
@@ -119,6 +123,7 @@ export class GridLayoutCommandMutationFactory implements LayoutCommandMutationFa
   ): Mutation {
     return new RowHeightMutation(
       this.#layout,
+      this.#sheet,
       updates.map((update) => ({ ...update, provenance })),
       provenance === "auto" ? "preserve-manual" : "overwrite"
     );
@@ -201,7 +206,7 @@ export class TableCommandManager extends CommandManager {
     const planner = createBuiltinCommandPlanner({
       data: new TableDataCommandMutationFactory(store),
       ...(options.layout !== undefined
-        ? { layout: new GridLayoutCommandMutationFactory(options.layout) }
+        ? { layout: new GridLayoutCommandMutationFactory(options.layout, store.sheet) }
         : {}),
       guards: new HookStructuralCommandGuards(hooks)
     });
@@ -227,7 +232,7 @@ export function createGridCommandManager(options: GridCommandManagerOptions): Co
   const hooks = commandHooks(options);
   const planner = createBuiltinCommandPlanner({
     data: new TableDataCommandMutationFactory(options.store),
-    layout: new GridLayoutCommandMutationFactory(options.layout),
+    layout: new GridLayoutCommandMutationFactory(options.layout, options.store.sheet),
     structure: new GridStructureCommandMutationFactory(options.structureOwner),
     guards: new HookStructuralCommandGuards(hooks)
   });

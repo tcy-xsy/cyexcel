@@ -179,8 +179,8 @@ describe('LayoutEngine variable row heights', () => {
     const layout = createLayout();
     const before = layout.root;
     const prepared = layout.prepareSetRowHeights(new Map([
-      [0, { height: 25, provenance: 'auto' }],
-      [3, { height: 35, provenance: 'manual' }],
+      [0, 25],
+      [3, 35],
     ]));
 
     expect(layout.root).toBe(before);
@@ -196,8 +196,8 @@ describe('LayoutEngine variable row heights', () => {
     const before = layout.root;
 
     expect(layout.prepareSetRowHeights(new Map([
-      [0, { height: 20, provenance: 'default' }],
-      [2, { height: 20, provenance: 'default' }],
+      [0, 20],
+      [2, 20],
     ]))).toBe(before);
     expect(layout.root).toBe(before);
     expect(layout.version).toBe(0);
@@ -217,8 +217,8 @@ describe('LayoutEngine variable row heights', () => {
     const before = layout.root;
 
     expect(() => layout.prepareSetRowHeights(new Map([
-      [0, { height: 25, provenance: 'auto' }],
-      [99, { height: 30, provenance: 'auto' }],
+      [0, 25],
+      [99, 30],
     ]))).toThrow(CyExcelError);
     expect(layout.root).toBe(before);
   });
@@ -1328,44 +1328,11 @@ describe('LayoutEngine root prepare/replace', () => {
     expect(layout.version).toBe(version + 1);
   });
 
-  it('tracks immutable provenance independently from the numeric row height', () => {
-    const layout = createLayout();
-
-    expect(layout.getRowHeightProvenance(0)).toBe('default');
-    expect(layout.getRowHeightProvenance(1)).toBe('manual');
-
-    const autoRoot = layout.prepareSetRowHeights(new Map([
-      [2, { height: 20, provenance: 'auto' }],
-    ]));
-    expect(autoRoot).not.toBe(layout.root);
-    layout.replaceRoot(autoRoot);
-
-    expect(layout.getRowHeight(2)).toBe(20);
-    expect(layout.getRowHeightProvenance(2)).toBe('auto');
-    expect('set' in layout.root.rowHeightProvenance).toBe(false);
-  });
-
-  it('remaps manual and auto provenance through row insert, delete, and move', () => {
-    const layout = createLayout();
-    layout.replaceRoot(layout.prepareSetRowHeights(new Map([
-      [2, { height: 42, provenance: 'auto' }],
-    ])));
-
-    layout.insertRows(1, 1, new Map([[0, 26]]));
-    expect(Array.from({ length: layout.rowCount }, (_unused, row) =>
-      layout.getRowHeightProvenance(row)
-    )).toEqual(['default', 'manual', 'manual', 'auto', 'default']);
-
-    layout.deleteRows(2, 1);
-    expect(Array.from({ length: layout.rowCount }, (_unused, row) =>
-      layout.getRowHeightProvenance(row)
-    )).toEqual(['default', 'manual', 'auto', 'default']);
-
-    layout.moveRows(2, 1, 0);
-    expect(Array.from({ length: layout.rowCount }, (_unused, row) =>
-      layout.getRowHeightProvenance(row)
-    )).toEqual(['auto', 'default', 'manual', 'default']);
-  });
+  // 行高来源不再存在布局里：权威是 `rowData[row].hp`，`RowMetrics` 只留数字
+  // （ADR 0004 阶段 4B T8，设计稿 §4.1/§4.2）。原先在这里的两条来源用例——
+  // "来源与数字各自独立"和"来源跟着插/删/移重映射"——随 `getRowHeightProvenance`
+  // 一起去掉了：前者已无对象可测，后者是 `rowData` 作为注册侧表的性质，由
+  // `IndexedTable` 的重映射用例与 §4.2 的属性测试覆盖。
 
   it('prepare validation failures leave live state, hidden remaps, and version unchanged', () => {
     const layout = createLayout();
@@ -1393,7 +1360,7 @@ describe('LayoutEngine root prepare/replace', () => {
 describe('LayoutEngine.prepareReorderRows', () => {
   // Asymmetric permutation on purpose: order[i] = order-inverse[i] would hold
   // for a self-inverse permutation like [1, 0], which can't distinguish a
-  // correct inverse-mapped provenance table from an un-inverted one.
+  // correctly inverse-mapped row-height rope from an un-inverted one.
   function createLayout(): LayoutEngine {
     const layout = new LayoutEngine({
       rowCount: 3,
@@ -1415,19 +1382,6 @@ describe('LayoutEngine.prepareReorderRows', () => {
     expect(layout.getRowHeight(2)).toBe(24);
   });
 
-  it('moves row height provenance along with its row', () => {
-    const layout = createLayout();
-    expect(layout.getRowHeightProvenance(0)).toBe('manual');
-
-    layout.replaceRoot(layout.prepareReorderRows(Int32Array.from([2, 0, 1])));
-
-    // Provenance must follow the row, or a hand-resized row silently becomes
-    // auto-owned and the next content change overwrites the user's height.
-    expect(layout.getRowHeightProvenance(1)).toBe('manual');
-    expect(layout.getRowHeightProvenance(0)).toBe('default');
-    expect(layout.getRowHeightProvenance(2)).toBe('default');
-  });
-
   it('keeps the total height unchanged', () => {
     const layout = createLayout();
     const before = layout.getTotalHeight();
@@ -1444,7 +1398,6 @@ describe('LayoutEngine.prepareReorderRows', () => {
     const prepared = layout.prepareReorderRows(Int32Array.from([2, 0, 1]));
 
     expect(layout.getRowHeight(0)).toBe(60);
-    expect(layout.getRowHeightProvenance(0)).toBe('manual');
     expect(layout.version).toBe(version);
     expect(prepared.version).toBe(version + 1);
   });

@@ -525,6 +525,22 @@ export class SheetModel {
     return this.#rowData.get(row);
   }
 
+  /**
+   * 遍历所有**被自定义过**的行——稀疏表里真实存在的那些条目，不是 0..rowCount。
+   *
+   * 有它是因为「哪些行的行高来源是 auto」这个问题只能靠遍历回答，而遍历坐标空间
+   * 是不可接受的：空间可以到百万级，条目通常只有几十个（自动换行测量过的那些）。
+   * 唯一的替代是在外面另存一张 auto 行的集合，那就又多一份能与权威分叉的存储
+   * ——ADR 0004 阶段 4B T8 要消灭的正是这个（设计稿 §4.1）。
+   *
+   * 产出的是活对象的引用（同 `IndexedTable.read()` 的口径），遍历期间不要写这张表。
+   */
+  *rowMetaEntries(): IterableIterator<readonly [number, RowMeta]> {
+    for (const [key, meta] of Object.entries(this.#rowData.read())) {
+      yield [Number(key), meta];
+    }
+  }
+
   setRowMeta(row: number, meta: RowMeta): void {
     this.#rowData.set(row, meta);
   }

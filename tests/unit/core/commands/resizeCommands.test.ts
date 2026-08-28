@@ -9,6 +9,7 @@ import { TableStore } from "../../../../src/core/data";
 import { createTableCommandManager } from "../../../../src/core/integration";
 import { LayoutEngine } from "../../../../src/core/layout";
 import { createSheetFromRows } from "../../../helpers/createSheetModel";
+import { rowHeightProvenanceOf } from "../../../helpers/rowHeightAuthority";
 
 function createFixture() {
   const store = new TableStore(
@@ -96,7 +97,7 @@ describe("ResizeRowCommand", () => {
   });
 
   it("does not let an auto-height batch overwrite a manually sized row", () => {
-    const { layout, manager } = createFixture();
+    const { layout, manager, store } = createFixture();
 
     manager.execute(new ResizeRowCommand(1, 36));
     const manualRoot = layout.root;
@@ -107,36 +108,36 @@ describe("ResizeRowCommand", () => {
     expect(patches).toEqual([]);
     expect(layout.root).toBe(manualRoot);
     expect(layout.getRowHeight(1)).toBe(36);
-    expect(layout.getRowHeightProvenance(1)).toBe("manual");
+    expect(rowHeightProvenanceOf(store.sheet, 1)).toBe("manual");
   });
 
   it("restores auto provenance when a manual resize is undone", () => {
-    const { layout, manager } = createFixture();
+    const { layout, manager, store } = createFixture();
 
     manager.execute(new SetRowHeightsCommand([{ row: 1, height: 36 }], "auto"));
-    expect(layout.getRowHeightProvenance(1)).toBe("auto");
+    expect(rowHeightProvenanceOf(store.sheet, 1)).toBe("auto");
 
     manager.execute(new ResizeRowCommand(1, 52));
-    expect(layout.getRowHeightProvenance(1)).toBe("manual");
+    expect(rowHeightProvenanceOf(store.sheet, 1)).toBe("manual");
 
     manager.undo();
     expect(layout.getRowHeight(1)).toBe(36);
-    expect(layout.getRowHeightProvenance(1)).toBe("auto");
+    expect(rowHeightProvenanceOf(store.sheet, 1)).toBe("auto");
 
     manager.redo();
     expect(layout.getRowHeight(1)).toBe(52);
-    expect(layout.getRowHeightProvenance(1)).toBe("manual");
+    expect(rowHeightProvenanceOf(store.sheet, 1)).toBe("manual");
   });
 
   it("publishes a manual lock even when the numeric height is unchanged", () => {
-    const { layout, manager } = createFixture();
+    const { layout, manager, store } = createFixture();
 
     manager.execute(new SetRowHeightsCommand([{ row: 0, height: 28 }], "auto"));
     const patches = manager.execute(new ResizeRowCommand(0, 28));
 
     expect(patches).toHaveLength(1);
     expect(layout.getRowHeight(0)).toBe(28);
-    expect(layout.getRowHeightProvenance(0)).toBe("manual");
+    expect(rowHeightProvenanceOf(store.sheet, 0)).toBe("manual");
   });
 });
 

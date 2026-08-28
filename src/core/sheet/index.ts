@@ -60,6 +60,7 @@ export {
   estimateSheetMutationBytes
 } from "./apply";
 export { SheetTransaction, type PreparedSheetMutation } from "./SheetTransaction";
+export { createSheetPlanningResources } from "./planning";
 export { changesForSheetMutation, type SheetAxisSpace } from "./patches";
 export {
   rowValuesToCells,

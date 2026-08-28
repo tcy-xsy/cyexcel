@@ -8,7 +8,6 @@ export {
   type LayoutRoot,
   type PreparedLayoutRoot,
   type LayoutStructurePayload,
-  type LayoutRowHeightUpdate,
   type RowHeightProvenance
 } from "./LayoutEngine";
 export { SkeletonSnapshot, type SkeletonSnapshotOptions } from "./SkeletonSnapshot";

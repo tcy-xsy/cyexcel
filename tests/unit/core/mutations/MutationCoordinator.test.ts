@@ -369,6 +369,8 @@ describe("MutationCoordinator", () => {
       prepareData: () => {
         throw new Error("not used");
       },
+      readRowMeta: () => undefined,
+      readColumnMeta: () => undefined,
       dispose: () => {
         resourcesDisposed += 1;
       }

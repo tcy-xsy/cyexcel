@@ -14,20 +14,37 @@ import {
 } from "../../../../src/core/integration";
 import { SelectionModel } from "../../../../src/core/interaction";
 import { LayoutEngine } from "../../../../src/core/layout";
+import type { ModelRevision } from "../../../../src/core/model";
 import {
   LayoutRootMutation,
   MutationCoordinator,
   StructureIntegrationMutation,
-  type Mutation
+  type Mutation,
+  type MutationPlanningResources
 } from "../../../../src/core/mutations";
+import { createSheetPlanningResources } from "../../../../src/core/sheet";
+import type { SheetModel } from "../../../../src/core/sheet/SheetModel";
+import { createSheetFromRows } from "../../../helpers/createSheetModel";
+import { rowHeightProvenanceOf } from "../../../helpers/rowHeightAuthority";
 
-function createLayout(): LayoutEngine {
-  return new LayoutEngine({
+/**
+ * 行高的权威在模型里（ADR 0004 阶段 4B T8），所以夹具是「一张表 + 一个布局」：
+ * `set-row-height` 这一支要同时写 `rowData` 和 `RowMetrics`。
+ */
+function createFixture(): { layout: LayoutEngine; sheet: SheetModel } {
+  const sheet = createSheetFromRows([{ a: "1" }, { a: "2" }, { a: "3" }], ["a"]);
+  const layout = new LayoutEngine({
     rowCount: 3,
     columnCount: 3,
     rowHeight: 20,
     columnWidths: [50, 60, 70]
   });
+  return { layout, sheet };
+}
+
+/** 影子模型的来源，与 `TableStore.beginMutationSession` 用的是同一个工厂。 */
+function resourcesFor(sheet: SheetModel): (baseRevision: ModelRevision) => MutationPlanningResources {
+  return (baseRevision) => createSheetPlanningResources(sheet, baseRevision);
 }
 
 function createGridFixture() {
@@ -64,6 +81,9 @@ function createGridFixture() {
     columnManager,
     headerManager,
     layout,
+    // 这个夹具里的 `LayoutRootMutation` 全是列宽，碰不到模型；带上表只是为了满足
+    // 构造签名——行高那一支才真的要它。
+    sheet: createSheetFromRows([{ a: "1" }, { a: "2" }, { a: "3" }], ["a"]),
     selection,
     getColumns: () => liveColumns
   };
@@ -111,18 +131,18 @@ function expectErrorCode(action: () => unknown, code: string): void {
 
 describe("LayoutRootMutation", () => {
   it("prepares a replacement root without writing the live layout", () => {
-    const layout = createLayout();
+    const { layout, sheet } = createFixture();
     const coordinator = new MutationCoordinator();
     const initialRoot = layout.root;
 
     const prepared = coordinator.prepare("resize-row", [
-      new LayoutRootMutation(layout, {
+      new LayoutRootMutation(layout, sheet, {
         type: "set-row-height",
         row: 1,
         height: 36,
         provenance: "manual"
       })
-    ]);
+    ], resourcesFor(sheet));
 
     expect(layout.root).toBe(initialRoot);
     expect(layout.getRowHeight(1)).toBe(20);
@@ -134,6 +154,9 @@ describe("LayoutRootMutation", () => {
 
     expect(layout.root).not.toBe(initialRoot);
     expect(layout.getRowHeight(1)).toBe(36);
+    // 索引写了，权威也得写：这一条变更同时暂存了一条 `set-row-meta`（设计稿 §4.3）。
+    expect(sheet.getRowMeta(1)?.h).toBe(36);
+    expect(rowHeightProvenanceOf(sheet, 1)).toBe("manual");
     expect(layout.version).toBe(1);
     expect(receipt.beforeRevision).toBe(0);
     expect(receipt.afterRevision).toBe(1);
@@ -147,19 +170,19 @@ describe("LayoutRootMutation", () => {
   });
 
   it("stages consecutive mutations for the same layout against the preceding staged root", () => {
-    const layout = createLayout();
+    const { layout, sheet } = createFixture();
     const coordinator = new MutationCoordinator();
     const initialRoot = layout.root;
 
     const prepared = coordinator.prepare("resize-layout", [
-      new LayoutRootMutation(layout, { type: "set-column-width", column: 1, width: 95 }),
-      new LayoutRootMutation(layout, {
+      new LayoutRootMutation(layout, sheet, { type: "set-column-width", column: 1, width: 95 }),
+      new LayoutRootMutation(layout, sheet, {
         type: "set-row-height",
         row: 2,
         height: 44,
         provenance: "manual"
       })
-    ]);
+    ], resourcesFor(sheet));
 
     expect(layout.root).toBe(initialRoot);
     expect(layout.getColumnWidth(1)).toBe(60);
@@ -178,23 +201,25 @@ describe("LayoutRootMutation", () => {
   });
 
   it("rolls back a committed layout participant when a later participant throws", () => {
-    const layout = createLayout();
+    const { layout, sheet } = createFixture();
     const coordinator = new MutationCoordinator();
     const initialRoot = layout.root;
     const prepared = coordinator.prepare("rollback-layout", [
-      new LayoutRootMutation(layout, {
+      new LayoutRootMutation(layout, sheet, {
         type: "set-row-height",
         row: 0,
         height: 42,
         provenance: "manual"
       }),
       createFailingMutation("later participant failed")
-    ]);
+    ], resourcesFor(sheet));
 
     expect(() => coordinator.commit(prepared)).toThrow("later participant failed");
 
     expect(layout.root).toBe(initialRoot);
     expect(layout.getRowHeight(0)).toBe(20);
+    // 回滚要把两边一起收回去，否则权威与索引就此分家。
+    expect(sheet.getRowMeta(0)).toBeUndefined();
     expect(layout.version).toBe(0);
     expect(coordinator.revisionGate.revision).toBe(0);
     expect(coordinator.state).toBe("idle");
@@ -205,7 +230,7 @@ describe("LayoutRootMutation", () => {
     const coordinator = new MutationCoordinator();
     const initialRoot = fixture.owner.getRoot();
     const prepared = coordinator.prepare("layout-then-structure", [
-      new LayoutRootMutation(fixture.layout, {
+      new LayoutRootMutation(fixture.layout, fixture.sheet, {
         type: "set-column-width",
         column: 1,
         width: 75
@@ -239,7 +264,7 @@ describe("LayoutRootMutation", () => {
     const initialRoot = fixture.owner.getRoot();
     const prepared = coordinator.prepare("structure-then-layout", [
       createColumnInsertMutation(fixture.owner),
-      new LayoutRootMutation(fixture.layout, {
+      new LayoutRootMutation(fixture.layout, fixture.sheet, {
         type: "set-column-width",
         column: 2,
         width: 75
@@ -271,7 +296,7 @@ describe("LayoutRootMutation", () => {
     const coordinator = new MutationCoordinator();
     const initialRoot = fixture.owner.getRoot();
     const prepared = coordinator.prepare("rollback-mixed-roots", [
-      new LayoutRootMutation(fixture.layout, {
+      new LayoutRootMutation(fixture.layout, fixture.sheet, {
         type: "set-column-width",
         column: 1,
         width: 75
@@ -300,16 +325,16 @@ describe("LayoutRootMutation", () => {
   });
 
   it("rejects a stale prepared root without overwriting the newer live root", () => {
-    const layout = createLayout();
+    const { layout, sheet } = createFixture();
     const coordinator = new MutationCoordinator();
     const prepared = coordinator.prepare("stale-layout", [
-      new LayoutRootMutation(layout, {
+      new LayoutRootMutation(layout, sheet, {
         type: "set-row-height",
         row: 1,
         height: 48,
         provenance: "manual"
       })
-    ]);
+    ], resourcesFor(sheet));
 
     layout.setRowHeight(1, 31);
     const newerRoot = layout.root;
@@ -318,6 +343,8 @@ describe("LayoutRootMutation", () => {
 
     expect(layout.root).toBe(newerRoot);
     expect(layout.getRowHeight(1)).toBe(31);
+    // 布局那边被别人改了，这条就整条不落地——权威也不能留下半条。
+    expect(sheet.getRowMeta(1)).toBeUndefined();
     expect(layout.version).toBe(1);
     expect(coordinator.revisionGate.revision).toBe(0);
     expect(coordinator.state).toBe("idle");
@@ -328,20 +355,33 @@ describe("LayoutRootMutation", () => {
     // direction mix-up between order and invertRowOrder() cannot pass.
     const order = () => Int32Array.from([2, 0, 1]);
 
+    /**
+     * 这一组只看**索引**这一半。
+     *
+     * `reorder-rows` 这一支的 `LayoutRootMutation` 只重排 `RowMetrics`；权威那半边的
+     * `rowData` 由表自己那条同名变更（走 `IndexedTableRegistry`）搬，两者作为同一个
+     * 事务里的两个参与者一起走——所以"重排后来源跟着走"是那一对的性质，归 §4.2 的
+     * 属性测试管，这里不重复。这也是为什么下面直接用 `layout.setRowHeight()` 起高度：
+     * 本组不读权威。
+     */
     function createTallRows(): LayoutEngine {
-      const layout = createLayout();
+      const { layout } = createFixture();
       layout.setRowHeight(0, 60);
       layout.setRowHeight(2, 44);
       return layout;
     }
 
-    it("carries each row's height and provenance to its new position", () => {
-      const layout = createTallRows();
+    function reorderFixture(): { layout: LayoutEngine; sheet: SheetModel } {
+      return { layout: createTallRows(), sheet: createSheetFromRows([{ a: "1" }], ["a"]) };
+    }
+
+    it("carries each row's height to its new position", () => {
+      const { layout, sheet } = reorderFixture();
       const coordinator = new MutationCoordinator();
       const initialRoot = layout.root;
 
       const prepared = coordinator.prepare("reorder", [
-        new LayoutRootMutation(layout, { type: "reorder-rows", order: order() })
+        new LayoutRootMutation(layout, sheet, { type: "reorder-rows", order: order() })
       ]);
 
       expect(layout.root).toBe(initialRoot);
@@ -351,34 +391,30 @@ describe("LayoutRootMutation", () => {
 
       // order[newPosition] = oldPosition, so new 0 <- old 2, new 1 <- old 0.
       expect([0, 1, 2].map((row) => layout.getRowHeight(row))).toEqual([44, 60, 20]);
-      expect([0, 1, 2].map((row) => layout.getRowHeightProvenance(row)))
-        .toEqual(["manual", "manual", "default"]);
       expect(receipt.patches).toEqual([{ type: "row-reorder", order: Int32Array.from([2, 0, 1]) }]);
     });
 
     it("inverts to the inverse permutation, restoring every height", () => {
-      const layout = createTallRows();
+      const { layout, sheet } = reorderFixture();
       const coordinator = new MutationCoordinator();
 
       const receipt = coordinator.commit(
         coordinator.prepare("reorder", [
-          new LayoutRootMutation(layout, { type: "reorder-rows", order: order() })
+          new LayoutRootMutation(layout, sheet, { type: "reorder-rows", order: order() })
         ])
       );
       coordinator.commit(coordinator.prepare("undo-reorder", [...receipt.inverse]));
 
       expect([0, 1, 2].map((row) => layout.getRowHeight(row))).toEqual([60, 20, 44]);
-      expect([0, 1, 2].map((row) => layout.getRowHeightProvenance(row)))
-        .toEqual(["manual", "default", "manual"]);
     });
 
     it("describes the inverse permutation in the inverse mutation's own patch", () => {
-      const layout = createTallRows();
+      const { layout, sheet } = reorderFixture();
       const coordinator = new MutationCoordinator();
 
       const receipt = coordinator.commit(
         coordinator.prepare("reorder", [
-          new LayoutRootMutation(layout, { type: "reorder-rows", order: order() })
+          new LayoutRootMutation(layout, sheet, { type: "reorder-rows", order: order() })
         ])
       );
 
@@ -394,12 +430,12 @@ describe("LayoutRootMutation", () => {
     });
 
     it("stages a second reorder against the preceding staged root, not the live one", () => {
-      const layout = createTallRows();
+      const { layout, sheet } = reorderFixture();
       const coordinator = new MutationCoordinator();
 
       const prepared = coordinator.prepare("reorder-twice", [
-        new LayoutRootMutation(layout, { type: "reorder-rows", order: order() }),
-        new LayoutRootMutation(layout, { type: "reorder-rows", order: order() })
+        new LayoutRootMutation(layout, sheet, { type: "reorder-rows", order: order() }),
+        new LayoutRootMutation(layout, sheet, { type: "reorder-rows", order: order() })
       ]);
       coordinator.commit(prepared);
 

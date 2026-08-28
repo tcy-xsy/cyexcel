@@ -5,6 +5,7 @@ import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "../../../../sr
 import { WrapMeasurementService } from "../../../../src/core/measurement";
 import { SceneSnapshot } from "../../../../src/core/scene";
 import { RecordingCanvasContext } from "../../../helpers/RecordingCanvasContext";
+import { provenanceViewOf } from "../../../helpers/rowHeightAuthority";
 
 // RecordingCanvasContext measures a deterministic 7px per character, and the
 // theme wraps at CELL_LINE_HEIGHT 16 + CELL_PADDING 4 on each side. So a
@@ -89,7 +90,7 @@ function basisFor(harness: Harness, provenance = new Map<number, "auto" | "manua
     modelVersion: harness.scene.modelVersion,
     layoutVersion: harness.scene.layoutVersion,
     defaultRowHeight: DEFAULT_ROW_HEIGHT,
-    rowHeightProvenance: provenance
+    rowHeightProvenance: provenanceViewOf(provenance)
   };
 }
 
@@ -280,7 +281,7 @@ describe("WrapMeasurementService.rowsNeedingDefaultReset", () => {
     expect(
       harness.service.rowsNeedingDefaultReset(
         harness.scene,
-        new Map([[2, "auto"]]),
+        provenanceViewOf(new Map([[2, "auto"]])),
         DEFAULT_ROW_HEIGHT
       )
     ).toEqual([2]);
@@ -294,7 +295,7 @@ describe("WrapMeasurementService.rowsNeedingDefaultReset", () => {
     expect(
       harness.service.rowsNeedingDefaultReset(
         harness.scene,
-        new Map([[2, "manual"]]),
+        provenanceViewOf(new Map([[2, "manual"]])),
         DEFAULT_ROW_HEIGHT
       )
     ).toEqual([]);
@@ -356,7 +357,7 @@ describe("WrapMeasurementService.invalidateFor", () => {
 describe("WrapMeasurementService.rowsToMeasureFor", () => {
   const noReset = {
     hasColumnStructureChange: false,
-    rowHeightProvenance: new Map<number, "auto" | "manual">(),
+    rowHeightProvenance: provenanceViewOf(new Map()),
     defaultRowHeight: DEFAULT_ROW_HEIGHT
   };
 
@@ -386,7 +387,7 @@ describe("WrapMeasurementService.rowsToMeasureFor", () => {
 
     const result = harness.service.rowsToMeasureFor(harness.scene, {
       hasColumnStructureChange: true,
-      rowHeightProvenance: new Map([[2, "auto"]]),
+      rowHeightProvenance: provenanceViewOf(new Map([[2, "auto"]])),
       defaultRowHeight: DEFAULT_ROW_HEIGHT
     });
 
@@ -402,7 +403,7 @@ describe("WrapMeasurementService.rowsToMeasureFor", () => {
 
     const result = harness.service.rowsToMeasureFor(harness.scene, {
       hasColumnStructureChange: true,
-      rowHeightProvenance: new Map([[2, "auto"]]),
+      rowHeightProvenance: provenanceViewOf(new Map([[2, "auto"]])),
       defaultRowHeight: DEFAULT_ROW_HEIGHT
     });
 
@@ -416,7 +417,7 @@ describe("WrapMeasurementService.rowsToMeasureFor", () => {
 
     const result = harness.service.rowsToMeasureFor(harness.scene, {
       hasColumnStructureChange: true,
-      rowHeightProvenance: new Map([[7, "auto"]]),
+      rowHeightProvenance: provenanceViewOf(new Map([[7, "auto"]])),
       defaultRowHeight: DEFAULT_ROW_HEIGHT
     });
 
