@@ -2,6 +2,7 @@ import { CyExcelError, CyExcelErrorCode } from "../errors";
 import { assertValidRowOrder, invertRowOrder } from "../layout/rowOrder";
 import { validateAxisChange } from "../layout/structuralChange";
 import type { CellRange } from "../types";
+import { assertRestoreTablesAreWritable } from "./apply";
 import type { ColumnCells, RowCells, SheetMutation, SideTableEntries } from "./mutation";
 import type { SheetModel } from "./SheetModel";
 import type { CellRecord, ColumnMeta, RowMeta } from "./types";
@@ -122,6 +123,16 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
       const { start, count, target } = mutation;
       return { type: "move-columns", start: movedBlockLandsAt(start, count, target), count, target: inverseMoveTarget(start, count, target) };
     }
+
+    // 与 `set-cell` 同一条：逆是"把这一行/列的元数据恢复成现在的样子"。现在没有
+    // 条目时 `meta` 就是 `undefined`，那条逆施加下去是**删条目**，不是写一个空的
+    // `{}`——写空对象会把这一行留在 `rowExtent()` 的并集里，坐标空间与快照都跟着
+    // 多出一格，往返就不再逐字段一致了。
+    case "set-row-meta":
+      return { type: "set-row-meta", row: mutation.row, meta: model.getRowMeta(mutation.row) };
+
+    case "set-column-meta":
+      return { type: "set-column-meta", column: mutation.column, meta: model.getColumnMeta(mutation.column) };
   }
 }
 
@@ -146,27 +157,16 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
  *
  * 合并区这条**模型状态**前置条件，九个结构成员一个不落地查，见 `assertNoMerges`。
  *
- * **有意不在这里校验的，只剩一条：** `restore-rows` / `restore-columns` 的**参数**，
- * 现在还要加上它们的 `tables`。这两个成员只作为逆变更出现（`mutation.ts` 的类型注释
- * 如此），由本文件从一条已经过上面校验的 delete 产出，不接受外部构造，所以它们的
- * `start`、行列数、以及 `tables` 的形状按构造就是合法的。
+ * **`restore-rows` / `restore-columns` 的 `tables` 三条不变量，4B 补上了**（4A 记的
+ * 是"4B 的前置条件，不是可选项"）。促成它的不是"出现了外部生产者"——这两个成员今天
+ * 仍然只由本文件产出——而是**历史栈**：一条逆变更会在栈里存活很久，其间插件完全可以
+ * 注销一张侧表，等到撤销重放时表就不在了。三条的具体内容与它们各自的静默后果，见
+ * `apply.ts` 的 `assertRestoreTablesAreWritable`；检查放在那边是为了与它守的写路径
+ * （`writeTables`）待在同一个文件里，两处因此不会分叉。
  *
- * **4B 若开始从外部接收它们，这条前提就没了。** 届时要补的是 insert 形状的校验，
- * 外加 `tables` 这三条今天没有任何地方强制的不变量：
- *
- * 1. `tables[name].length` 必须等于 `rows.length`（列轴则是 `count`）。一个偏长的
- *    数组会顺着写路径越过被恢复的那一段，写进 insert 往下推的那几行——那是对**没被
- *    碰过的数据**的静默破坏，比丢条目更糟。
- * 2. `name` 必须是这张 sheet 上已登记的表。今天唯一的这类检查在测试的
- *    `writeTables` 里（"点名了一张没登记的表就抛"），是测试专有的，产品代码里没有。
- * 3. 那张表的 `indexedBy` 必须与被恢复的轴一致。行轴的 `restore` 拿着一张列表的
- *    条目去写行下标，写进去不会报错，只会静默错位。
- *
- * 本任务不实现这三条：4A 里 `restore-*` 没有外部生产者，提前加校验等于给一条走不到
- * 的路写分支。它们是 4B 的前置条件，不是可选项。
- *
- * 在那之前，一条参数就非法、同时又撞上合并区的 `restore-*` 会在这里先报合并区，
- * 而 commit 期先报参数；对按构造合法的那些（也就是全部）两边一致。
+ * 仍然不校验的只剩 `restore-*` 的 `start` 与行列数：那部分按构造合法（由一条已经过
+ * 上面校验的 delete 产出）。一条参数就非法、同时又撞上合并区的 `restore-*` 会在这里
+ * 先报合并区，而 commit 期先报参数；对按构造合法的那些（也就是全部）两边一致。
  */
 function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): void {
   switch (mutation.type) {
@@ -246,17 +246,27 @@ function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): 
       );
       assertNoMerges(model, "moveColumns");
       return;
-    // `restore-*` 的参数不在这里校验（见上），但合并区这一条要查：施加它们走的是
-    // `insertRows` / `insertColumns`，合并区存在时正是那两个方法在 commit 期拒绝。
+    // `restore-*` 的 `start` 与行列数不在这里校验（见上），但另外两条要查：合并区
+    // ——施加它们走的是 `insertRows` / `insertColumns`，合并区存在时正是那两个方法
+    // 在 commit 期拒绝；以及 `tables` 的三条不变量。
+    //
+    // 顺序上合并区在前，与六个轴向成员"先参数、后合并区"看着相反，其实是同一条
+    // 口径：那六个先报的是**变更自身**的参数错，这里的 `tables` 检查读了模型
+    // （表登记状态），属于前置条件那一类，与合并区同级，排在它后面。
     case "restore-rows":
       assertNoMerges(model, "insertRows");
+      assertRestoreTablesAreWritable(model, "row", mutation.tables, mutation.rows.length);
       return;
     case "restore-columns":
       assertNoMerges(model, "insertColumns");
+      assertRestoreTablesAreWritable(model, "column", mutation.tables, mutation.count);
       return;
-    // 格子变更：`setRecord` / `deleteCell` 在 commit 期不查合并区，这里也不查。
+    // 格子与元数据变更：`setRecord` / `deleteCell` / `setRowMeta` / `setColumnMeta`
+    // 在 commit 期不查合并区，这里也不查。
     case "set-cell":
     case "set-range":
+    case "set-row-meta":
+    case "set-column-meta":
       return;
   }
 }

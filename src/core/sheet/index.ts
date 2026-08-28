@@ -54,3 +54,8 @@ export {
   type SideTableEntries
 } from "./mutation";
 export { invertSheetMutation } from "./invert";
+export {
+  applySheetMutation,
+  assertRestoreTablesAreWritable,
+  estimateSheetMutationBytes
+} from "./apply";

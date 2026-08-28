@@ -1,148 +1,24 @@
 import { describe, expect, it } from "vitest";
 import { CyExcelError } from "../../../../src/core/errors";
+import { applySheetMutation as apply } from "../../../../src/core/sheet/apply";
 import { invertSheetMutation } from "../../../../src/core/sheet/invert";
-import type { RowCells, SheetMutation } from "../../../../src/core/sheet/mutation";
+import type { SheetMutation } from "../../../../src/core/sheet/mutation";
 import { SheetModel } from "../../../../src/core/sheet/SheetModel";
 import { WorkbookModel } from "../../../../src/core/sheet/WorkbookModel";
-import type { RowMeta, WorkbookSnapshot } from "../../../../src/core/sheet/types";
+import type { WorkbookSnapshot } from "../../../../src/core/sheet/types";
 
 /**
- * 本地的 `apply`——**4A 没有 `applySheetMutation`，那是 4B**。
+ * `applySheetMutation` 在 4A 是本文件里的一个本地 helper（当时的注释写着"4A 没有
+ * `applySheetMutation`，那是 4B"）。4B 把它提升成了生产代码，见
+ * `src/core/sheet/apply.ts`：暂存层的三条路——预览、commit、回滚——必须跑同一份施加
+ * 逻辑，留在测试里就意味着生产另写一份。
  *
- * 它只用 `SheetModel` 已有的公开方法，逐条把 11 个成员施加下去。两条要点：
- *
- * 1. **`restore-rows` / `restore-columns` 是"插空行/列 + 逐格写回 + 写回元数据"
- *    的组合。** `SheetModel.insertRows` 确实只插空行、不带记录，但把记录与元数据
- *    补写回去用的也都是既有的公开方法（`setRecord` / `setRowMeta` /
- *    `setColumnMeta`），组合出来的效果与"带记录的插入"在快照上逐字段一致。
- * 2. **这个组合不会让精确性测试失去检出能力。** 它是按 mutation 的字段结构写的，
- *    不知道自己施加的是不是一条逆变更：`invertSheetMutation` 若抓错了行、抓漏了
- *    元数据、或把 `RowCells` / `ColumnCells` 写转置了，这里就会把格子放到错误的
- *    位置上，`toSnapshot()` 的逐字段比较随即失败。
+ * 对本文件的意义是纯收益：**下面每一条"施加 m、再施加 inv、比快照"的往返用例，从此
+ * 测的是生产代码**。它仍然不会让精确性测试失去检出能力——那份施加逻辑是按 mutation
+ * 的字段结构写的，不知道自己施加的是不是一条逆变更：`invertSheetMutation` 若抓错了
+ * 行、抓漏了元数据、或把 `RowCells` / `ColumnCells` 写转置了，格子就会落到错误的位置
+ * 上，`toSnapshot()` 的逐字段比较随即失败。
  */
-function apply(model: SheetModel, mutation: SheetMutation): void {
-  switch (mutation.type) {
-    case "set-cell":
-      writeCell(model, mutation.row, mutation.column, mutation.record);
-      return;
-    case "set-range": {
-      const { startRow, startColumn, endRow, endColumn } = mutation.range;
-      for (let row = startRow; row <= endRow; row += 1) {
-        for (let column = startColumn; column <= endColumn; column += 1) {
-          writeCell(model, row, column, mutation.records[row - startRow]?.[column - startColumn]);
-        }
-      }
-      return;
-    }
-    case "insert-rows":
-      model.insertRows(mutation.start, mutation.rows.length);
-      writeRows(model, mutation.start, mutation.rows, undefined);
-      return;
-    case "restore-rows":
-      model.insertRows(mutation.start, mutation.rows.length);
-      writeRows(model, mutation.start, mutation.rows, mutation.meta);
-      writeTables(model, mutation.start, mutation.tables);
-      return;
-    case "delete-rows":
-      model.deleteRows(mutation.start, mutation.count);
-      return;
-    case "move-rows":
-      model.moveRows(mutation.start, mutation.count, mutation.target);
-      return;
-    case "reorder-rows":
-      model.reorderRows(mutation.order);
-      return;
-    case "insert-columns":
-      model.insertColumns(mutation.start, mutation.count);
-      return;
-    case "delete-columns":
-      model.deleteColumns(mutation.start, mutation.count);
-      return;
-    case "restore-columns": {
-      model.insertColumns(mutation.start, mutation.count);
-      for (let offset = 0; offset < mutation.count; offset += 1) {
-        const column = mutation.cells[offset];
-        if (column) {
-          // `ColumnCells` 的键是**行号**——写成列号就是一次静默转置
-          for (const rowKey of Object.keys(column)) {
-            writeCell(model, Number(rowKey), mutation.start + offset, column[Number(rowKey)]);
-          }
-        }
-        const meta = mutation.meta[offset];
-        if (meta !== undefined) {
-          model.setColumnMeta(mutation.start + offset, meta);
-        }
-      }
-      writeTables(model, mutation.start, mutation.tables);
-      return;
-    }
-    case "move-columns":
-      model.moveColumns(mutation.start, mutation.count, mutation.target);
-      return;
-  }
-}
-
-function writeCell(model: SheetModel, row: number, column: number, record: unknown): void {
-  if (record === undefined) {
-    // spec §11 不变量 1：未占用的格子在 `cellData` 中不存在，不是存一条空记录
-    model.deleteCell(row, column);
-  } else {
-    model.setRecord(row, column, record as Parameters<SheetModel["setRecord"]>[2]);
-  }
-}
-
-function writeRows(
-  model: SheetModel,
-  start: number,
-  rows: readonly RowCells[],
-  meta: readonly (RowMeta | undefined)[] | undefined
-): void {
-  for (let offset = 0; offset < rows.length; offset += 1) {
-    const cells = rows[offset];
-    if (cells) {
-      // `RowCells` 的键是**列号**
-      for (const columnKey of Object.keys(cells)) {
-        writeCell(model, start + offset, Number(columnKey), cells[Number(columnKey)]);
-      }
-    }
-    const rowMeta = meta?.[offset];
-    if (rowMeta !== undefined) {
-      model.setRowMeta(start + offset, rowMeta);
-    }
-  }
-}
-
-/**
- * 把 `restore-*` 带回来的插件侧表条目写回原位。
- *
- * 用的仍然是既有的公开方法：`SheetModel.table(name)` 交回登记处里那张表的**活
- * 句柄**（那个方法的注释写明它就是给写路径用的），与 `setRowMeta` /
- * `setColumnMeta` 属同一类。
- *
- * `undefined` 的位置表示那一行/列在这张表里本来就没有条目，跳过不写——稀疏表
- * 里"有没有这个键"就是"有没有这条条目"本身（spec §11 不变量 1 对格子的同一条
- * 口径），写一个 `undefined` 进去等于凭空造一条。
- */
-function writeTables(
-  model: SheetModel,
-  start: number,
-  tables: Readonly<Record<string, readonly unknown[]>>
-): void {
-  for (const name of Object.keys(tables)) {
-    const entries = tables[name] as readonly unknown[];
-    const table = model.table(name);
-    if (!table) {
-      // 逆变更点名了一张这张 sheet 上没有登记的表：不是断言失败，是构造错误
-      throw new Error(`restore names table "${name}", which is not registered on this sheet`);
-    }
-    for (let offset = 0; offset < entries.length; offset += 1) {
-      const value = entries[offset];
-      if (value !== undefined) {
-        table.set(start + offset, value);
-      }
-    }
-  }
-}
 
 /**
  * 第 4 行**只有元数据、没有任何格子**，是故意的：只按格子算占用范围的实现会把它
@@ -834,5 +710,137 @@ describe("invertSheetMutation — capturePluginTables 的两条过滤规则", ()
     expect(onColumnDelete).toContain("com.acme.colTags");
     expect(onColumnDelete).not.toContain("columnData");
     expect(onColumnDelete).not.toContain("rowData");
+  });
+});
+
+/**
+ * `set-row-meta` / `set-column-meta` 是 4B 加的两个成员，理由不是补齐对称性：行高
+ * 权威从 `LayoutEngine` 迁进 `rowData` 之后（spec §5.1），改行高就是在改 `SheetModel`
+ * 内部的状态；这条路径若不走 `SheetMutation`，"同一个事务里既改行高又做结构变更"
+ * 就成了两个参与者写同一份状态，行高那一半绕过影子模型直接写活模型。
+ *
+ * 这里钉的是它们的逆，重点在 `undefined` 那一支：**原先没有条目时，逆必须是删条目，
+ * 不是写一个空的 `{}`**。写空对象不会报错——它只是把这一行留在 `rowExtent()` 的并集
+ * 里，坐标空间与快照各多出一格。对照物是 `WorkbookModel.toSnapshot()` 的逐字段比较，
+ * 它看得见这一格。
+ */
+describe("invertSheetMutation — 行/列元数据", () => {
+  it("set-row-meta 覆盖一条已有的元数据：往返后逐字段相等", () => {
+    expectExactRoundTrip(
+      { type: "set-row-meta", row: 1, meta: { h: 99, hp: "manual" } },
+      {
+        // 挡掉"覆盖的是一条本来就不存在的元数据"那种空过
+        precondition: (model) => {
+          expect(model.getRowMeta(1)).toStrictEqual({ h: 40 });
+        }
+      }
+    );
+  });
+
+  it("set-row-meta 写到一个原先没有条目的行：逆携带 undefined，施加下去把条目删掉", () => {
+    const model = fixture();
+    expect(model.getRowMeta(0)).toBeUndefined();
+    const mutation: SheetMutation = { type: "set-row-meta", row: 0, meta: { h: 99 } };
+    const inverse = invertSheetMutation(model, mutation);
+    expect(inverse).toStrictEqual({ type: "set-row-meta", row: 0, meta: undefined });
+    apply(model, mutation);
+    expect(model.getRowMeta(0)).toStrictEqual({ h: 99 });
+    apply(model, inverse);
+    // `toBeUndefined` 分不清"删掉了"和"存了一个空对象"，所以再钉一次快照
+    expect(model.getRowMeta(0)).toBeUndefined();
+    expect(model.toSnapshot().rowData).toStrictEqual(fixture().toSnapshot().rowData);
+  });
+
+  it("set-row-meta 写到没有条目的行，整表往返后逐字段相等", () => {
+    expectExactRoundTrip({ type: "set-row-meta", row: 0, meta: { h: 99, hd: true } });
+  });
+
+  it("set-column-meta 的两支同理", () => {
+    expectExactRoundTrip(
+      { type: "set-column-meta", column: 2, meta: { w: 7 } },
+      {
+        precondition: (model) => {
+          expect(model.getColumnMeta(2)).toStrictEqual({ w: 200, t: "number" });
+        }
+      }
+    );
+    expectExactRoundTrip({ type: "set-column-meta", column: 1, meta: { w: 7, hd: true } });
+  });
+
+  it("元数据变更不查合并区——`setRowMeta` / `setColumnMeta` 在 commit 期也不查", () => {
+    const model = mergedFixture();
+    expect(() => invertSheetMutation(model, { type: "set-row-meta", row: 0, meta: { h: 9 } })).not.toThrow();
+    expect(() =>
+      invertSheetMutation(model, { type: "set-column-meta", column: 0, meta: { w: 9 } })
+    ).not.toThrow();
+  });
+
+  it("求逆不改模型", () => {
+    expectNonInvasive({ type: "set-row-meta", row: 1, meta: { h: 99 } });
+    expectNonInvasive({ type: "set-column-meta", column: 0, meta: { w: 9 } });
+  });
+});
+
+/**
+ * `restore-*` 的 `tables` 三条不变量。4A 把它们记成"4B 的前置条件，不是可选项"，当时
+ * 的理由是"没有外部生产者"；4B 补上不是因为出现了外部生产者，而是因为**历史栈**：
+ * 一条逆变更会在栈里存活很久，其间插件完全可以注销一张侧表。
+ *
+ * 三条的共同点是**失败方式都是静默的**，所以每条都要有一条自己的用例——尤其是第一条，
+ * 它破坏的是被恢复区间之外、压根没被碰过的数据。
+ */
+describe("invertSheetMutation — restore-* 的 tables 校验", () => {
+  it("条目数与被恢复的行数不符：拒绝，而不是让它写出界", () => {
+    const model = fixture();
+    const mutation: SheetMutation = {
+      type: "restore-rows",
+      start: 1,
+      rows: [{}, {}],
+      meta: [undefined, undefined],
+      // 两行的 restore 带了三条条目，第三条会落到 insert 往下推的那一行上
+      tables: sideTables({ "com.acme.rowKeys": ["a", "b", "c"] })
+    };
+    const error = grabError(() => invertSheetMutation(model, mutation));
+    expect(error).toBeInstanceOf(CyExcelError);
+    expect((error as CyExcelError).code).toBe("invalid-mutation");
+    expect(error?.message).toContain("expected 2");
+  });
+
+  it("点名一张没登记的表：拒绝", () => {
+    const error = grabError(() =>
+      invertSheetMutation(fixture(), {
+        type: "restore-rows",
+        start: 1,
+        rows: [{}],
+        meta: [undefined],
+        tables: sideTables({ "com.acme.nope": ["a"] })
+      })
+    );
+    expect(error).toBeInstanceOf(CyExcelError);
+    expect((error as CyExcelError).code).toBe("invalid-mutation");
+  });
+
+  it("表的轴与被恢复的轴不符：拒绝——写进去不会报错，只会静默错位", () => {
+    const error = grabError(() =>
+      invertSheetMutation(fixture(), {
+        type: "restore-rows",
+        start: 1,
+        rows: [{}],
+        meta: [undefined],
+        // 这是一张列表，拿它的条目去写行下标
+        tables: sideTables({ "com.acme.colTags": ["a"] })
+      })
+    );
+    expect(error).toBeInstanceOf(CyExcelError);
+    expect((error as CyExcelError).code).toBe("invalid-mutation");
+    expect(error?.message).toContain("indexed by column");
+  });
+
+  it("求逆自己产出的 restore-* 一定过得了这三条", () => {
+    const model = fixture();
+    const inverse = invertSheetMutation(model, { type: "delete-rows", start: 1, count: 2 });
+    // 反空洞：这条逆确实带着一张插件行表，不然下面那句是在给一条空 `tables` 背书
+    expect(tableNamesOf(inverse)).toContain("com.acme.rowKeys");
+    expect(() => invertSheetMutation(model, inverse)).not.toThrow();
   });
 });

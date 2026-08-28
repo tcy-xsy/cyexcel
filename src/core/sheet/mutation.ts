@@ -57,6 +57,13 @@ export type SideTableEntries = Readonly<Record<string, readonly unknown[]>>;
  * `restore-*` 那几个成员**只作为逆变更出现**：删除的逆必须把原样的记录、元数据
  * 与**每一张插件侧表在被删区间里的条目**（`tables`，spec §11 不变量 8）带回来，
  * 光有 `start`/`count` 是复原不了的。
+ *
+ * **`set-row-meta` / `set-column-meta` 是 4B 加的，理由不是"顺手补齐"。** 行高权威
+ * 从 `LayoutEngine` 迁进 `rowData` 之后（spec §5.1），改行高就是在改 `SheetModel`
+ * 内部的状态。若这条路径不走 `SheetMutation`，那么"同一个事务里既改行高又做结构
+ * 变更"就成了两个参与者写同一份状态：结构那一半在影子模型上暂存，行高那一半直接
+ * 写活模型，`MutationCoordinator` 的"prepare 期不得触碰活状态"当场破掉。列宽/列
+ * 隐藏是同一根轴上的同一件事，所以两个成员一起加。
  */
 export type SheetMutation =
   | { readonly type: "set-cell"; readonly row: number; readonly column: number; readonly record: CellRecord | undefined }
@@ -69,7 +76,12 @@ export type SheetMutation =
   | { readonly type: "insert-columns"; readonly start: number; readonly count: number }
   | { readonly type: "delete-columns"; readonly start: number; readonly count: number }
   | { readonly type: "restore-columns"; readonly start: number; readonly count: number; readonly cells: readonly ColumnCells[]; readonly meta: readonly (ColumnMeta | undefined)[]; readonly tables: SideTableEntries }
-  | { readonly type: "move-columns"; readonly start: number; readonly count: number; readonly target: number };
+  | { readonly type: "move-columns"; readonly start: number; readonly count: number; readonly target: number }
+  // `meta: undefined` 表示"这一行/列原先在 `rowData` / `columnData` 里没有条目"，
+  // 施加下去是**删条目**，不是写一个空的 `{}`——与 `set-cell` 的
+  // `record: undefined` 同一口径（spec §11 不变量 1：不存空记录，稀疏性依赖这点）。
+  | { readonly type: "set-row-meta"; readonly row: number; readonly meta: RowMeta | undefined }
+  | { readonly type: "set-column-meta"; readonly column: number; readonly meta: ColumnMeta | undefined };
 
 const STRUCTURAL = new Set<SheetMutation["type"]>([
   "insert-rows",
@@ -85,8 +97,9 @@ const STRUCTURAL = new Set<SheetMutation["type"]>([
 
 /**
  * 结构变更会移动下标，因此必须带着每一张按下标索引的侧表一起走
- * （ADR §9 不变量 4）。格子变更不移动下标。4B 的暂存层靠这个区分决定要不要
- * 重键已暂存的内容。
+ * （ADR §9 不变量 4）。格子变更与元数据变更（`set-row-meta` / `set-column-meta`）
+ * 都只改一个既有下标上的内容，不移动下标。4B 的暂存层靠这个区分决定要不要重键
+ * 已暂存的内容。
  */
 export function isStructuralSheetMutation(mutation: SheetMutation): boolean {
   return STRUCTURAL.has(mutation.type);

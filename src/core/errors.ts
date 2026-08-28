@@ -20,6 +20,7 @@ export const CyExcelErrorCode = {
   MutationBlockedByReadLease: "mutation-blocked-by-read-lease",
   MutationConflict: "mutation-conflict",
   MutationNotSupported: "mutation-not-supported",
+  InvalidMutation: "invalid-mutation",
   ReentrantMutation: "reentrant-mutation",
   MutationRuntimeFaulted: "mutation-runtime-faulted",
   MutationRuntimeDisposed: "mutation-runtime-disposed",

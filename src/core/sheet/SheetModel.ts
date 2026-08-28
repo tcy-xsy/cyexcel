@@ -394,12 +394,32 @@ export class SheetModel {
     this.#rowData.set(row, meta);
   }
 
+  /**
+   * 删掉这一行的元数据条目。
+   *
+   * 与 `deleteCell` 同一条理由：`rowData` 是稀疏表，"没有这个键"就是"这一行没有
+   * 被自定义过"本身（spec §11 不变量 1 对格子的那条口径，行元数据同理）。写一个
+   * 空的 `{}` 进去不等价——它会让这一行进入 `rowExtent()` 的并集，把坐标空间撑大
+   * 一格，快照里也会多出一条无内容的条目。
+   *
+   * 有这个方法，是因为 `set-row-meta` 的逆在"原先没有条目"时携带的是 `undefined`
+   * （见 `mutation.ts`），施加它必须能把条目真的删掉。
+   */
+  deleteRowMeta(row: number): void {
+    this.#rowData.delete(row);
+  }
+
   getColumnMeta(column: number): ColumnMeta | undefined {
     return this.#columnData.get(column);
   }
 
   setColumnMeta(column: number, meta: ColumnMeta): void {
     this.#columnData.set(column, meta);
+  }
+
+  /** 删掉这一列的元数据条目，理由同 `deleteRowMeta`。 */
+  deleteColumnMeta(column: number): void {
+    this.#columnData.delete(column);
   }
 
   merges(): readonly CellRange[] {
