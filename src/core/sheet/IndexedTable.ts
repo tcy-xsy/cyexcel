@@ -58,6 +58,19 @@ export class IndexedTable<T> {
     return this.#data;
   }
 
+  /**
+   * 克隆：名字与轴照抄，条目**拷一层**（构造函数本来就拷，见上）。
+   *
+   * 这里没有 `CellMatrix` 那样的写时复制，是因为量级不同：侧表只在被自定义过的
+   * 行/列上有条目，条目数远小于格子数，拷一层就够便宜；给它加一套 COW 反而是拿
+   * 复杂度换一个量不出来的收益。
+   *
+   * **值按引用共享**（`types.ts` 顶部那条浅共享规则），插件载荷不深拷。
+   */
+  clone(): IndexedTable<T> {
+    return new IndexedTable<T>(this.name, this.indexedBy, this.#data);
+  }
+
   get(index: number): T | undefined {
     return this.#data[index];
   }

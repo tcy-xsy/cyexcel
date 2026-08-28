@@ -123,6 +123,51 @@ export class SheetModel {
     });
   }
 
+  /**
+   * 克隆一份独立的模型：此后往任一边写，另一边都不受影响。
+   *
+   * **它是暂存层的地基。** 一次事务开始时克隆出一个影子，逆在影子上求、预览在影子
+   * 上前进、commit 才写活模型。这样暂存层里一行新的结构代数都没有——影子就是一个
+   * `SheetModel`，跑的是同一份 `insertRows` / `applyRowPlan` / 登记处重键代码。
+   *
+   * **必须连登记处一起克隆，这条会静默失效。** `invertSheetMutation` 的
+   * `capturePluginTables` 是遍历 `tableNames()` 抓被删区间条目的。影子的登记处若是
+   * 空的，它返回 `tables: {}`——不报错、测试全绿、插件侧表的撤销数据静默丢失，把
+   * spec §11 不变量 8 整条架空。所以这里遍历的是**全部**已登记的表，不是
+   * `rowData` / `columnData` 两张。
+   *
+   * 拷贝的深度：格子矩阵按行桶写时复制（`CellMatrix.clone`），侧表条目拷一层，
+   * 记录与插件载荷按引用共享（`types.ts` 顶部的浅共享规则）。合并区是只读数组，
+   * 直接共享。
+   */
+  clone(): SheetModel {
+    const copy = new SheetModel({
+      matrix: this.#matrix.clone(),
+      // 构造函数会把这两个交给 `IndexedTable` 的构造函数，那里拷一层
+      rowData: this.#rowData.read(),
+      columnData: this.#columnData.read(),
+      mergeData: this.#mergeData,
+      id: this.#id,
+      name: this.#name,
+      blankRows: this.#blankRows,
+      blankColumns: this.#blankColumns,
+      defaultRowHeight: this.#defaultRowHeight,
+      defaultColumnWidth: this.#defaultColumnWidth,
+      ...(this.#freeze !== undefined ? { freeze: this.#freeze } : {})
+    });
+    for (const name of this.#tables.names()) {
+      // 这两张由构造函数登记过了，再登记一次会撞名字
+      if (name === "rowData" || name === "columnData") {
+        continue;
+      }
+      const table = this.#tables.table(name);
+      if (table) {
+        copy.registerTable(table.clone());
+      }
+    }
+    return copy;
+  }
+
   /** 裸值，不是记录（ADR 0004 §3.6）。 */
   getCell(row: number, column: number): unknown {
     return this.#matrix.get(row, column)?.v;
