@@ -61,7 +61,8 @@ describe("SkeletonSnapshot", () => {
     expect(skeleton.rowMetrics).toBe(root.rowMetrics);
     expect(skeleton.columnAxis).toBe(root.columnAxis);
     expect(layout.prepareSetColumnWidth(0, 90).rowMetrics).toBe(root.rowMetrics);
-    expect(layout.prepareHideColumn(0).rowMetrics).toBe(root.rowMetrics);
+    // 隐藏在布局这一层就是「宽度写 0」（ADR 0004 阶段 4B T8b）。
+    expect(layout.prepareSetColumnWidth(0, 0).rowMetrics).toBe(root.rowMetrics);
   });
 
   it("copies axis constructor arrays instead of retaining caller-owned mutable buffers", () => {
@@ -162,24 +163,19 @@ describe("SkeletonSnapshot", () => {
     expect(SkeletonSnapshot.fromRoot(layout.root, 2).columnAxis).toBe(initial);
 
     expect(layout.prepareSetColumnWidth(0, 55).columnAxis).not.toBe(initial);
-    expect(layout.prepareHideColumn(0).columnAxis).not.toBe(initial);
-    expect(layout.prepareShowColumn(0).columnAxis).not.toBe(initial);
+    expect(layout.prepareSetColumnWidth(0, 0).columnAxis).not.toBe(initial);
     expect(layout.prepareInsertColumns(1, [45]).columnAxis).not.toBe(initial);
     expect(layout.prepareDeleteColumns(1, 1).columnAxis).not.toBe(initial);
     expect(layout.prepareMoveColumns(0, 1, 2).columnAxis).not.toBe(initial);
   });
 
-  it("does not expose mutable width, offset, or hidden-map handles", () => {
+  it("does not expose mutable width or offset handles", () => {
     const layout = createLayout();
-    layout.hideColumn(1);
     const axis = layout.root.columnAxis;
     const widths = axis.copyColumnWidths();
-    const hidden = axis.copyHiddenColumnWidths();
 
     widths[0] = 999;
-    hidden.set(1, 999);
     expect(axis.getColumnWidth(0)).toBe(50);
-    expect(axis.getColumnRestoreWidth(1)).toBe(60);
     expect(Object.isFrozen(axis.columnOffsets)).toBe(true);
     expect(() => {
       (axis.columnOffsets as number[])[1] = 999;

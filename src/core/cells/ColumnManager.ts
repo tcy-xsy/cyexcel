@@ -1,8 +1,18 @@
 import { HookManager, RESOLVE_COLUMN_HOOK, type HookRegistry } from "../hooks";
+import { DEFAULT_COLUMN_WIDTH } from "../layout";
 import type { CellTypeRegistry } from "./CellTypeRegistry";
 import type { ColumnDefinition, RuntimeColumn } from "./types";
 
-export const DEFAULT_COLUMN_WIDTH = 120;
+/**
+ * 缺省列宽只有一个定义处，在布局层（`LayoutEngine.ts`）。
+ *
+ * ADR 0004 阶段 4B T8b 之后，「这一列没有显式宽度时算多宽」这个问题由布局配置回答
+ * （`LayoutOptions.defaultColumnWidth`），因为它正是那条不变量里的缺省项；这里只是
+ * 转出去，好让 `ColumnDefinition.width` 缺省时与布局算的是同一个数。方向是
+ * cells → layout（`cells/types.ts` 早就从 `../layout` 取 `CellRect`），反过来会给
+ * 布局层加一条它不该有的依赖。
+ */
+export { DEFAULT_COLUMN_WIDTH };
 const DEFAULT_TYPE = "text";
 const RESOLVED_VERSION = 1;
 

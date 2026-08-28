@@ -1,35 +1,42 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  HideColumnCommand,
   ResizeColumnCommand,
   ResizeRowCommand
 } from "../../../../src/core/commands";
 import { SetRowHeightsCommand } from "../../../../src/core/commands/SetRowHeightsCommand";
 import { TableStore } from "../../../../src/core/data";
 import { createTableCommandManager } from "../../../../src/core/integration";
-import { LayoutEngine } from "../../../../src/core/layout";
+import {
+  columnWidthOf,
+  createSeededLayout,
+  isColumnHidden
+} from "../../../helpers/columnWidthAuthority";
 import { createSheetFromRows } from "../../../helpers/createSheetModel";
 import { rowHeightProvenanceOf } from "../../../helpers/rowHeightAuthority";
 
 function createFixture() {
-  const store = new TableStore(
-    createSheetFromRows(
-      [
-        { a: "A1", b: "B1", c: "C1" },
-        { a: "A2", b: "B2", c: "C2" },
-        { a: "A3", b: "B3", c: "C3" }
-      ],
-      ["a", "b", "c"]
-    )
+  const sheet = createSheetFromRows(
+    [
+      { a: "A1", b: "B1", c: "C1" },
+      { a: "A2", b: "B2", c: "C2" },
+      { a: "A3", b: "B3", c: "C3" }
+    ],
+    ["a", "b", "c"]
   );
-  const layout = new LayoutEngine({
+  const store = new TableStore(sheet);
+  // 走 `createSeededLayout` 而不是直接 `new LayoutEngine`：列宽的权威在 `columnData`，
+  // 只喂给布局的话这个夹具一出生就违反 §4.2 的列轴不变量（撤销会退到缺省宽 120 而不是
+  // 夹具写的那几个数）。
+  const layout = createSeededLayout(sheet, {
     rowCount: 3,
     columnCount: 3,
     rowHeight: 20,
     columnWidths: [50, 60, 70]
   });
   const manager = createTableCommandManager(store, { layout });
-  return { layout, manager, store };
+  return { layout, manager, store, sheet };
 }
 
 describe("ResizeRowCommand", () => {
@@ -166,37 +173,39 @@ describe("ResizeColumnCommand", () => {
   });
 
   it("resizes a hidden column's restore width without showing the column", () => {
-    const { layout, manager, store } = createFixture();
-    layout.hideColumn(1);
+    const { layout, manager, store, sheet } = createFixture();
+    // 隐藏走命令：它要同时写权威（`columnData[1].hd`）和索引（几何宽度 0），
+    // 两半必须在同一个事务里（设计稿 §4.3）。因此版本号从这一条之后开始数。
+    manager.execute(new HideColumnCommand(1));
+    const layoutVersion = layout.version;
+    const storeVersion = store.version;
 
     expect(layout.getColumnWidth(1)).toBe(0);
-    expect(layout.getColumnRestoreWidth(1)).toBe(60);
-    expect(layout.isColumnHidden(1)).toBe(true);
-    expect(layout.version).toBe(1);
-    expect(store.version).toBe(0);
+    expect(columnWidthOf(sheet, 1, layout.defaultColumnWidth)).toBe(60);
+    expect(isColumnHidden(sheet, 1)).toBe(true);
 
     manager.execute(new ResizeColumnCommand(1, 95));
     expect(layout.getColumnWidth(1)).toBe(0);
-    expect(layout.getColumnRestoreWidth(1)).toBe(95);
-    expect(layout.isColumnHidden(1)).toBe(true);
-    expect(layout.version).toBe(2);
-    expect(store.version).toBe(1);
-    expect(manager.lastChangeSet?.modelVersion).toBe(1);
+    expect(columnWidthOf(sheet, 1, layout.defaultColumnWidth)).toBe(95);
+    expect(isColumnHidden(sheet, 1)).toBe(true);
+    expect(layout.version).toBe(layoutVersion + 1);
+    expect(store.version).toBe(storeVersion + 1);
+    expect(manager.lastChangeSet?.modelVersion).toBe(storeVersion + 1);
 
     manager.undo();
     expect(layout.getColumnWidth(1)).toBe(0);
-    expect(layout.getColumnRestoreWidth(1)).toBe(60);
-    expect(layout.isColumnHidden(1)).toBe(true);
-    expect(layout.version).toBe(3);
-    expect(store.version).toBe(2);
-    expect(manager.lastChangeSet?.modelVersion).toBe(2);
+    expect(columnWidthOf(sheet, 1, layout.defaultColumnWidth)).toBe(60);
+    expect(isColumnHidden(sheet, 1)).toBe(true);
+    expect(layout.version).toBe(layoutVersion + 2);
+    expect(store.version).toBe(storeVersion + 2);
+    expect(manager.lastChangeSet?.modelVersion).toBe(storeVersion + 2);
 
     manager.redo();
     expect(layout.getColumnWidth(1)).toBe(0);
-    expect(layout.getColumnRestoreWidth(1)).toBe(95);
-    expect(layout.isColumnHidden(1)).toBe(true);
-    expect(layout.version).toBe(4);
-    expect(store.version).toBe(3);
-    expect(manager.lastChangeSet?.modelVersion).toBe(3);
+    expect(columnWidthOf(sheet, 1, layout.defaultColumnWidth)).toBe(95);
+    expect(isColumnHidden(sheet, 1)).toBe(true);
+    expect(layout.version).toBe(layoutVersion + 3);
+    expect(store.version).toBe(storeVersion + 3);
+    expect(manager.lastChangeSet?.modelVersion).toBe(storeVersion + 3);
   });
 });

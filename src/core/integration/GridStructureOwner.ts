@@ -34,8 +34,16 @@ export interface GridStructurePayload {
    * 这边只需要搬**索引**（`RowMetrics`），来源那半边一个字节都不用它管
    * （ADR 0004 阶段 4B T8，设计稿 §4.1）。
    */
+  /**
+   * 插入列时每一列的**几何宽度**（隐藏列即 0）。
+   *
+   * 没有 `hiddenColumnOffsets`：列宽与「这列是不是隐藏的」的权威在 `columnData[c]` 的
+   * `w`/`hd`，而 `columnData` 与 `rowData` 一样是登记在册的列侧表——删除的逆
+   * （`restore-columns`）会把整条 `ColumnMeta` 带回来，隐藏位自然跟着回来。这边只需要
+   * 搬索引（`ColumnAxisSnapshot` 的几何宽度），「取消隐藏后恢复成多宽」那半边一个字节
+   * 都不用它管（ADR 0004 阶段 4B T8b，设计稿 §4.4）。
+   */
   readonly columnWidths?: readonly number[];
-  readonly hiddenColumnOffsets?: ReadonlyMap<number, number>;
 }
 
 export interface GridStructureOwnerOptions {
@@ -123,6 +131,17 @@ export class GridStructureOwner
     return this.#getColumns();
   }
 
+  /**
+   * 一列没有显式宽度时算多宽——转自布局配置。
+   *
+   * 插入列时要用它填 `columnWidths`：`ColumnDefinition.width` 缺省的那些列在
+   * `columnData` 里不会有 `w`，几何宽度就得由缺省项决定；若这里写死 120 而布局配了
+   * 别的数，插进来的列当场就违反 §4.2 那条列轴不变量。
+   */
+  get defaultColumnWidth(): number {
+    return this.#layout.defaultColumnWidth;
+  }
+
   getRoot(): GridStructureRoot {
     return Object.freeze({
       columns: this.#getColumns(),
@@ -159,7 +178,6 @@ export class GridStructureOwner
     let inverseRowMetricsFragment: RowMetricsFragment | undefined;
     let inverseColumns: readonly ColumnDefinition[] | undefined;
     let inverseColumnWidths: readonly number[] | undefined;
-    let inverseHiddenColumnOffsets: ReadonlyMap<number, number> | undefined;
     let forwardPayload: GridStructurePayload = {};
     let columns = root.columns;
     let runtimeColumns = root.runtimeColumns;
@@ -195,34 +213,21 @@ export class GridStructureOwner
         }
         const inserted = snapshotColumnDefinitions(payload.columns);
         columns = Object.freeze(root.columns.slice(0, change.start).concat(inserted, root.columns.slice(change.start)));
-        layoutPayload = {
-          columnWidths: payload.columnWidths,
-          hiddenColumnOffsets: payload.hiddenColumnOffsets
-        };
+        layoutPayload = { columnWidths: payload.columnWidths };
         forwardPayload = createGridStructurePayload({
           columns: inserted,
-          columnWidths: payload.columnWidths,
-          ...(payload.hiddenColumnOffsets !== undefined
-            ? { hiddenColumnOffsets: payload.hiddenColumnOffsets }
-            : {})
+          columnWidths: payload.columnWidths
         });
       } else if (change.operation === "delete") {
         inverseColumns = root.columns.slice(change.start, change.start + change.count);
         const widths: number[] = [];
-        const hiddenOffsets = new Map<number, number>();
         for (let offset = 0; offset < change.count; offset += 1) {
-          const column = change.start + offset;
-          const restoreWidth = root.layout.columnAxis.isColumnHidden(column)
-            ? root.layout.columnAxis.getColumnRestoreWidth(column)
-            : undefined;
-          const width = root.layout.columnAxis.getColumnRestoreWidth(column);
-          widths.push(width);
-          if (restoreWidth !== undefined) {
-            hiddenOffsets.set(offset, restoreWidth);
-          }
+          // 存**几何宽度**而不是恢复宽度：撤销时权威那半边由 `restore-columns` 把整条
+          // `ColumnMeta`（含 `hd`）原样带回来，这里只要索引与它对得上。隐藏列的几何宽度
+          // 是 0，恢复后重算出来的也是 0，两边自然一致（设计稿 §4.4）。
+          widths.push(root.layout.columnAxis.getColumnWidth(change.start + offset));
         }
         inverseColumnWidths = Object.freeze(widths);
-        inverseHiddenColumnOffsets = hiddenOffsets;
         columns = Object.freeze(root.columns.slice(0, change.start).concat(root.columns.slice(change.start + change.count)));
       } else {
         columns = moveColumns(root.columns, change.start, change.count, change.target as number);
@@ -252,10 +257,7 @@ export class GridStructureOwner
           ? { rowMetricsFragment: inverseRowMetricsFragment }
           : {}),
         ...(inverseColumns !== undefined ? { columns: inverseColumns } : {}),
-        ...(inverseColumnWidths !== undefined ? { columnWidths: inverseColumnWidths } : {}),
-        ...(inverseHiddenColumnOffsets !== undefined
-          ? { hiddenColumnOffsets: inverseHiddenColumnOffsets }
-          : {})
+        ...(inverseColumnWidths !== undefined ? { columnWidths: inverseColumnWidths } : {})
       }),
       estimatedBytes: 192 + change.count * (change.axis === "column" ? 96 : 8)
     };
@@ -277,9 +279,6 @@ export function createGridStructurePayload(payload: GridStructurePayload = {}): 
     ...(payload.rowMetricsFragment !== undefined
       ? { rowMetricsFragment: payload.rowMetricsFragment }
       : {}),
-    ...(payload.columnWidths !== undefined ? { columnWidths: Object.freeze([...payload.columnWidths]) } : {}),
-    ...(payload.hiddenColumnOffsets !== undefined
-      ? { hiddenColumnOffsets: new Map(payload.hiddenColumnOffsets) }
-      : {})
+    ...(payload.columnWidths !== undefined ? { columnWidths: Object.freeze([...payload.columnWidths]) } : {})
   });
 }

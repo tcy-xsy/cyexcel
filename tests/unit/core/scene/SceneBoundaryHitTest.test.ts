@@ -100,13 +100,14 @@ describe("SceneSnapshot boundary hit-test contract", () => {
   });
 
   it("skips zero-width hidden columns instead of exposing duplicate logical handles", () => {
+    // 「隐藏」在布局这一层就是几何宽度 0（ADR 0004 阶段 4B T8b：隐藏位的权威搬去了
+    // `columnData[c].hd`，布局只留由它派生的那个数），所以这里直接给 0。
     const middleHidden = new LayoutEngine({
       rowCount: 3,
       columnCount: 3,
       rowHeight: 20,
-      columnWidths: [50, 40, 50]
+      columnWidths: [50, 0, 50]
     });
-    middleHidden.hideColumn(1);
     const middleScene = createScene(middleHidden, {
       scrollTop: 0,
       scrollLeft: 0,
@@ -121,9 +122,8 @@ describe("SceneSnapshot boundary hit-test contract", () => {
       rowCount: 3,
       columnCount: 3,
       rowHeight: 20,
-      columnWidths: [50, 40, 50]
+      columnWidths: [0, 40, 50]
     });
-    leadingHidden.hideColumn(0);
     const leadingScene = createScene(leadingHidden, {
       scrollTop: 0,
       scrollLeft: 0,

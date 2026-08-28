@@ -123,6 +123,27 @@ export function createBuiltinCommandPlanner(options: BuiltinCommandPlannerOption
       if (structure) {
         context.stage(structure);
       }
+      // 显式宽度还要写进权威（`columnData[c].w`）：`structure` 那一条只补了几何索引，
+      // 而列宽的权威在模型里（ADR 0004 阶段 4B T8b，设计稿 §4.4）。缺省宽的列一条都不
+      // 发——「没有 `w`」正是它要表达的状态。
+      //
+      // 排在 `structure` 之后：这些下标是**插入之后**的坐标空间里的。用
+      // `set-column-meta` 而不是 `set-column-width`，是因为它同时也把几何宽度重算一遍
+      // 写回索引，而那一步与 `structure` 刚写的值相同，幂等；撤销按相反顺序退，先撤
+      // 元数据再撤结构，每一步两边都对得上。
+      const layout = options.layout;
+      if (layout) {
+        columns.forEach((column, offset) => {
+          if (column.width === undefined) {
+            return;
+          }
+          context.stage(layout.createLayoutMutation({
+            type: "set-column-meta",
+            column: start + offset,
+            meta: { w: column.width }
+          }));
+        });
+      }
     }
   });
   registry.register<DeleteColumnsCommand>({

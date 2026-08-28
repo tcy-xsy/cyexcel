@@ -28,11 +28,15 @@ import { createSheetFromRows } from "../../../helpers/createSheetModel";
 import { rowHeightProvenanceOf } from "../../../helpers/rowHeightAuthority";
 
 /**
- * 行高的权威在模型里（ADR 0004 阶段 4B T8），所以夹具是「一张表 + 一个布局」：
- * `set-row-height` 这一支要同时写 `rowData` 和 `RowMetrics`。
+ * 行高的权威在模型里（ADR 0004 阶段 4B T8）、列宽与隐藏的权威也在（T8b），所以夹具是
+ * 「一张表 + 一个布局」：`set-row-height` 要同时写 `rowData` 和 `RowMetrics`，
+ * `set-column-width` 要同时写 `columnData` 和 `ColumnAxisSnapshot`。
+ *
+ * 表配三列而不是一列：写第 c 列的元数据会把派生的列数撑到 c+1，而「值写不改坐标空间」
+ * 那道闸要求写完还是原来那么宽（spec §3.3）。
  */
 function createFixture(): { layout: LayoutEngine; sheet: SheetModel } {
-  const sheet = createSheetFromRows([{ a: "1" }, { a: "2" }, { a: "3" }], ["a"]);
+  const sheet = createSheetFromRows([{ a: "1" }, { a: "2" }, { a: "3" }], ["a", "b", "c"]);
   const layout = new LayoutEngine({
     rowCount: 3,
     columnCount: 3,
@@ -81,9 +85,14 @@ function createGridFixture() {
     columnManager,
     headerManager,
     layout,
-    // 这个夹具里的 `LayoutRootMutation` 全是列宽，碰不到模型；带上表只是为了满足
-    // 构造签名——行高那一支才真的要它。
-    sheet: createSheetFromRows([{ a: "1" }, { a: "2" }, { a: "3" }], ["a"]),
+    // 列宽的权威也在模型里了（ADR 0004 阶段 4B T8b），所以这张表是真要用的：
+    // `set-column-width` 会同时写 `columnData[c].w`。
+    //
+    // 给三列而不是两列，是因为下面两条组合用例只挂了结构参与者、没挂数据侧那条
+    // `insert-columns`：插入后布局有三列，而模型的坐标空间还停在原地，往第 2 列写
+    // 元数据会被「值写不改坐标空间」那道闸挡下来（spec §3.3）。生产里两条是一起排的，
+    // 这里只测根注册表的组合，就把表先配够宽。
+    sheet: createSheetFromRows([{ a: "1" }, { a: "2" }, { a: "3" }], ["a", "b", "c"]),
     selection,
     getColumns: () => liveColumns
   };
@@ -236,7 +245,7 @@ describe("LayoutRootMutation", () => {
         width: 75
       }),
       createColumnInsertMutation(fixture.owner)
-    ]);
+    ], resourcesFor(fixture.sheet));
 
     expect(fixture.owner.isCurrent(initialRoot)).toBe(true);
     expect(fixture.getColumns()).toBe(initialRoot.columns);
@@ -269,7 +278,7 @@ describe("LayoutRootMutation", () => {
         column: 2,
         width: 75
       })
-    ]);
+    ], resourcesFor(fixture.sheet));
 
     expect(fixture.owner.isCurrent(initialRoot)).toBe(true);
     expect(fixture.getColumns()).toBe(initialRoot.columns);
@@ -303,7 +312,7 @@ describe("LayoutRootMutation", () => {
       }),
       createColumnInsertMutation(fixture.owner),
       createFailingMutation("mixed transaction failed")
-    ]);
+    ], resourcesFor(fixture.sheet));
 
     expect(fixture.owner.isCurrent(initialRoot)).toBe(true);
     expect(() => coordinator.commit(prepared)).toThrow("mixed transaction failed");

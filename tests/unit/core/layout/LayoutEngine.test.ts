@@ -208,7 +208,7 @@ describe('LayoutEngine variable row heights', () => {
     const metrics = layout.root.rowMetrics;
 
     expect(layout.prepareSetColumnWidth(0, 80).rowMetrics).toBe(metrics);
-    expect(layout.prepareHideColumn(0).rowMetrics).toBe(metrics);
+    expect(layout.prepareSetColumnWidth(0, 0).rowMetrics).toBe(metrics);
     expect(layout.prepareInsertColumns(0, [30]).rowMetrics).toBe(metrics);
   });
 
@@ -1085,72 +1085,13 @@ describe('LayoutEngine frozenColumnCount re-clamps after column structural chang
   });
 });
 
-describe('LayoutEngine.hideColumn/showColumn/isColumnHidden', () => {
-  function createLayout(): LayoutEngine {
-    return new LayoutEngine({
-      rowCount: 5,
-      columnCount: 3,
-      rowHeight: 20,
-      columnWidths: [50, 60, 70],
-    });
-  }
-
-  it('hiding a column sets its width to 0 and marks it hidden', () => {
-    const layout = createLayout();
-
-    layout.hideColumn(1);
-
-    expect(layout.getColumnWidth(1)).toBe(0);
-    expect(layout.isColumnHidden(1)).toBe(true);
-    expect(layout.getTotalWidth()).toBe(50 + 0 + 70);
-  });
-
-  it('showing a hidden column restores its exact previous width', () => {
-    const layout = createLayout();
-    layout.hideColumn(1);
-
-    layout.showColumn(1);
-
-    expect(layout.getColumnWidth(1)).toBe(60);
-    expect(layout.isColumnHidden(1)).toBe(false);
-    expect(layout.getTotalWidth()).toBe(50 + 60 + 70);
-  });
-
-  it('showing a column that was never hidden is a no-op', () => {
-    const layout = createLayout();
-
-    layout.showColumn(1);
-
-    expect(layout.getColumnWidth(1)).toBe(60);
-  });
-
-  it('hiding an already-hidden column does not overwrite the remembered restore width', () => {
-    const layout = createLayout();
-    layout.hideColumn(1);
-
-    layout.hideColumn(1); // already hidden — must not remember 0 as the "restore" width
-
-    layout.showColumn(1);
-    expect(layout.getColumnWidth(1)).toBe(60);
-  });
-
-  it('isColumnHidden is false for a never-hidden column', () => {
-    const layout = createLayout();
-
-    expect(layout.isColumnHidden(0)).toBe(false);
-  });
-
-  it('bumps version on both hide and show', () => {
-    const layout = createLayout();
-    expect(layout.version).toBe(0);
-
-    layout.hideColumn(0);
-    expect(layout.version).toBe(1);
-
-    layout.showColumn(0);
-    expect(layout.version).toBe(2);
-  });
-});
+// 原先这里有一整个 `LayoutEngine.hideColumn/showColumn/isColumnHidden` 用例组，
+// 随那四个方法一起删掉了（ADR 0004 阶段 4B T8b，设计稿 §4.4）：「这列是不是隐藏的」
+// 和「取消隐藏后恢复成多宽」的权威搬去了 `columnData[c]` 的 `hd`/`w`，布局这一层只剩
+// 几何宽度，于是 `hideColumn ≡ setColumnWidth(0)`、`showColumn ≡ 写回权威里的 w`，
+// 都不再是布局自己的能力。那几条行为——隐藏后总宽变化、取消隐藏逐像素恢复、重复隐藏
+// 不把 0 记成恢复宽度——改由 `commands/hideShowColumnCommands.test.ts` 端到端地测，
+// 并由 `columnWidthAuthority.property.test.ts` 守住两半不分叉。
 
 describe('LayoutEngine root prepare/replace', () => {
   function createLayout(): LayoutEngine {
@@ -1194,89 +1135,75 @@ describe('LayoutEngine root prepare/replace', () => {
     expect(layout.version).toBe(version + 1);
   });
 
-  it('prepareDeleteColumns remaps hidden-column state without writing live geometry', () => {
+  // 下面三条原本叫「remaps hidden-column state」：那时布局自己存着一张
+  // 「哪几列是隐藏的、恢复宽度是多少」的表，结构变更必须把它一起重映射。T8b 之后
+  // 那张表没了，隐藏就是几何宽度 0，于是这几条要守的东西变成「零宽这个**位置**跟着
+  // 结构走」——重映射的正确性还是同一件事，只是不必再单独搬第二份存储。
+  it('prepareDeleteColumns carries a zero-width column to its new index without writing live geometry', () => {
     const layout = createLayout();
-    layout.hideColumn(3);
+    layout.setColumnWidth(3, 0);
     const version = layout.version;
 
     const prepared = layout.prepareDeleteColumns(1, 1);
 
     expect(readColumnWidths(layout)).toEqual([50, 60, 70, 0]);
-    expect(layout.isColumnHidden(3)).toBe(true);
     expect(layout.version).toBe(version);
 
     layout.replaceRoot(prepared);
 
     expect(readColumnWidths(layout)).toEqual([50, 70, 0]);
-    expect(layout.isColumnHidden(2)).toBe(true);
-    expect(layout.getColumnRestoreWidth(2)).toBe(80);
     expect(layout.version).toBe(version + 1);
   });
 
-  it('prepareMoveColumns remaps hidden-column state without writing live geometry', () => {
+  it('prepareMoveColumns carries a zero-width column to its new index without writing live geometry', () => {
     const layout = createLayout();
-    layout.hideColumn(1);
+    layout.setColumnWidth(1, 0);
     const version = layout.version;
 
     const prepared = layout.prepareMoveColumns(1, 1, 4);
 
     expect(readColumnWidths(layout)).toEqual([50, 0, 70, 80]);
-    expect(layout.isColumnHidden(1)).toBe(true);
     expect(layout.version).toBe(version);
 
     layout.replaceRoot(prepared);
 
     expect(readColumnWidths(layout)).toEqual([50, 70, 80, 0]);
-    expect(layout.isColumnHidden(3)).toBe(true);
-    expect(layout.getColumnRestoreWidth(3)).toBe(60);
     expect(layout.version).toBe(version + 1);
   });
 
-  it('prepareStructureRoot can restore inserted hidden columns from one immutable base root', () => {
+  it('prepareStructureRoot can insert zero-width columns from one immutable base root', () => {
     const layout = createLayout();
-    layout.hideColumn(3);
+    layout.setColumnWidth(3, 0);
     const base = layout.root;
     const prepared = layout.prepareStructureRoot(
       { axis: 'column', operation: 'insert', start: 1, count: 2 },
-      {
-        columnWidths: [40, 0],
-        hiddenColumnOffsets: new Map([[1, 45]]),
-      },
+      { columnWidths: [40, 0] },
       base,
     );
 
     expect(readColumnWidths(layout)).toEqual([50, 60, 70, 0]);
-    expect(layout.isColumnHidden(2)).toBe(false);
-    expect(layout.isColumnHidden(5)).toBe(false);
 
     layout.replaceRoot(prepared);
 
     expect(readColumnWidths(layout)).toEqual([50, 40, 0, 60, 70, 0]);
-    expect(layout.isColumnHidden(2)).toBe(true);
-    expect(layout.getColumnRestoreWidth(2)).toBe(45);
-    expect(layout.isColumnHidden(5)).toBe(true);
-    expect(layout.getColumnRestoreWidth(5)).toBe(80);
   });
 
-  it('prepareHideColumn and prepareShowColumn do not write until replaceRoot swaps the root', () => {
+  it('prepareSetColumnWidth does not write until replaceRoot swaps the root', () => {
     const layout = createLayout();
-    const hidden = layout.prepareHideColumn(1);
+    // 「隐藏」与「取消隐藏」在这一层就是这两次写（设计稿 §4.4）。
+    const hidden = layout.prepareSetColumnWidth(1, 0);
 
     expect(layout.getColumnWidth(1)).toBe(60);
-    expect(layout.isColumnHidden(1)).toBe(false);
 
     layout.replaceRoot(hidden);
     expect(layout.getColumnWidth(1)).toBe(0);
-    expect(layout.isColumnHidden(1)).toBe(true);
 
     const version = layout.version;
-    const shown = layout.prepareShowColumn(1);
+    const shown = layout.prepareSetColumnWidth(1, 60);
     expect(layout.getColumnWidth(1)).toBe(0);
-    expect(layout.isColumnHidden(1)).toBe(true);
 
     layout.replaceRoot(shown);
     expect(layout.getColumnWidth(1)).toBe(60);
-    expect(layout.isColumnHidden(1)).toBe(false);
     expect(layout.version).toBe(version + 1);
   });
 
@@ -1298,16 +1225,16 @@ describe('LayoutEngine root prepare/replace', () => {
     expect(layout.root.columnAxis).toBe(originalAxis);
   });
 
-  it('exposes root snapshots without mutable row index or hidden map handles', () => {
+  it('exposes root snapshots without mutable row index or column width handles', () => {
     const layout = createLayout();
-    layout.hideColumn(1);
+    layout.setColumnWidth(1, 0);
     const version = layout.version;
     const root = layout.root;
 
     expect(Object.isFrozen(root.rowMetrics)).toBe(true);
-    const detachedHidden = root.columnAxis.copyHiddenColumnWidths();
-    detachedHidden.set(1, 999);
-    expect(root.columnAxis.getColumnRestoreWidth(1)).toBe(60);
+    const detachedWidths = root.columnAxis.copyColumnWidths();
+    detachedWidths[1] = 999;
+    expect(root.columnAxis.getColumnWidth(1)).toBe(0);
     expect(Object.isFrozen(root.columnAxis.columnOffsets)).toBe(true);
 
     expect(readRowHeights(layout)).toEqual([20, 35, 20, 20]);
@@ -1334,9 +1261,9 @@ describe('LayoutEngine root prepare/replace', () => {
   // 一起去掉了：前者已无对象可测，后者是 `rowData` 作为注册侧表的性质，由
   // `IndexedTable` 的重映射用例与 §4.2 的属性测试覆盖。
 
-  it('prepare validation failures leave live state, hidden remaps, and version unchanged', () => {
+  it('prepare validation failures leave live state and version unchanged', () => {
     const layout = createLayout();
-    layout.hideColumn(2);
+    layout.setColumnWidth(2, 0);
     const version = layout.version;
 
     expect(() => layout.prepareInsertColumns(1, [Number.NaN])).toThrow(
@@ -1351,8 +1278,6 @@ describe('LayoutEngine root prepare/replace', () => {
     expect(layout.columnCount).toBe(4);
     expect(readRowHeights(layout)).toEqual([20, 35, 20, 20]);
     expect(readColumnWidths(layout)).toEqual([50, 60, 0, 80]);
-    expect(layout.isColumnHidden(2)).toBe(true);
-    expect(layout.getColumnRestoreWidth(2)).toBe(70);
     expect(layout.version).toBe(version);
   });
 });

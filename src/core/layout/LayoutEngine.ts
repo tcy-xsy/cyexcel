@@ -1,13 +1,21 @@
 import { CyExcelError, CyExcelErrorCode } from '../errors';
 import { ColumnAxisSnapshot } from './ColumnAxisSnapshot';
 import { RowMetrics, type RowMetricsFragment } from './RowMetrics';
-import type { ColumnStructureChange } from './columnStructure';
 import { assertValidRowOrder } from './rowOrder';
 import {
-  remapIndex,
   validateAxisChange,
   type AxisChangeDescriptor,
 } from './structuralChange';
+
+/**
+ * 没有显式宽度的列有多宽。
+ *
+ * 常量定在这里而不是 `../cells`，是因为 `LayoutOptions.defaultColumnWidth` 现在是
+ * 那条不变量的缺省项（设计稿 §4.2 的列轴版），而布局层不依赖 `cells`；
+ * `ColumnManager` 反过来从这里 re-export 同一个 `DEFAULT_COLUMN_WIDTH`，两处永远
+ * 是同一个数。
+ */
+export const DEFAULT_COLUMN_WIDTH = 120;
 
 export interface LayoutOptions {
   readonly rowCount: number;
@@ -16,8 +24,10 @@ export interface LayoutOptions {
   readonly rowHeight: number;
   /** Row index -> explicit height, only for rows that differ from `rowHeight`. */
   readonly rowHeights?: ReadonlyMap<number, number>;
-  /** One geometric width per column; length must equal `columnCount`. Visibility is tracked independently. */
+  /** One geometric width per column; length must equal `columnCount`. A hidden column's geometric width is 0. */
   readonly columnWidths: readonly number[];
+  /** Width for any column whose `columnData` entry has no `w`. Default: `DEFAULT_COLUMN_WIDTH`. */
+  readonly defaultColumnWidth?: number;
   readonly freeze?: {
     readonly rows?: number;
     readonly columns?: number;
@@ -79,7 +89,6 @@ export interface LayoutStructurePayload {
   readonly rowHeights?: ReadonlyMap<number, number> | undefined;
   readonly rowMetricsFragment?: RowMetricsFragment | undefined;
   readonly columnWidths?: readonly number[] | undefined;
-  readonly hiddenColumnOffsets?: ReadonlyMap<number, number> | undefined;
 }
 
 function isNonNegativeInteger(value: number): boolean {
@@ -137,6 +146,12 @@ function validateLayoutOptions(options: LayoutOptions): void {
     }
   }
   if (
+    options.defaultColumnWidth !== undefined &&
+    !isPositiveFinite(options.defaultColumnWidth)
+  ) {
+    throw invalidLayoutOption('defaultColumnWidth', options.defaultColumnWidth);
+  }
+  if (
     options.overscanRows !== undefined &&
     !isNonNegativeInteger(options.overscanRows)
   ) {
@@ -181,10 +196,17 @@ export class LayoutEngine {
    *
    * provenance 这边**连索引都不留**：`getRowHeightProvenance` 已删除，要问来源
    * 一律读 `model.getRowMeta(row)?.hp ?? "default"`。少一份存储，就少一处能分叉。
+   *
+   * 列轴同理（T8b）：`#root.columnAxis` 只留几何宽度，它是 `columnData[c]` 的
+   * `w`/`hd` 的索引；「取消隐藏后恢复成多宽」这份记忆不再有第二份存储，
+   * `getColumnRestoreWidth` / `isColumnHidden` / `hideColumn` / `showColumn`
+   * 全部删除，要问一律读 `model.getColumnMeta(column)`。
    */
   #root: LayoutRoot;
   /** 没有显式行高的行用它——**默认值是配置，不是模型状态**：模型只存偏离默认的那些行。 */
   readonly #rowHeight: number;
+  /** 列轴对应物：没有显式 `w` 的列用它。同样是配置，不是模型状态。 */
+  readonly #defaultColumnWidth: number;
   /** The freeze.rows the caller originally asked for, before clamping to the current rowCount — structural root replacements re-clamp against this, so a shrink-then-grow sequence can recover frozen rows instead of only ever losing them. */
   readonly #requestedFrozenRows: number;
   /** Column-axis counterpart to #requestedFrozenRows — same "re-clamp against the original request, not the previous value" reasoning. */
@@ -196,11 +218,12 @@ export class LayoutEngine {
     validateLayoutOptions(options);
 
     this.#rowHeight = options.rowHeight;
+    this.#defaultColumnWidth = options.defaultColumnWidth ?? DEFAULT_COLUMN_WIDTH;
     this.#requestedFrozenRows = options.freeze?.rows ?? 0;
     this.#requestedFrozenColumns = options.freeze?.columns ?? 0;
     this.#overscanRows = options.overscanRows ?? 0;
     this.#overscanColumns = options.overscanColumns ?? 0;
-    const columnAxis = this.#createColumnAxis(options.columnWidths, new Map());
+    const columnAxis = this.#createColumnAxis(options.columnWidths);
     this.#root = this.#createRoot(
       0,
       options.rowCount,
@@ -226,6 +249,11 @@ export class LayoutEngine {
     return this.#rowHeight;
   }
 
+  /** Column-axis counterpart to rowHeight: the width of any column whose `columnData` entry has no `w`. */
+  get defaultColumnWidth(): number {
+    return this.#defaultColumnWidth;
+  }
+
   get frozenRowCount(): number {
     return this.#root.frozenRowCount;
   }
@@ -239,13 +267,9 @@ export class LayoutEngine {
     return this.#root.version;
   }
 
+  /** `column`'s geometric width — 0 if it is hidden. The width it would be restored to lives in `columnData[column].w`. */
   getColumnWidth(column: number): number {
     return this.#root.columnAxis.getColumnWidth(column);
-  }
-
-  /** Width to restore if the column is hidden, otherwise its current width. */
-  getColumnRestoreWidth(column: number): number {
-    return this.#root.columnAxis.getColumnRestoreWidth(column);
   }
 
   getColumnWidthsSnapshot(): readonly number[] {
@@ -313,10 +337,13 @@ export class LayoutEngine {
   /**
    * Changes the persistent row rope: growing appends `rowHeight`-height
    * rows at the tail, shrinking truncates and **drops** any override at an
-   * index `>= rowCount` (unlike hideColumn()/showColumn(), there is no
-   * "remember and restore on regrow" here — a deliberate, documented
-   * asymmetry, not an oversight; see LayoutEngine.test.ts's setRowCount
-   * suite). Re-clamps `frozenRowCount` against the *originally requested*
+   * index `>= rowCount` — there is no "remember and restore on regrow"
+   * here, a deliberate, documented asymmetry rather than an oversight; see
+   * LayoutEngine.test.ts's setRowCount suite. (The column axis used to be
+   * the counterexample, via hideColumn()/showColumn() and their remembered
+   * restore width. Since ADR 0004 phase 4B T8b that memory lives in
+   * `columnData[c].w`, so the layout layer no longer remembers anything on
+   * either axis.) Re-clamps `frozenRowCount` against the *originally requested*
    * freeze.rows (not the previous frozenRowCount), so a shrink that clips
    * frozen rows can recover them on a later grow.
    */
@@ -373,26 +400,6 @@ export class LayoutEngine {
     this.replaceRoot(this.prepareMoveColumns(start, count, target));
   }
 
-  /**
-   * Sets a column's width to 0 (this class's existing "hidden" convention —
-   * see LayoutOptions.columnWidths) after remembering its current width, so
-   * showColumn() can restore it exactly. A no-op on the remembered width if
-   * the column is already hidden (hiding twice must not forget the real
-   * original width and remember 0 instead).
-   */
-  hideColumn(column: number): void {
-    this.replaceRoot(this.prepareHideColumn(column));
-  }
-
-  /** Restores a hidden column's remembered width. A no-op if the column isn't currently hidden. */
-  showColumn(column: number): void {
-    this.replaceRoot(this.prepareShowColumn(column));
-  }
-
-  isColumnHidden(column: number): boolean {
-    return this.#root.columnAxis.isColumnHidden(column);
-  }
-
   get root(): LayoutRoot {
     return this.#root;
   }
@@ -419,6 +426,14 @@ export class LayoutEngine {
     this.#root = root;
   }
 
+  /**
+   * 写这一列的**几何宽度**——`width` 就是索引里将要存的那个数，隐藏与否不在这里判断。
+   *
+   * T8b 之前这里还要分「这列隐藏着吗」：隐藏时把 `width` 记进恢复宽度、几何留 0。
+   * 那个分支连同它读的那张表一起搬走了：`LayoutRootMutation` 先把写合并进权威
+   * （`withColumnWidth` 保住 `hd`），再由 `geometricColumnWidthOf` 算出该喂给这里的
+   * 数。同一条语义，只是判断挪到了有权威可读的那一侧。
+   */
   prepareSetColumnWidth(column: number, width: number, base: LayoutRoot = this.#root): PreparedLayoutRoot {
     if (!isNonNegativeInteger(column) || column >= base.columnCount) {
       throw invalidLayoutOption('column', column);
@@ -428,18 +443,12 @@ export class LayoutEngine {
     }
 
     const columnWidths = base.columnAxis.copyColumnWidths();
-    const hiddenColumnWidths = base.columnAxis.copyHiddenColumnWidths();
-    if (hiddenColumnWidths.has(column)) {
-      hiddenColumnWidths.set(column, width);
-      columnWidths[column] = 0;
-    } else {
-      columnWidths[column] = width;
-    }
+    columnWidths[column] = width;
     return this.#createRoot(
       base.version + 1,
       base.rowCount,
       base.rowMetrics,
-      this.#createColumnAxis(columnWidths, hiddenColumnWidths),
+      this.#createColumnAxis(columnWidths),
     );
   }
 
@@ -602,54 +611,6 @@ export class LayoutEngine {
     });
   }
 
-  prepareHideColumn(column: number, base: LayoutRoot = this.#root): PreparedLayoutRoot {
-    if (!isNonNegativeInteger(column) || column >= base.columnCount) {
-      throw invalidLayoutOption('column', column);
-    }
-    const columnWidths = base.columnAxis.copyColumnWidths();
-    const hiddenColumnWidths = base.columnAxis.copyHiddenColumnWidths();
-    if (!hiddenColumnWidths.has(column)) {
-      hiddenColumnWidths.set(column, columnWidths[column] as number);
-    }
-    columnWidths[column] = 0;
-    return this.#createRoot(
-      base.version + 1,
-      base.rowCount,
-      base.rowMetrics,
-      this.#createColumnAxis(columnWidths, hiddenColumnWidths),
-    );
-  }
-
-  prepareShowColumn(column: number, base: LayoutRoot = this.#root): PreparedLayoutRoot {
-    if (!isNonNegativeInteger(column) || column >= base.columnCount) {
-      throw invalidLayoutOption('column', column);
-    }
-    const width = base.columnAxis.isColumnHidden(column)
-      ? base.columnAxis.getColumnRestoreWidth(column)
-      : undefined;
-    if (width === undefined) {
-      return this.#createRoot(
-        base.version + 1,
-        base.rowCount,
-        base.rowMetrics,
-        this.#createColumnAxis(
-          base.columnAxis.copyColumnWidths(),
-          base.columnAxis.copyHiddenColumnWidths(),
-        ),
-      );
-    }
-    const columnWidths = base.columnAxis.copyColumnWidths();
-    const hiddenColumnWidths = base.columnAxis.copyHiddenColumnWidths();
-    hiddenColumnWidths.delete(column);
-    columnWidths[column] = width;
-    return this.#createRoot(
-      base.version + 1,
-      base.rowCount,
-      base.rowMetrics,
-      this.#createColumnAxis(columnWidths, hiddenColumnWidths),
-    );
-  }
-
   prepareStructureRoot(
     change: AxisChangeDescriptor,
     payload: LayoutStructurePayload = {},
@@ -686,8 +647,9 @@ export class LayoutEngine {
       );
     }
 
+    // 三条列结构操作都退化成一次数组 splice：隐藏列的几何宽度就是数组里的 0，
+    // 跟着一起搬，不再有第二张按列号索引的表要重键（T8b 删掉了 #remapHiddenColumns）。
     const columnWidths = base.columnAxis.copyColumnWidths();
-    let hiddenColumnWidths = base.columnAxis.copyHiddenColumnWidths();
 
     if (change.operation === 'insert') {
       const widths = payload.columnWidths;
@@ -700,48 +662,21 @@ export class LayoutEngine {
         }
       }
       columnWidths.splice(change.start, 0, ...widths);
-      hiddenColumnWidths = this.#remapHiddenColumns(hiddenColumnWidths, {
-        operation: 'insert',
-        start: change.start,
-        count: change.count,
-      });
-      for (const [offset, width] of payload.hiddenColumnOffsets ?? []) {
-        if (!isNonNegativeInteger(offset) || offset >= change.count) {
-          throw invalidLayoutOption('hiddenColumnOffsets key', offset);
-        }
-        if (!isNonNegativeFinite(width)) {
-          throw invalidLayoutOption('hiddenColumnOffsets value', width);
-        }
-        const column = change.start + offset;
-        hiddenColumnWidths.set(column, width);
-        columnWidths[column] = 0;
-      }
     } else if (change.operation === 'delete') {
       columnWidths.splice(change.start, change.count);
-      hiddenColumnWidths = this.#remapHiddenColumns(hiddenColumnWidths, {
-        operation: 'delete',
-        start: change.start,
-        count: change.count,
-      });
     } else {
       const moved = columnWidths.splice(change.start, change.count);
       const target = change.target as number;
       const adjustedTarget =
         target > change.start ? target - change.count : target;
       columnWidths.splice(adjustedTarget, 0, ...moved);
-      hiddenColumnWidths = this.#remapHiddenColumns(hiddenColumnWidths, {
-        operation: 'move',
-        start: change.start,
-        count: change.count,
-        target,
-      });
     }
 
     return this.#createRoot(
       base.version + 1,
       base.rowCount,
       base.rowMetrics,
-      this.#createColumnAxis(columnWidths, hiddenColumnWidths),
+      this.#createColumnAxis(columnWidths),
     );
   }
 
@@ -781,14 +716,10 @@ export class LayoutEngine {
     });
   }
 
-  #createColumnAxis(
-    columnWidths: readonly number[],
-    hiddenColumnWidths: ReadonlyMap<number, number>,
-  ): ColumnAxisSnapshot {
+  #createColumnAxis(columnWidths: readonly number[]): ColumnAxisSnapshot {
     try {
       return new ColumnAxisSnapshot({
         columnWidths,
-        hiddenColumnWidths,
         frozenColumnCount: Math.min(this.#requestedFrozenColumns, columnWidths.length),
       });
     } catch (error) {
@@ -797,24 +728,6 @@ export class LayoutEngine {
       }
       throw error;
     }
-  }
-
-  #remapHiddenColumns(
-    hiddenColumnWidths: ReadonlyMap<number, number>,
-    change: ColumnStructureChange,
-  ): Map<number, number> {
-    const remapped = new Map<number, number>();
-    for (const [column, width] of hiddenColumnWidths) {
-      if (
-        change.operation === 'delete' &&
-        column >= change.start &&
-        column < change.start + change.count
-      ) {
-        continue;
-      }
-      remapped.set(remapIndex(column, change), width);
-    }
-    return remapped;
   }
 
   getTotalWidth(): number {

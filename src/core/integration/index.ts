@@ -18,3 +18,9 @@ export {
   type TableCommandManagerOptions
 } from "./CommandRuntime";
 export { StructureTransition, type StructureTransitionOptions } from "./StructureTransition";
+export {
+  resolveInitialAxisGeometry,
+  seedAxisMeta,
+  type InitialAxisGeometry,
+  type InitialAxisGeometryOptions
+} from "./axisGeometry";

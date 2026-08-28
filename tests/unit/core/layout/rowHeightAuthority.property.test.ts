@@ -22,8 +22,9 @@ import { TableStore } from "../../../../src/core/data";
 import { HeaderManager } from "../../../../src/core/headers";
 import { GridStructureOwner, createGridCommandManager } from "../../../../src/core/integration";
 import { SelectionModel } from "../../../../src/core/interaction";
-import { LayoutEngine } from "../../../../src/core/layout";
+import type { LayoutEngine } from "../../../../src/core/layout";
 import type { CommandManager } from "../../../../src/core/commands";
+import { createSeededLayout } from "../../../helpers/columnWidthAuthority";
 import { createSheetFromRows } from "../../../helpers/createSheetModel";
 import { rowHeightProvenanceOf } from "../../../helpers/rowHeightAuthority";
 
@@ -41,15 +42,19 @@ function createFixture(): Fixture {
   let columns: readonly ColumnDefinition[] = Object.freeze(
     Array.from({ length: INITIAL_COLUMNS }, () => Object.freeze({ width: 50 }))
   );
-  const store = new TableStore(createSheetFromRows(
+  const sheet = createSheetFromRows(
     Array.from({ length: INITIAL_ROWS }, (_unused, row) => ({ a: row, b: row, c: row })),
     ["a", "b", "c"]
-  ));
+  );
+  const store = new TableStore(sheet);
   const registry = new CellTypeRegistry();
   registerBuiltinCellTypes(registry);
   const columnManager = new ColumnManager({ columns, registry });
   const headerManager = new HeaderManager({ columns });
-  const layout = new LayoutEngine({
+  // 这份夹具只核行轴，但列宽的权威同样在模型里（T8b）：直接 `new LayoutEngine` 会让它
+  // 一出生就违反 §4.2 的列轴不变量。虽然本组不读那一半，留着一个自相矛盾的夹具迟早会
+  // 把人带偏，走生产同一条接缝把宽度补进权威。
+  const layout = createSeededLayout(sheet, {
     rowCount: INITIAL_ROWS,
     columnCount: INITIAL_COLUMNS,
     rowHeight: DEFAULT_ROW_HEIGHT,

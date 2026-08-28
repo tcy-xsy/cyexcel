@@ -1,5 +1,6 @@
 export {
   LayoutEngine,
+  DEFAULT_COLUMN_WIDTH,
   type LayoutOptions,
   type ViewportState,
   type IndexRange,

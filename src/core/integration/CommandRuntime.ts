@@ -28,7 +28,6 @@ import type { CellRange } from "../types";
 import { checkBeforeColumnsChange } from "../commands/checkBeforeColumnsChange";
 import { checkBeforeRowsChange } from "../commands/checkBeforeRowsChange";
 import type { ColumnDefinition } from "../cells/types";
-import { DEFAULT_COLUMN_WIDTH } from "../cells/ColumnManager";
 import { createGridStructurePayload } from "./GridStructureOwner";
 import type { GridStructureOwner } from "./GridStructureOwner";
 
@@ -154,7 +153,10 @@ export class GridStructureCommandMutationFactory implements StructureCommandMuta
       { axis: "column", operation: "insert", start, count: columns.length },
       createGridStructurePayload({
         columns,
-        columnWidths: columns.map((column) => column.width ?? DEFAULT_COLUMN_WIDTH)
+        // 缺省宽取**布局配置**的那个数，不是写死的 120：这条 payload 填的是几何索引，
+        // 而没有显式宽度的列在权威（`columnData`）里不会有 `w`，两边要用同一个缺省项
+        // 才对得上（ADR 0004 阶段 4B T8b）。
+        columnWidths: columns.map((column) => column.width ?? this.#owner.defaultColumnWidth)
       })
     );
   }

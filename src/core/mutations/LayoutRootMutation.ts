@@ -2,8 +2,9 @@ import { CyExcelError, CyExcelErrorCode } from "../errors";
 import { invertRowOrder, type LayoutEngine, type LayoutRoot, type RowHeightProvenance } from "../layout";
 import type { SheetModel } from "../sheet/SheetModel";
 import type { PreparedSheetMutation } from "../sheet/SheetTransaction";
-import type { RowMeta } from "../sheet/types";
+import type { ColumnMeta, RowMeta } from "../sheet/types";
 import type { Patch } from "../types";
+import { geometricColumnWidthOf, withColumnHidden, withColumnWidth } from "./columnWidthMeta";
 import { rowHeightOf, rowHeightProvenanceOf, withRowHeight } from "./rowHeightMeta";
 import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types";
 
@@ -17,6 +18,23 @@ export type LayoutRootAction =
   | { readonly type: "set-column-width"; readonly column: number; readonly width: number }
   | { readonly type: "hide-column"; readonly column: number }
   | { readonly type: "show-column"; readonly column: number }
+  /**
+   * 把一列的元数据整条写成 `meta`（`undefined` 即删掉条目）。
+   *
+   * 它是**另外三条列动作共同的逆**，也是唯一能表达「这一列本来就没有条目」的动作
+   * （ADR 0004 阶段 4B T8b）。行轴那边不需要这样一条：`provenance === "default"` 已经
+   * 是「没有显式行高」的写法，`withRowHeight` 见到它就删 `h`/`hp`。列宽没有 provenance
+   * 这个第三态，逆若还写 `set-column-width`，就会在一列本来没有条目的地方凭空造出
+   * `{ w: 默认宽 }`——撤销之后再改默认列宽，那一列就永远留在旧默认值上，正是 §5.1
+   * 要防的那种「往返不逐字段一致」。
+   *
+   * 它对自己也是逆（写回上一条 `meta`），所以撤销/重做在这条上是对称的。
+   */
+  | {
+      readonly type: "set-column-meta";
+      readonly column: number;
+      readonly meta: ColumnMeta | undefined;
+    }
   /**
    * A whole-axis row permutation (`order[newPosition] = oldPosition`).
    *
@@ -47,8 +65,48 @@ function patchFor(action: LayoutRootAction, root: LayoutRoot): Patch {
     case "set-column-width":
     case "hide-column":
     case "show-column":
+    case "set-column-meta":
       return { type: "column-layout", column: action.column };
   }
+}
+
+/** 这条动作要把 `columnData[column]` 写成什么——`undefined` 即删掉条目。 */
+function nextColumnMetaFor(
+  action: LayoutRootAction,
+  previous: ColumnMeta | undefined
+): ColumnMeta | undefined {
+  switch (action.type) {
+    case "set-column-width":
+      return withColumnWidth(previous, action.width);
+    case "hide-column":
+      return withColumnHidden(previous, true);
+    case "show-column":
+      return withColumnHidden(previous, false);
+    case "set-column-meta":
+      return action.meta;
+    default:
+      return previous;
+  }
+}
+
+/**
+ * 两条列元数据是不是同一份。
+ *
+ * 逐字段比而不是 `===`：`withColumnWidth` 每次都造新对象，引用比较会把「设成它已经
+ * 是的那个宽度」算成一次有效果的变更，进历史、发补丁。判据要与行轴那边一致——看
+ * **权威变没变**，不看有没有造出新对象。
+ */
+function sameColumnMeta(a: ColumnMeta | undefined, b: ColumnMeta | undefined): boolean {
+  if (a === undefined || b === undefined) {
+    return a === b;
+  }
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    if (a[key as keyof ColumnMeta] !== b[key as keyof ColumnMeta]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** History budgeting: only a permutation carries a payload worth counting. */
@@ -56,27 +114,38 @@ function estimatedBytesFor(action: LayoutRootAction): number {
   return action.type === "reorder-rows" ? 96 + action.order.length * 4 : 96;
 }
 
-function prepareAction(layout: LayoutEngine, root: LayoutRoot, action: LayoutRootAction): LayoutRoot {
+function prepareAction(
+  layout: LayoutEngine,
+  root: LayoutRoot,
+  action: LayoutRootAction,
+  nextColumnMeta: ColumnMeta | undefined
+): LayoutRoot {
   switch (action.type) {
     case "set-row-height":
       // 只喂高度：来源写进 `rowData[row].hp`，那半边由 prepare() 自己发出去
       // （设计稿 §4.3）。
       return layout.prepareSetRowHeights(new Map([[action.row, action.height]]), root);
     case "set-column-width":
-      return layout.prepareSetColumnWidth(action.column, action.width, root);
     case "hide-column":
-      return layout.prepareHideColumn(action.column, root);
     case "show-column":
-      return layout.prepareShowColumn(action.column, root);
+    case "set-column-meta":
+      // 四条列动作在索引这一侧是同一件事：把权威算成几何宽度写进去。隐藏是 0，
+      // 没有 `w` 的列取配置里的缺省宽——这正是 §4.2 那条不变量的列轴版本
+      // （`layout.getColumnWidth(c) === geometricColumnWidthOf(meta, defaultColumnWidth)`）。
+      return layout.prepareSetColumnWidth(
+        action.column,
+        geometricColumnWidthOf(nextColumnMeta, layout.defaultColumnWidth),
+        root
+      );
     case "reorder-rows":
       return layout.prepareReorderRows(action.order, root);
   }
 }
 
 function inverseAction(
-  root: LayoutRoot,
   action: LayoutRootAction,
   previousRowMeta: RowMeta | undefined,
+  previousColumnMeta: ColumnMeta | undefined,
   defaultRowHeight: number
 ): LayoutRootAction {
   switch (action.type) {
@@ -90,19 +159,13 @@ function inverseAction(
         provenance: rowHeightProvenanceOf(previousRowMeta)
       };
     case "set-column-width":
-      return {
-        type: "set-column-width",
-        column: action.column,
-        width: root.columnAxis.getColumnRestoreWidth(action.column)
-      };
     case "hide-column":
-      return root.columnAxis.isColumnHidden(action.column)
-        ? { type: "hide-column", column: action.column }
-        : { type: "show-column", column: action.column };
     case "show-column":
-      return root.columnAxis.isColumnHidden(action.column)
-        ? { type: "hide-column", column: action.column }
-        : { type: "show-column", column: action.column };
+    case "set-column-meta":
+      // 四条列动作共用一条逆：把整条 `ColumnMeta` 写回原样。原来那三条各自算逆
+      // （宽度从恢复宽度读、隐藏按当前状态在 hide/show 之间挑一条）现在收成这一条，
+      // 而且是精确的——「本来没有条目」也表达得出来。
+      return { type: "set-column-meta", column: action.column, meta: previousColumnMeta };
     case "reorder-rows":
       // The only action whose inverse needs nothing from `root`: undoing a
       // permutation is applying the inverse permutation.
@@ -113,9 +176,11 @@ function inverseAction(
 /**
  * Declarative Layout root replacement whose commit/rollback are reference swaps only.
  *
- * `set-row-height` 是唯一一个还要写模型的动作：行高的权威在 `rowData`，索引在
- * `RowMetrics`，两半必须同进同退，所以它在 prepare 期顺带暂存一条 `set-row-meta`
- * （设计稿 §4.2/§4.3）。其余动作仍然只是换一个根的引用——列宽/隐藏要等 T8b。
+ * 除了 `reorder-rows`，每一条动作都要写模型：行高的权威在 `rowData`、列宽与隐藏的
+ * 权威在 `columnData`，索引分别是 `RowMetrics` 与 `ColumnAxisSnapshot`。两半必须
+ * 同进同退，所以 prepare 期顺带暂存一条 `set-row-meta` / `set-column-meta`
+ * （设计稿 §4.2/§4.3/§4.4）。`reorder-rows` 是例外：`rowData` 是登记在册的行侧表，
+ * 数据侧那条 `reorder-rows` 已经把 `h`/`hp` 一起重排了，这里只补索引。
  */
 export class LayoutRootMutation implements Mutation {
   readonly type = "layout-root";
@@ -142,14 +207,24 @@ export class LayoutRootMutation implements Mutation {
     const previousRowMeta = action.type === "set-row-height"
       ? context.readRowMeta(this.#sheet, action.row)
       : undefined;
+    const isColumnAction = action.type === "set-column-width" ||
+      action.type === "hide-column" ||
+      action.type === "show-column" ||
+      action.type === "set-column-meta";
+    const previousColumnMeta = isColumnAction
+      ? context.readColumnMeta(this.#sheet, action.column)
+      : undefined;
+    const nextColumnMeta = nextColumnMetaFor(action, previousColumnMeta);
 
     // 高度和来源都没变就一条也不暂存：否则一次「设成它已经是的那个高度」会变成
     // 一条有效果的变更，进历史、发补丁。这与旧实现「根没换就没有效果」等价，只是
-    // 判据换成了权威。
+    // 判据换成了权威。列那边同理，判据是整条 `ColumnMeta` 变没变。
     const rowMetaChanges = action.type === "set-row-height" && (
       rowHeightOf(previousRowMeta, this.#layout.rowHeight) !== action.height ||
       rowHeightProvenanceOf(previousRowMeta) !== action.provenance
     );
+    const columnMetaChanges = isColumnAction &&
+      !sameColumnMeta(previousColumnMeta, nextColumnMeta);
 
     const staged: PreparedSheetMutation[] = [];
     let nextRoot: LayoutRoot;
@@ -161,7 +236,14 @@ export class LayoutRootMutation implements Mutation {
           meta: withRowHeight(previousRowMeta, action.height, action.provenance)
         }));
       }
-      nextRoot = prepareAction(this.#layout, previousRoot, action);
+      if (isColumnAction && columnMetaChanges) {
+        staged.push(context.prepareData(this.#sheet, {
+          type: "set-column-meta",
+          column: action.column,
+          meta: nextColumnMeta
+        }));
+      }
+      nextRoot = prepareAction(this.#layout, previousRoot, action, nextColumnMeta);
     } catch (error) {
       for (const prepared of staged) {
         prepared.dispose();
@@ -184,7 +266,7 @@ export class LayoutRootMutation implements Mutation {
     const inverse = new LayoutRootMutation(
       this.#layout,
       this.#sheet,
-      inverseAction(previousRoot, action, previousRowMeta, this.#layout.rowHeight)
+      inverseAction(action, previousRowMeta, previousColumnMeta, this.#layout.rowHeight)
     );
     let commitStarted = false;
     let rolledBack = false;

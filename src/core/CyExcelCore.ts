@@ -130,8 +130,11 @@ import type { CellRange, Command, Disposer } from "./types";
 import {
   GridStructureOwner,
   StructureTransition,
-  createGridCommandManager
+  createGridCommandManager,
+  resolveInitialAxisGeometry,
+  seedAxisMeta
 } from "./integration";
+import { columnWidthOf } from "./mutations/columnWidthMeta";
 import {
   validateCyExcelCoreDataDimensions,
   validateCyExcelCoreHeaderGeometry,
@@ -494,23 +497,43 @@ function buildWorkbook(
   });
 }
 
+/**
+ * 建布局，并把「配置说了、模型还没记」的那部分几何补回模型。
+ *
+ * 顺序是有讲究的（`axisGeometry.ts` 里写了理由）：先算合流结果，再让
+ * `new LayoutEngine` 去校验，**最后**才写模型——校验失败时模型一个字节都没动。
+ * 轴长在写之前就取好，写完钉回去，免得补出来的侧表条目把派生轴撑长（spec §3.3）。
+ */
 function buildLayout(
   options: CyExcelCoreOptions,
   columns: readonly CyExcelColumnConfig[],
-  rowCount: number
+  sheet: SheetModel,
+  dimensions: { readonly rowCount: number; readonly columnCount: number }
 ): LayoutEngine {
-  return new LayoutEngine({
-    rowCount,
+  const defaultColumnWidth = DEFAULT_COLUMN_WIDTH;
+  const geometry = resolveInitialAxisGeometry({
+    sheet,
+    rowCount: dimensions.rowCount,
+    columnCount: columns.length,
+    ...(options.rowHeights !== undefined ? { configuredRowHeights: options.rowHeights } : {}),
+    configuredColumnWidths: columns.map((column) => column.width),
+    defaultColumnWidth
+  });
+  const layout = new LayoutEngine({
+    rowCount: dimensions.rowCount,
     columnCount: columns.length,
     rowHeight: options.rowHeight ?? DEFAULT_ROW_HEIGHT,
-    ...(options.rowHeights !== undefined ? { rowHeights: options.rowHeights } : {}),
-    columnWidths: columns.map((column) => column.width ?? DEFAULT_COLUMN_WIDTH),
+    ...(geometry.rowHeights.size > 0 ? { rowHeights: geometry.rowHeights } : {}),
+    columnWidths: geometry.columnWidths,
+    defaultColumnWidth,
     ...(options.freeze !== undefined ? { freeze: options.freeze } : {}),
     ...(options.overscanRows !== undefined ? { overscanRows: options.overscanRows } : {}),
     ...(options.overscanColumns !== undefined
       ? { overscanColumns: options.overscanColumns }
       : {})
   });
+  seedAxisMeta(sheet, geometry, dimensions);
+  return layout;
 }
 
 type CoreInteractionFrame = InteractionFrame<
@@ -699,7 +722,7 @@ export class CyExcelCore {
       this.#columns.length
     );
     this.#sheet = sheet;
-    this.#layout = buildLayout(options, this.#columns, initialDimensions.rowCount);
+    this.#layout = buildLayout(options, this.#columns, sheet, initialDimensions);
 
     const initialization = new InitializationRollback();
     try {
@@ -1503,7 +1526,9 @@ export class CyExcelCore {
       if (
         column >= 0 &&
         column < this.#layout.columnCount &&
-        this.#layout.getColumnRestoreWidth(column) === width
+        // 与权威比而不是与索引比：隐藏列的几何宽度是 0，拿它比会把「把隐藏列的恢复
+        // 宽度设成它已经是的那个值」当成一次真变更（ADR 0004 阶段 4B T8b）。
+        columnWidthOf(this.#sheet.getColumnMeta(column), this.#layout.defaultColumnWidth) === width
       ) {
         return;
       }
