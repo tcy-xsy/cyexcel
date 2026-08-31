@@ -165,9 +165,6 @@ export function validateCyExcelCoreOptions(options: CyExcelCoreOptions): void {
   if (options.columns !== undefined && !Array.isArray(options.columns)) {
     throw invalidOption("columns", options.columns, "expected an array");
   }
-  if (options.headerGroups !== undefined && !Array.isArray(options.headerGroups)) {
-    throw invalidOption("headerGroups", options.headerGroups, "expected an array");
-  }
   if (options.plugins !== undefined && !Array.isArray(options.plugins)) {
     throw invalidOption("plugins", options.plugins, "expected an array");
   }
@@ -279,23 +276,5 @@ export function validateCyExcelCoreDataDimensions(
         `must be less than row count ${dimensions.rowCount}`
       );
     }
-  }
-}
-
-/** Ensures repeated group bands cannot turn a finite band height into Infinity. */
-export function validateCyExcelCoreHeaderGeometry(
-  headerBandHeight: number,
-  headerGroupDepth: number
-): void {
-  if (!isNonNegativeSafeInteger(headerGroupDepth)) {
-    throw invalidOption("headerGroups depth", headerGroupDepth);
-  }
-  const totalHeight = headerBandHeight * (headerGroupDepth + 1);
-  if (!Number.isFinite(totalHeight)) {
-    throw invalidOption(
-      "headerHeight",
-      headerBandHeight,
-      `total height over ${headerGroupDepth + 1} header bands is not finite`
-    );
   }
 }

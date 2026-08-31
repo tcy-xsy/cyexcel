@@ -42,10 +42,6 @@ function createScene(
     viewport: new ViewportSnapshot({ version: 1, ...viewport }),
     surfaceMetrics: {
       columnHeaderHeight: 60,
-      columnHeaderBands: [
-        { role: "group", level: 0, y: 0, height: 20 },
-        { role: "leaf", y: 20, height: 40 }
-      ],
       rowHeaderWidth: 40
     }
   });
@@ -60,7 +56,7 @@ function rowPoint(x: number, y: number) {
 }
 
 describe("hitTestHeaderResizeHandle", () => {
-  it("finds a column boundary only in the leaf-header band", () => {
+  it("finds a column boundary anywhere in the column-header band", () => {
     const scene = createScene();
 
     expect(hitTestHeaderResizeHandle(columnPoint(50), scene)).toEqual({
@@ -68,7 +64,11 @@ describe("hitTestHeaderResizeHandle", () => {
       axis: "column",
       column: 0
     });
-    expect(hitTestHeaderResizeHandle(columnPoint(50, 10), scene)).toBeNull();
+    expect(hitTestHeaderResizeHandle(columnPoint(50, 10), scene)).toEqual({
+      surface: "column-header",
+      axis: "column",
+      column: 0
+    });
   });
 
   it("uses canonical frozen and scrolled column-header geometry", () => {

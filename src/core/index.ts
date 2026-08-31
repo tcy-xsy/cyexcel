@@ -89,7 +89,6 @@ export {
   type SceneColumnHeaderBandSpec,
   type SceneColumnHeaderBandDescriptor,
   type SceneColumnHeaderLeafBandDescriptor,
-  type SceneColumnHeaderGroupBandDescriptor,
   type SceneCellFragment,
   type SceneColumnHeaderFragment,
   type SceneRowHeaderFragment,
@@ -164,7 +163,6 @@ export {
   defaultHeaderHitTest,
   DEFAULT_HEADER_SORT_ZONE_WIDTH,
   DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH,
-  type HeaderGroupDefinition,
   type RuntimeHeader
 } from "./headers";
 export {

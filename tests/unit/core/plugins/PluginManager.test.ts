@@ -29,7 +29,6 @@ function setup() {
     deleteColumns: () => {},
     moveColumns: () => {},
     hideColumn: () => {},
-    hasHeaderGroups: () => false,
     registerShortcut: (combo, handler) => shortcuts.register(combo, handler)
   });
   return { hooks, events, contextMenu, shortcuts, manager };

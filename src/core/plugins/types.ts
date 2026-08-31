@@ -46,8 +46,6 @@ export interface PluginContext {
   readonly deleteColumns: (start: number, count?: number) => void;
   readonly moveColumns: (start: number, count: number, target: number) => void;
   readonly hideColumn: (column: number) => void;
-  /** True while `headerGroups` is configured — `insertColumns()`/`deleteColumns()`/`moveColumns()` all throw in that state (grouped headers reference raw column indices a structural change would invalidate), so a plugin offering those actions should check this first instead of letting the call throw. */
-  readonly hasHeaderGroups: () => boolean;
   /** Same public shortcut registry `sheet.registerShortcut()` uses — see doc/progress.md's Step 18 entry for the combo syntax and conflict policy. */
   readonly registerShortcut: (combo: string, handler: ShortcutHandler) => Disposer;
 }

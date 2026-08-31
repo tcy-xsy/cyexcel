@@ -10,19 +10,11 @@ export interface SceneSurfaceMetrics {
   readonly rowHeaderWidth: number;
 }
 
-export type SceneColumnHeaderBandSpec =
-  | Readonly<{
-      readonly role: "leaf";
-      readonly y: number;
-      readonly height: number;
-    }>
-  | Readonly<{
-      readonly role: "group";
-      /** 0 is leaf-adjacent; larger levels are farther from the leaf band. */
-      readonly level: number;
-      readonly y: number;
-      readonly height: number;
-    }>;
+export type SceneColumnHeaderBandSpec = Readonly<{
+  readonly role: "leaf";
+  readonly y: number;
+  readonly height: number;
+}>;
 
 export interface SceneSnapshotOptions {
   readonly version: number;
@@ -71,15 +63,7 @@ export type SceneColumnHeaderLeafBandDescriptor = SceneColumnHeaderBandDescripto
   readonly level: null;
 }>;
 
-export type SceneColumnHeaderGroupBandDescriptor = SceneColumnHeaderBandDescriptorBase & Readonly<{
-  readonly id: `group:${number}`;
-  readonly role: "group";
-  readonly level: number;
-}>;
-
-export type SceneColumnHeaderBandDescriptor =
-  | SceneColumnHeaderLeafBandDescriptor
-  | SceneColumnHeaderGroupBandDescriptor;
+export type SceneColumnHeaderBandDescriptor = SceneColumnHeaderLeafBandDescriptor;
 
 export type SceneNodeDescriptor = SceneGenericNodeDescriptor | SceneColumnHeaderBandDescriptor;
 
@@ -392,15 +376,6 @@ export class SceneSnapshot {
 
   getColumnHeaderLeafBand(): SceneColumnHeaderLeafBandDescriptor {
     return this.#columnHeaderBands.find((band) => band.role === "leaf") as SceneColumnHeaderLeafBandDescriptor;
-  }
-
-  getColumnHeaderGroupBand(level: number): SceneColumnHeaderGroupBandDescriptor | null {
-    if (!Number.isSafeInteger(level) || level < 0) {
-      return null;
-    }
-    return this.#columnHeaderBands.find((band): band is SceneColumnHeaderGroupBandDescriptor => (
-      band.role === "group" && band.level === level
-    )) ?? null;
   }
 
   /**
@@ -1017,72 +992,16 @@ export class SceneSnapshot {
     specs: readonly SceneColumnHeaderBandSpec[],
     columnHeaderHeight: number
   ): readonly SceneColumnHeaderBandSpec[] {
-    if (specs.length === 0) {
-      throw new RangeError("surfaceMetrics.columnHeaderBands must contain one leaf band");
-    }
-
-    const normalized = specs.map((spec, index): SceneColumnHeaderBandSpec => {
-      assertNonNegativeFinite(`surfaceMetrics.columnHeaderBands[${index}].y`, spec.y);
-      assertNonNegativeFinite(`surfaceMetrics.columnHeaderBands[${index}].height`, spec.height);
-      if (spec.y + spec.height > columnHeaderHeight) {
-        throw new RangeError(`surfaceMetrics.columnHeaderBands[${index}] exceeds column-header height`);
-      }
-      if (spec.role === "group") {
-        assertNonNegativeInteger(`surfaceMetrics.columnHeaderBands[${index}].level`, spec.level);
-        return Object.freeze({ role: "group", level: spec.level, y: spec.y, height: spec.height });
-      }
-      return Object.freeze({ role: "leaf", y: spec.y, height: spec.height });
-    });
-
-    if (normalized.filter((spec) => spec.role === "leaf").length !== 1) {
+    if (specs.length !== 1) {
       throw new RangeError("surfaceMetrics.columnHeaderBands must contain exactly one leaf band");
     }
-
-    const groupLevels = normalized
-      .filter((spec): spec is Extract<SceneColumnHeaderBandSpec, { readonly role: "group" }> => (
-        spec.role === "group"
-      ))
-      .map((spec) => spec.level)
-      .sort((a, b) => a - b);
-    if (new Set(groupLevels).size !== groupLevels.length) {
-      throw new RangeError("surfaceMetrics.columnHeaderBands group levels must be unique");
+    const spec = specs[0] as SceneColumnHeaderBandSpec;
+    assertNonNegativeFinite("surfaceMetrics.columnHeaderBands[0].y", spec.y);
+    assertNonNegativeFinite("surfaceMetrics.columnHeaderBands[0].height", spec.height);
+    if (spec.y + spec.height > columnHeaderHeight) {
+      throw new RangeError("surfaceMetrics.columnHeaderBands[0] exceeds column-header height");
     }
-    for (let index = 0; index < groupLevels.length; index += 1) {
-      if (groupLevels[index] !== index) {
-        throw new RangeError("surfaceMetrics.columnHeaderBands group levels must be contiguous from 0");
-      }
-    }
-
-    const leafBand = normalized.find((spec) => spec.role === "leaf") as Extract<
-      SceneColumnHeaderBandSpec,
-      { readonly role: "leaf" }
-    >;
-    const groupsByLevel = new Map(normalized
-      .filter((spec): spec is Extract<SceneColumnHeaderBandSpec, { readonly role: "group" }> => (
-        spec.role === "group"
-      ))
-      .map((spec) => [spec.level, spec]));
-    let innerBand: SceneColumnHeaderBandSpec = leafBand;
-    for (let level = 0; level < groupLevels.length; level += 1) {
-      const groupBand = groupsByLevel.get(level) as SceneColumnHeaderBandSpec;
-      if (groupBand.y + groupBand.height > innerBand.y) {
-        throw new RangeError("surfaceMetrics.columnHeaderBands group levels must stack outward from the leaf band");
-      }
-      innerBand = groupBand;
-    }
-
-    const positiveBands = normalized
-      .filter((spec) => spec.height > 0)
-      .sort((a, b) => a.y - b.y);
-    for (let index = 1; index < positiveBands.length; index += 1) {
-      const previous = positiveBands[index - 1] as SceneColumnHeaderBandSpec;
-      const current = positiveBands[index] as SceneColumnHeaderBandSpec;
-      if (current.y < previous.y + previous.height) {
-        throw new RangeError("surfaceMetrics.columnHeaderBands must not overlap");
-      }
-    }
-
-    return Object.freeze([...normalized].sort((a, b) => a.y - b.y));
+    return Object.freeze([Object.freeze({ role: "leaf", y: spec.y, height: spec.height })]);
   }
 
   #createColumnHeaderBands(
@@ -1090,23 +1009,14 @@ export class SceneSnapshot {
   ): readonly SceneColumnHeaderBandDescriptor[] {
     return Object.freeze(specs.map((spec): SceneColumnHeaderBandDescriptor => {
       const rect = freezeRect({ x: 0, y: spec.y, width: this.width, height: spec.height });
-      return spec.role === "leaf"
-        ? Object.freeze({
-            kind: "column-header-band",
-            id: "leaf",
-            surface: "column-header",
-            role: "leaf",
-            level: null,
-            rect
-          })
-        : Object.freeze({
-            kind: "column-header-band",
-            id: `group:${spec.level}` as const,
-            surface: "column-header",
-            role: "group",
-            level: spec.level,
-            rect
-          });
+      return Object.freeze({
+        kind: "column-header-band",
+        id: "leaf",
+        surface: "column-header",
+        role: "leaf",
+        level: null,
+        rect
+      });
     }));
   }
 

@@ -59,11 +59,6 @@ function createScene(): SceneWithObjectTree {
     }),
     surfaceMetrics: {
       columnHeaderHeight: 60,
-      columnHeaderBands: [
-        { role: "group", level: 1, y: 0, height: 20 },
-        { role: "group", level: 0, y: 20, height: 20 },
-        { role: "leaf", y: 40, height: 20 }
-      ],
       rowHeaderWidth: 40
     }
   }) as SceneWithObjectTree;
@@ -107,9 +102,7 @@ describe("SceneSnapshot object tree contract", () => {
     expect(indexById(surfaces.get("menu-overlay")?.layers ?? []).has("menu")).toBe(true);
     const headerLayer = indexById(surfaces.get("column-header")?.layers ?? []).get("column-header");
     expect(headerLayer?.nodes).toMatchObject([
-      { kind: "column-header-band", id: "group:1", role: "group", level: 1, rect: { y: 0, height: 20 } },
-      { kind: "column-header-band", id: "group:0", role: "group", level: 0, rect: { y: 20, height: 20 } },
-      { kind: "column-header-band", id: "leaf", role: "leaf", level: null, rect: { y: 40, height: 20 } }
+      { kind: "column-header-band", id: "leaf", role: "leaf", level: null, rect: { y: 0, height: 60 } }
     ]);
     expect([...surfaces.values()].flatMap((surface) => surface.layers)
       .filter((layer) => layer.id !== "column-header")
@@ -252,13 +245,13 @@ describe("SceneSnapshot object tree contract", () => {
         surface: "column-header",
         columns: { start: 0, count: 1 },
         clipRect: { x: 0, y: 0, width: 50, height: 60 },
-        rect: { x: 0, y: 40, width: 50, height: 20 }
+        rect: { x: 0, y: 0, width: 50, height: 60 }
       },
       {
         surface: "column-header",
         columns: { start: 1, count: 3 },
         clipRect: { x: 50, y: 0, width: 130, height: 60 },
-        rect: { x: 37, y: 40, width: 150, height: 20 }
+        rect: { x: 37, y: 0, width: 150, height: 60 }
       }
     ]);
     expect(columnFragments[0]?.pane).toBe(columnPanes.get("frozen"));

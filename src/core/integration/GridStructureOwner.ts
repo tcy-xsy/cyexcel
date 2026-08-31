@@ -3,7 +3,6 @@ import { snapshotColumnDefinitions } from "../cells/columnSnapshot";
 import type { ColumnDefinition } from "../cells/types";
 import { CyExcelError, CyExcelErrorCode } from "../errors";
 import type { HeaderManager, HeaderManagerRoot } from "../headers/HeaderManager";
-import type { HeaderGroupDefinition } from "../headers/types";
 import type { LayoutRoot, LayoutStructurePayload } from "../layout/LayoutEngine";
 import type { LayoutEngine } from "../layout/LayoutEngine";
 import type { RowMetricsFragment } from "../layout/RowMetrics";
@@ -49,7 +48,6 @@ export interface GridStructurePayload {
 export interface GridStructureOwnerOptions {
   readonly getColumns: () => readonly ColumnDefinition[];
   readonly replaceColumns: (columns: readonly ColumnDefinition[]) => void;
-  readonly headerGroups?: readonly HeaderGroupDefinition[];
   readonly columnManager: ColumnManager;
   readonly headerManager: HeaderManager;
   readonly layout: LayoutEngine;
@@ -113,14 +111,12 @@ export class GridStructureOwner
   readonly #headerManager: HeaderManager;
   readonly #layout: LayoutEngine;
   readonly #selection: SelectionModel;
-  readonly #headerGroups: readonly HeaderGroupDefinition[];
   readonly #getColumns: () => readonly ColumnDefinition[];
   readonly #replaceColumns: (columns: readonly ColumnDefinition[]) => void;
 
   constructor(options: GridStructureOwnerOptions) {
     this.#getColumns = options.getColumns;
     this.#replaceColumns = options.replaceColumns;
-    this.#headerGroups = options.headerGroups ?? [];
     this.#columnManager = options.columnManager;
     this.#headerManager = options.headerManager;
     this.#layout = options.layout;
@@ -201,12 +197,6 @@ export class GridStructureOwner
         inverseRowMetricsFragment = root.layout.rowMetrics.slice(change.start, change.count);
       }
     } else {
-      if (this.#headerGroups.length > 0) {
-        throw new CyExcelError(
-          CyExcelErrorCode.HeaderGroupsBlockColumnStructureChange,
-          "Column structure changes require header-group remapping"
-        );
-      }
       if (change.operation === "insert") {
         if (payload.columns?.length !== change.count || payload.columnWidths?.length !== change.count) {
           throw new CyExcelError(CyExcelErrorCode.InvalidOptions, "Column insertion payload does not match count");
@@ -233,7 +223,7 @@ export class GridStructureOwner
         columns = moveColumns(root.columns, change.start, change.count, change.target as number);
       }
       runtimeColumns = this.#columnManager.prepareRoot(columns);
-      headers = this.#headerManager.prepareRoot(columns, this.#headerGroups);
+      headers = this.#headerManager.prepareRoot(columns);
     }
 
     const layout = this.#layout.prepareStructureRoot(change, layoutPayload, root.layout);

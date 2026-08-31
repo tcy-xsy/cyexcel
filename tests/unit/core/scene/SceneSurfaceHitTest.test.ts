@@ -93,59 +93,6 @@ describe("SceneSnapshot complete surface hit geometry", () => {
     bodyRect.mockRestore();
   });
 
-  it("returns typed group and leaf hits at half-open band boundaries", () => {
-    const base = createScene();
-    const scene = new SceneSnapshot({
-      version: 2,
-      skeleton: new SkeletonSnapshot({
-        modelVersion: base.modelVersion,
-        layoutVersion: base.layoutVersion,
-        rowHeights: new Float64Array(10).fill(20),
-        columnAxis: new ColumnAxisSnapshot({
-          columnWidths: [50, 50, 50, 50, 50],
-          frozenColumnCount: 1
-        }),
-        frozenRowCount: 1
-      }),
-      viewport: new ViewportSnapshot({
-        version: 2,
-        scrollTop: 7,
-        scrollLeft: 13,
-        width: 180,
-        height: 90
-      }),
-      surfaceMetrics: {
-        columnHeaderHeight: 50,
-        columnHeaderBands: [
-          { role: "group", level: 0, y: 0, height: 20 },
-          { role: "leaf", y: 20, height: 30 }
-        ],
-        rowHeaderWidth: 40
-      }
-    });
-
-    expect(scene.hitTestColumnHeader({ x: 25, y: 0 })).toMatchObject({
-      band: { id: "group:0", role: "group", level: 0 },
-      column: 0,
-      rect: { x: 0, y: 0, width: 50, height: 20 },
-      localPoint: { x: 25, y: 0 }
-    });
-    expect(scene.hitTestColumnHeader({ x: 25, y: 19 })).toMatchObject({
-      band: { id: "group:0", role: "group", level: 0 },
-      column: 0,
-      rect: { x: 0, y: 0, width: 50, height: 20 },
-      localPoint: { x: 25, y: 19 }
-    });
-    expect(scene.hitTestColumnHeader({ x: 25, y: 20 })).toMatchObject({
-      band: { id: "leaf", role: "leaf", level: null },
-      column: 0,
-      rect: { x: 0, y: 20, width: 50, height: 30 },
-      localPoint: { x: 25, y: 0 }
-    });
-    expect(scene.hitTestColumnHeader({ x: 25, y: 49 })?.band.role).toBe("leaf");
-    expect(scene.hitTestColumnHeader({ x: 25, y: 50 })).toBeNull();
-  });
-
   it.each([
     { y: -1, height: 20 },
     { y: 0, height: -1 },

@@ -23,7 +23,6 @@ export interface PluginManagerOptions {
   readonly deleteColumns: (start: number, count?: number) => void;
   readonly moveColumns: (start: number, count: number, target: number) => void;
   readonly hideColumn: (column: number) => void;
-  readonly hasHeaderGroups: () => boolean;
   readonly registerShortcut: (combo: string, handler: ShortcutHandler) => Disposer;
 }
 
@@ -43,8 +42,7 @@ type RuntimeCapabilityName =
   | "insertColumns"
   | "deleteColumns"
   | "moveColumns"
-  | "hideColumn"
-  | "hasHeaderGroups";
+  | "hideColumn";
 
 /**
  * Installs plugins and guarantees uniform teardown (doc/customization-
@@ -92,7 +90,6 @@ export class PluginManager {
       deleteColumns,
       moveColumns,
       hideColumn,
-      hasHeaderGroups,
       registerShortcut
     } = this.#options;
     const scope = new LifetimeScope({
@@ -136,7 +133,6 @@ export class PluginManager {
       deleteColumns: this.#runtime("deleteColumns", deleteColumns, () => pluginDisposed),
       moveColumns: this.#runtime("moveColumns", moveColumns, () => pluginDisposed),
       hideColumn: this.#runtime("hideColumn", hideColumn, () => pluginDisposed),
-      hasHeaderGroups: this.#runtime("hasHeaderGroups", hasHeaderGroups, () => pluginDisposed),
       registerShortcut: (combo, handler) => {
         if (this.#state === "disposed" || pluginDisposed) {
           throw new CyExcelError(

@@ -8,7 +8,6 @@ import { CyExcelError, CyExcelErrorCode } from "../../../src/core/errors";
 import { rowsToWorkbookSnapshot } from "../../../src/core/sheet";
 import {
   validateCyExcelCoreDataDimensions,
-  validateCyExcelCoreHeaderGeometry,
   validateCyExcelCoreOptions
 } from "../../../src/core/validateCyExcelCoreOptions";
 
@@ -175,20 +174,6 @@ describe("CyExcelCore constructor preflight", () => {
     );
   });
 
-  it("fails overflowing nested header geometry before touching DOM or plugins", () => {
-    const setup = vi.fn();
-    expectInvalid(
-      () => new CyExcelCore({} as HTMLElement, {
-        columns: [{ }],
-        headerHeight: Number.MAX_VALUE,
-        headerGroups: [{ id: "group", title: "Group", columns: [0] }],
-        plugins: [{ name: "must-not-run", setup }]
-      }),
-      "headerHeight"
-    );
-    expect(setup).not.toHaveBeenCalled();
-  });
-
   // T5 时这条曾一度没有构造期用例（数据层不可替换之后从入口造不出反例）。
   // T7 把入口收成 `snapshot` 又把它造了回来：快照的列数由建它的那次导入的
   // `fields` 决定，`columns` 是另一处独立输入，两边对不上是调用方**做得到**
@@ -205,18 +190,5 @@ describe("CyExcelCore constructor preflight", () => {
       "sheet.columnCount()"
     );
     expect(setup).not.toHaveBeenCalled();
-  });
-});
-
-describe("validateCyExcelCoreHeaderGeometry", () => {
-  it("accepts a finite total across nested header bands", () => {
-    expect(() => validateCyExcelCoreHeaderGeometry(24, 3)).not.toThrow();
-  });
-
-  it("rejects a finite band height whose nested total overflows", () => {
-    expectInvalid(
-      () => validateCyExcelCoreHeaderGeometry(Number.MAX_VALUE, 1),
-      "headerHeight"
-    );
   });
 });

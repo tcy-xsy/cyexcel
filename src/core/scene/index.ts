@@ -5,7 +5,6 @@ export {
   type SceneColumnHeaderBandSpec,
   type SceneColumnHeaderBandDescriptor,
   type SceneColumnHeaderLeafBandDescriptor,
-  type SceneColumnHeaderGroupBandDescriptor,
   type SceneCellFragment,
   type SceneColumnHeaderFragment,
   type SceneRowHeaderFragment,

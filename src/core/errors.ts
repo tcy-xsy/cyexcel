@@ -23,7 +23,6 @@ export const CyExcelErrorCode = {
   // "这个 DataSource 实现了 insertRows 吗"，而数据层不再可替换（§3.2），`SheetModel`
   // 七个结构操作全都在。这里不留一个永远不会被抛出的码——留着会让调用方以为还需要
   // 分支处理它。码是**删除**不是保留占位，因为它从未与别的码共用过语义。
-  HeaderGroupsBlockColumnStructureChange: "header-groups-block-column-structure-change",
   MutationBlockedByReadLease: "mutation-blocked-by-read-lease",
   MutationConflict: "mutation-conflict",
   MutationNotSupported: "mutation-not-supported",

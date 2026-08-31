@@ -35,8 +35,7 @@ interface FixtureWindow {
   };
 }
 
-const GROUP_Y = 14;
-const LEAF_Y = 42;
+const HEADER_Y = 14;
 
 async function gotoFixture(page: Page): Promise<void> {
   await page.goto("/tests/browser/headers.html");
@@ -232,9 +231,9 @@ test("dragging a header column boundary resizes the column and shifts later colu
 
   // sku|name boundary sits at x=100 (sku is frozen, so this position is
   // scroll-independent) — drag it 30px to the right.
-  await page.mouse.move(headerBox.x + 100, headerBox.y + LEAF_Y);
+  await page.mouse.move(headerBox.x + 100, headerBox.y + HEADER_Y);
   await page.mouse.down();
-  await page.mouse.move(headerBox.x + 130, headerBox.y + LEAF_Y);
+  await page.mouse.move(headerBox.x + 130, headerBox.y + HEADER_Y);
   await page.mouse.up();
   await page.waitForTimeout(50);
 
@@ -275,10 +274,9 @@ test("hovering a column boundary shows a col-resize cursor; hovering elsewhere d
     );
 
   // Same sku|name boundary (x=100) the resize-drag test above uses.
-  expect(await cursorAt(100, GROUP_Y)).toBe("");
-  expect(await cursorAt(100, LEAF_Y)).toBe("col-resize");
+  expect(await cursorAt(100, HEADER_Y)).toBe("col-resize");
   // Well inside a column, away from any boundary.
-  expect(await cursorAt(50, LEAF_Y)).toBe("");
+  expect(await cursorAt(50, HEADER_Y)).toBe("");
 });
 
 test("column resize wins over a custom canvas header action", async ({ page }) => {
@@ -287,9 +285,9 @@ test("column resize wins over a custom canvas header action", async ({ page }) =
   if (!headerBox) throw new Error("missing header canvas box");
 
   expect(await getColumnWidth(page, 2)).toBe(90);
-  await page.mouse.move(headerBox.x + 330, headerBox.y + LEAF_Y);
+  await page.mouse.move(headerBox.x + 330, headerBox.y + HEADER_Y);
   await page.mouse.down();
-  await page.mouse.move(headerBox.x + 360, headerBox.y + LEAF_Y);
+  await page.mouse.move(headerBox.x + 360, headerBox.y + HEADER_Y);
   await page.mouse.up();
   await nextFrame(page);
 
@@ -305,7 +303,7 @@ test("a handled canvas header action runs hitTest once and preserves selection",
   const headerBox = await page.locator("#app canvas").nth(2).boundingBox();
   if (!headerBox) throw new Error("missing header canvas box");
 
-  await page.mouse.click(headerBox.x + 285, headerBox.y + LEAF_Y);
+  await page.mouse.click(headerBox.x + 285, headerBox.y + HEADER_Y);
 
   expect(await getHeaderHitTestCalls(page)).toBe(1);
   expect(await getSelection(page)).toMatchObject({
@@ -330,7 +328,7 @@ test("a declined canvas header action runs hitTest once and falls through to sel
   const headerBox = await page.locator("#app canvas").nth(2).boundingBox();
   if (!headerBox) throw new Error("missing header canvas box");
 
-  await page.mouse.click(headerBox.x + 285, headerBox.y + LEAF_Y);
+  await page.mouse.click(headerBox.x + 285, headerBox.y + HEADER_Y);
 
   expect(await getHeaderHitTestCalls(page)).toBe(1);
   expect(await getSelection(page)).toMatchObject({
@@ -349,7 +347,7 @@ test("a throwing canvas header action reports once and falls through to selectio
   const headerBox = await page.locator("#app canvas").nth(2).boundingBox();
   if (!headerBox) throw new Error("missing header canvas box");
 
-  await page.mouse.click(headerBox.x + 285, headerBox.y + LEAF_Y);
+  await page.mouse.click(headerBox.x + 285, headerBox.y + HEADER_Y);
 
   expect(await getHeaderHitTestCalls(page)).toBe(1);
   expect(await getSelection(page)).toMatchObject({
@@ -376,88 +374,3 @@ test("DOM header nodes are cleaned up on dispose()", async ({ page }) => {
   await expect(page.locator("#app select")).toHaveCount(0);
 });
 
-// This fixture's `headerGroups` (["basics": columns 0-1, "sales": columns
-// 2-3]) reference plain column indices — a structural change would need to
-// remap or invalidate them, deferred to Step 19 when the group data
-// structure is redesigned anyway (see the Step 17 plan). Until then,
-// insert/delete/move must fail fast, before touching the Store, rather
-// than leave `#columns`/ColumnManager/LayoutEngine out of sync with it.
-test("insertColumns/deleteColumns/moveColumns throw while headerGroups is configured, and leave the sheet untouched", async ({
-  page
-}) => {
-  await gotoFixture(page);
-
-  const results = await page.evaluate(() => {
-    const sheet = (window as unknown as FixtureWindow).__sheet;
-    const attempts: Array<() => void> = [
-      () => sheet?.insertColumns(0, [{ id: "extra" }]),
-      () => sheet?.deleteColumns(0),
-      () => sheet?.moveColumns(0, 1, 2)
-    ];
-    return attempts.map((attempt) => {
-      try {
-        attempt();
-        return { threw: false };
-      } catch (error) {
-        return { threw: true, code: (error as { code?: string }).code, name: (error as Error).name };
-      }
-    });
-  });
-
-  for (const result of results) {
-    expect(result).toEqual({
-      threw: true,
-      code: "header-groups-block-column-structure-change",
-      name: "CyExcelError"
-    });
-  }
-
-  // Untouched: column 0 is still "sku" ("CY-0001" for row 0).
-  expect(await getCell(page, 0, 0)).toBe("CY-0001");
-});
-
-// Real report: with headerGroups configured, right-clicking a column header
-// and clicking a structural action (e.g. "insert column left", contributed
-// by createBasicContextMenuPlugin()) used to throw an uncaught exception
-// straight out of ContextMenuService's click handler — the menu never
-// closed and the error never surfaced anywhere useful, and clicking the
-// item silently did nothing from the user's perspective ("插入列删除列没有
-// 效果" — a real user report). Fixed at the source instead: basicMenuPlugin
-// now checks PluginContext.hasHeaderGroups() and marks these items
-// `disabled` up front, so the click can never reach a throwing
-// insertColumns()/deleteColumns() call in the first place — DefaultMenuRenderer
-// never even attaches a click listener to a disabled item (see its
-// #createItemElement()), so a real click on one is a no-op, not just
-// visually inert. The underlying catch-and-close-on-throw behavior (for the
-// general case of *any* action throwing) is still covered independently by
-// ContextMenuService.test.ts's "catches a synchronous throw" unit test.
-test("right-clicking a column header with headerGroups configured marks structural actions disabled and inert", async ({
-  page
-}) => {
-  const pageErrors: string[] = [];
-  page.on("pageerror", (error) => pageErrors.push(String(error)));
-
-  await gotoFixture(page);
-  const box = await page.locator("#app").boundingBox();
-  if (!box) throw new Error("missing app box");
-
-  // Column "price" (index 2, part of the "sales" [2,3] group) — x falls
-  // within its band regardless of which header sub-row (group/leaf) y lands in.
-  await page.mouse.click(box.x + 285, box.y + 10, { button: "right" });
-  const insertLeft = page.locator('[data-item-id="cyexcel:insert-column-left"]');
-  await expect(insertLeft).toBeVisible();
-  expect(await insertLeft.evaluate((el) => (el as HTMLElement).style.pointerEvents)).toBe("none");
-
-  // A disabled item never gets a click listener attached (see
-  // DefaultMenuRenderer#createItemElement) — force-clicking it (bypassing
-  // the pointer-events:none actionability check a real user's click would
-  // already be stopped by) still can't run the blocked action, proving the
-  // no-op is enforced at the listener level, not just via CSS.
-  await insertLeft.click({ force: true });
-  await page.waitForTimeout(50);
-
-  await expect(page.locator('[role="menu"]')).toHaveCount(1); // still open — no action ran to close it
-  expect(pageErrors).toEqual([]);
-  // Untouched: the blocked action never reached the Store.
-  expect(await getCell(page, 0, 0)).toBe("CY-0001");
-});

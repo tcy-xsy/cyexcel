@@ -272,49 +272,6 @@ describe("DomHeaderManager — scrolling out (先写测试 #6: update or destroy
   });
 });
 
-describe("DomHeaderManager — leaf geometry follows Scene publication", () => {
-  it("uses the Scene leaf y instead of deriving it from HeaderManager depth", () => {
-    const { factory, instances } = createRecordingFactory();
-    const headerManager = new HeaderManager({
-      columns: [{ header: { title: "A", renderer: factory } }],
-      groups: [
-        {
-          id: "root",
-          title: "Root",
-          children: [{ id: "dept", title: "Dept", children: [{ id: "cat", title: "Cat", columns: [0] }] }]
-        }
-      ]
-    });
-    expect(headerManager.groupDepth).toBe(3);
-    const layout = createLayout(1);
-    const { manager } = createManager({ layout, headerManager });
-
-    manager.sync(createScene(
-      layout,
-      { scrollTop: 0, scrollLeft: 0, width: 100, height: 40 },
-      91,
-      67,
-      24
-    ));
-
-    expect(instances[0]?.contexts[0]?.rect.y).toBe(67);
-  });
-
-  it("does not infer an offset merely because HeaderManager has groups", () => {
-    const { factory, instances } = createRecordingFactory();
-    const headerManager = new HeaderManager({
-      columns: [{ header: { title: "A", renderer: factory } }],
-      groups: [{ id: "g", title: "G", columns: [0] }]
-    });
-    const layout = createLayout(1);
-    const { manager } = createManager({ layout, headerManager });
-
-    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 100, height: 40 }));
-
-    expect(instances[0]?.contexts[0]?.rect.y).toBe(0);
-  });
-});
-
 describe("DomHeaderManager — failed mount cleanup", () => {
   it("removes the host and destroys a partially created renderer", () => {
     const calls: string[] = [];

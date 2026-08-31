@@ -303,7 +303,7 @@ export class SheetModel {
   /**
    * 合并区跟着结构操作正确搬移是一整块 Excel 语义（跨插入点延展、被删范围
    * 完全覆盖则消失、部分覆盖则收缩），属于阶段 5。在那之前**拒绝**而不是
-   * 错着搬——静默错搬比拒绝糟得多。仓库先例：headerGroups 同样挡住列结构变更。
+   * 错着搬——静默错搬比拒绝糟得多。
    */
   #assertNoMerges(operation: string): void {
     if (this.#mergeData.length > 0) {

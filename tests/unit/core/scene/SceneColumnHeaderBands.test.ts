@@ -44,60 +44,51 @@ function createScene(
   });
 }
 
-const BANDS: readonly SceneColumnHeaderBandSpec[] = [
-  { role: "group", level: 1, y: 0, height: 20 },
-  { role: "group", level: 0, y: 20, height: 20 },
-  { role: "leaf", y: 40, height: 20 }
-];
+const LEAF_BAND: readonly SceneColumnHeaderBandSpec[] = [{ role: "leaf", y: 0, height: 60 }];
 
 describe("SceneSnapshot column-header bands", () => {
-  it("publishes immutable typed descriptors through the column-header layer", () => {
-    const scene = createScene(BANDS);
+  it("publishes an immutable typed descriptor through the column-header layer", () => {
+    const scene = createScene(LEAF_BAND);
     const bands = scene.getColumnHeaderBands();
     const layer = scene.getSurface("column-header").layers.find(({ id }) => id === "column-header");
 
     expect(bands).toMatchObject([
-      { id: "group:1", role: "group", level: 1, rect: { x: 0, y: 0, width: 150, height: 20 } },
-      { id: "group:0", role: "group", level: 0, rect: { x: 0, y: 20, width: 150, height: 20 } },
-      { id: "leaf", role: "leaf", level: null, rect: { x: 0, y: 40, width: 150, height: 20 } }
+      { id: "leaf", role: "leaf", level: null, rect: { x: 0, y: 0, width: 150, height: 60 } }
     ]);
     expect(layer?.nodes).toBe(bands);
-    expect(scene.getColumnHeaderLeafBand()).toBe(bands[2]);
-    expect(scene.getColumnHeaderGroupBand(0)).toBe(bands[1]);
-    expect(scene.getColumnHeaderGroupBand(2)).toBeNull();
+    expect(scene.getColumnHeaderLeafBand()).toBe(bands[0]);
     expect(Object.isFrozen(bands)).toBe(true);
     expect(bands.every((band) => Object.isFrozen(band) && Object.isFrozen(band.rect))).toBe(true);
   });
 
-  it("splits one group span exactly once at the frozen boundary", () => {
-    const scene = createScene(BANDS, {
+  it("splits the leaf band exactly once at the frozen boundary", () => {
+    const scene = createScene(LEAF_BAND, {
       frozenColumnCount: 1,
       scrollLeft: 20,
       width: 150
     });
-    const band = scene.getColumnHeaderGroupBand(0);
-    expect(band).not.toBeNull();
+    const band = scene.getColumnHeaderLeafBand();
 
-    const fragments = scene.getColumnHeaderBandFragments(band!, 0, 3);
+    const fragments = scene.getColumnHeaderBandFragments(band, 0, 3);
 
     expect(fragments).toMatchObject([
       {
         pane: { id: "frozen" },
         columns: { start: 0, count: 1 },
-        rect: { x: 0, y: 20, width: 50, height: 20 }
+        rect: { x: 0, y: 0, width: 50, height: 60 }
       },
       {
         pane: { id: "scroll" },
         columns: { start: 1, count: 3 },
-        rect: { x: 30, y: 20, width: 150, height: 20 }
+        rect: { x: 30, y: 0, width: 150, height: 60 }
       }
     ]);
     expect(fragments.every((fragment) => fragment.band === band)).toBe(true);
   });
 
   it("rejects a band descriptor from another Scene generation", () => {
-    const first = createScene(BANDS, { version: 1 });
-    const second = createScene(BANDS, { version: 2 });
+    const first = createScene(LEAF_BAND, { version: 1 });
+    const second = createScene(LEAF_BAND, { version: 2 });
 
     expect(() => second.getColumnHeaderBandFragments(first.getColumnHeaderLeafBand(), 0, 0))
       .toThrow("does not belong to this SceneSnapshot");
@@ -109,41 +100,11 @@ describe("SceneSnapshot column-header bands", () => {
     readonly name: string;
     readonly bands: readonly SceneColumnHeaderBandSpec[];
   }>([
-    { name: "missing leaf", bands: [{ role: "group", level: 0, y: 0, height: 20 }] },
+    { name: "no bands", bands: [] },
     {
       name: "multiple leaves",
       bands: [
         { role: "leaf", y: 0, height: 20 },
-        { role: "leaf", y: 20, height: 20 }
-      ]
-    },
-    {
-      name: "duplicate group levels",
-      bands: [
-        { role: "group", level: 0, y: 0, height: 20 },
-        { role: "group", level: 0, y: 20, height: 20 },
-        { role: "leaf", y: 40, height: 20 }
-      ]
-    },
-    {
-      name: "non-contiguous group levels",
-      bands: [
-        { role: "group", level: 1, y: 0, height: 20 },
-        { role: "leaf", y: 40, height: 20 }
-      ]
-    },
-    {
-      name: "group levels ordered toward rather than away from the leaf",
-      bands: [
-        { role: "group", level: 0, y: 0, height: 20 },
-        { role: "group", level: 1, y: 20, height: 20 },
-        { role: "leaf", y: 40, height: 20 }
-      ]
-    },
-    {
-      name: "overlapping bands",
-      bands: [
-        { role: "group", level: 0, y: 0, height: 30 },
         { role: "leaf", y: 20, height: 20 }
       ]
     }

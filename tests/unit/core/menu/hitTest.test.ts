@@ -60,27 +60,6 @@ describe("classifyContextMenuTarget", () => {
     expect(context.row).toBeUndefined();
   });
 
-  it("keeps a grouped-header band addressable by column outside the leaf-title band", () => {
-    const groupedScene = scene(layout(), viewport, {
-      rowHeaderWidth: 40,
-      columnHeaderHeight: 52,
-      columnHeaderBands: [
-        { role: "group", level: 0, y: 0, height: 28 },
-        { role: "leaf", y: 28, height: 24 }
-      ]
-    });
-
-    const context = classifyContextMenuTarget(
-      { x: 40 + 125, y: 10 },
-      groupedScene,
-      selection
-    );
-
-    expect(context.target).toBe("column-header");
-    expect(context.column).toBe(2);
-    expect(context.row).toBeUndefined();
-  });
-
   it("classifies a point inside the grid as 'cell' and resolves both row and column", () => {
     const context = classifyContextMenuTarget(
       { x: 40 + 55, y: 24 + 45 },

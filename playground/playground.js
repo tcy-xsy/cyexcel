@@ -118,36 +118,6 @@ const COLUMNS = [
   }
 ];
 
-// Step 19: arbitrary-depth nested grouped headers — a group node either
-// gives `columns` directly (leaf-adjacent row) or `children` (this group's
-// span is the union of its children's spans, one row further out). Three
-// levels here (the old Step 9 fixture only ever showed two), covering every
-// column in COLUMNS above so the grouping is visually obvious end-to-end.
-const HEADER_GROUPS = [
-  {
-    id: "all",
-    title: "全部字段",
-    children: [
-      {
-        id: "product",
-        title: "商品信息",
-        children: [
-          { id: "identity", title: "标识", columns: [0, 1] },
-          { id: "pricing", title: "价格数量", columns: [2, 3] }
-        ]
-      },
-      {
-        id: "ops",
-        title: "运营信息",
-        children: [
-          { id: "logistics", title: "地区库存", columns: [4, 5, 6] },
-          { id: "meta-group", title: "状态与元数据", columns: [7, 8, 9] }
-        ]
-      }
-    ]
-  }
-];
-
 // A custom ColumnType extending the built-in "number" — the "price" column
 // above references it by name. Demonstrates Step 8's registerColumnType-
 // style extends chain: format() overridden, everything else ("parse"/
@@ -272,7 +242,6 @@ const rowCountSelect = document.getElementById("rowCountSelect");
 const rowHeightInput = document.getElementById("rowHeightInput");
 const overscanRowsInput = document.getElementById("overscanRowsInput");
 const overscanColumnsInput = document.getElementById("overscanColumnsInput");
-const headerGroupsToggle = document.getElementById("headerGroupsToggle");
 const rebuildButton = document.getElementById("rebuildButton");
 const cellRow = document.getElementById("cellRow");
 const cellColumn = document.getElementById("cellColumn");
@@ -372,14 +341,6 @@ function rebuild() {
     // 指示线）按住拖动即可重新排列行顺序——插入式移动，不会覆盖/丢失目标位置
     // 原有数据；边缘之外的拖拽仍然是原有的多选。
     rowReorder: true,
-    // Step 19：三层嵌套分组表头。配置了 headerGroups 后，列头右键菜单里
-    // createBasicContextMenuPlugin() 贡献的"插入/删除/隐藏列"这几项会被
-    // headerGroups 阻塞（分组引用了列索引，结构变了索引就错位了）——现在这
-    // 几项会直接显示为禁用态（basicMenuPlugin.ts 的 hasHeaderGroups() 检
-    // 查），且真的被点到时也会把错误抛到 statusBar，不会再是"什么反应都没
-    // 有"。下面这个复选框可以直接关掉 headerGroups，用来实际体验插入/删除
-    // 列这个功能。
-    headerGroups: headerGroupsToggle.checked ? HEADER_GROUPS : undefined,
     // Univer 参考实现：没配 header 的列显示电子表格字母（B/D/E/...），配了
     // header 的列（sku/price/inStock/status）照常显示自定义标题——同一行
     // 二选一，不是字母行 + 标题行两行堆叠。
@@ -397,10 +358,10 @@ function rebuild() {
     `行高 ${config.rowHeight}px · overscan ${config.overscanRows}/${config.overscanColumns}`;
   statusBar.textContent = statusBarDefaultText;
 
-  // 右键菜单 action 抛错（比如 headerGroups 开着时点了插入/删除列）现在会
-  // 通过 core.events 的 "error" 事件转发出来——之前只有 console.error，用
-  // 户在页面上完全看不出"点了没反应"到底是不是出错了。这里临时把错误信息
-  // 顶到 statusBar 上几秒钟，然后再切回正常的行列统计文案。
+  // 右键菜单 action 抛错现在会通过 core.events 的 "error" 事件转发出来——
+  // 之前只有 console.error，用户在页面上完全看不出"点了没反应"到底是不是
+  // 出错了。这里临时把错误信息顶到 statusBar 上几秒钟，然后再切回正常的
+  // 行列统计文案。
   core.events.on("error", ({ error, eventName }) => {
     if (statusBarErrorTimeoutId !== null) {
       clearTimeout(statusBarErrorTimeoutId);

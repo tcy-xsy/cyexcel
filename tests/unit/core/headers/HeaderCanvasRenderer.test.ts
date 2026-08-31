@@ -32,36 +32,19 @@ const VIEWPORT: ViewportState = { scrollTop: 0, scrollLeft: 0, width: 200, heigh
 type HeaderRendererTestOptions = Omit<ConstructorParameters<typeof HeaderCanvasRenderer>[0], "getScene"> & {
   readonly layout: LayoutEngine;
   readonly columnHeaderHeight: number;
-  readonly groupHeaderHeight?: number;
 };
 
 function createScene(
   layout: LayoutEngine,
   viewport: ViewportState = VIEWPORT,
-  columnHeaderHeight = 0,
-  groupHeaderHeight = 0,
-  groupDepth = 0
+  columnHeaderHeight = 0
 ): SceneSnapshot {
-  const totalHeight = columnHeaderHeight + groupHeaderHeight * groupDepth;
   return new SceneSnapshot({
     version: 1,
     skeleton: SkeletonSnapshot.fromLayout(layout, 1),
     viewport: new ViewportSnapshot({ version: 1, ...viewport }),
     surfaceMetrics: {
-      columnHeaderHeight: totalHeight,
-      columnHeaderBands: [
-        ...Array.from({ length: groupDepth }, (_unused, index) => ({
-          role: "group" as const,
-          level: groupDepth - 1 - index,
-          y: index * groupHeaderHeight,
-          height: groupHeaderHeight
-        })),
-        {
-          role: "leaf" as const,
-          y: groupHeaderHeight * groupDepth,
-          height: columnHeaderHeight
-        }
-      ],
+      columnHeaderHeight,
       rowHeaderWidth: 0
     }
   });
@@ -73,13 +56,7 @@ function createRenderer(
   readonly getScene: () => SceneSnapshot;
   readonly setViewport: (viewport: ViewportState) => void;
 } {
-  let scene = createScene(
-    options.layout,
-    VIEWPORT,
-    options.columnHeaderHeight,
-    options.groupHeaderHeight,
-    options.headerManager.groupDepth
-  );
+  let scene = createScene(options.layout, VIEWPORT, options.columnHeaderHeight);
   const renderer = new HeaderCanvasRenderer({
     ctx: options.ctx,
     getScene: () => scene,
@@ -89,13 +66,7 @@ function createRenderer(
   return Object.assign(renderer, {
     getScene: () => scene,
     setViewport(viewport: ViewportState) {
-      scene = createScene(
-        options.layout,
-        viewport,
-        options.columnHeaderHeight,
-        options.groupHeaderHeight,
-        options.headerManager.groupDepth
-      );
+      scene = createScene(options.layout, viewport, options.columnHeaderHeight);
     }
   });
 }
@@ -227,205 +198,6 @@ describe("HeaderCanvasRenderer — leaf headers (先写测试 #1: title/sort/fil
   });
 });
 
-describe("HeaderCanvasRenderer — two-level groups (先写测试 #4: split at frozen boundary)", () => {
-  it("draws one group title when it doesn't straddle the frozen boundary", () => {
-    const ctx = new RecordingCanvasContext();
-    const headerManager = new HeaderManager({
-      columns: [{ }, { }],
-      groups: [{ id: "g1", title: "Group", columns: [0, 1] }]
-    });
-    const renderer = createRenderer({
-      ctx,
-      layout: createLayout(2),
-      headerManager,
-      columnHeaderHeight: 24,
-      groupHeaderHeight: 20
-    });
-    renderer.setViewport(VIEWPORT);
-
-    renderer.paint();
-
-    const titles = ctx.calls.filter((call) => call.method === "fillText").map((call) => call.args[0]);
-    expect(titles.filter((title) => title === "Group")).toHaveLength(1);
-  });
-
-  it("draws a group straddling the frozen boundary as two fragments, both showing the group's title", () => {
-    const ctx = new RecordingCanvasContext();
-    const headerManager = new HeaderManager({
-      columns: [{ }, { }, { }],
-      groups: [{ id: "g1", title: "Group", columns: [0, 1, 2] }]
-    });
-    const renderer = createRenderer({
-      ctx,
-      layout: createLayout(3, { columns: 1 }),
-      headerManager,
-      columnHeaderHeight: 24,
-      groupHeaderHeight: 20
-    });
-    renderer.setViewport(VIEWPORT);
-
-    renderer.paint();
-
-    const titles = ctx.calls.filter((call) => call.method === "fillText").map((call) => call.args[0]);
-    expect(titles.filter((title) => title === "Group")).toHaveLength(2);
-  });
-
-  it("keeps a frozen group fragment's x unshifted while the scrollable fragment scrolls", () => {
-    const ctx = new RecordingCanvasContext();
-    const headerManager = new HeaderManager({
-      columns: [{ }, { }, { }],
-      groups: [{ id: "g1", title: "Group", columns: [0, 1, 2] }]
-    });
-    const renderer = createRenderer({
-      ctx,
-      layout: createLayout(3, { columns: 1 }),
-      headerManager,
-      columnHeaderHeight: 24,
-      groupHeaderHeight: 20
-    });
-    renderer.setViewport({ scrollTop: 0, scrollLeft: 20, width: 200, height: 100 });
-
-    renderer.paint();
-
-    const clearRectCalls = ctx.calls.filter((call) => call.method === "clearRect");
-    // Frozen fragment (column 0): absolute x=0, unshifted despite scrollLeft.
-    expect(clearRectCalls.some((call) => call.args[0] === 0)).toBe(true);
-  });
-});
-
-describe("HeaderCanvasRenderer — arbitrary-depth nested groups (Step 19)", () => {
-  function threeLevelHeaderManager() {
-    // Same tree HeaderManager.test.ts uses: level 0 "cat-a"[0,1]/"cat-b"[2,3],
-    // level 1 "dept"[0,3], level 2 "root"[0,3].
-    return new HeaderManager({
-      columns: [{ }, { }, { }, { }],
-      groups: [
-        {
-          id: "root",
-          title: "Root",
-          children: [
-            {
-              id: "dept",
-              title: "Dept",
-              children: [
-                { id: "cat-a", title: "Cat A", columns: [0, 1] },
-                { id: "cat-b", title: "Cat B", columns: [2, 3] }
-              ]
-            }
-          ]
-        }
-      ]
-    });
-  }
-
-  it("reads total header height from the Scene surface", () => {
-    const ctx = new RecordingCanvasContext();
-    const renderer = createRenderer({
-      ctx,
-      layout: createLayout(4),
-      headerManager: threeLevelHeaderManager(),
-      columnHeaderHeight: 24,
-      groupHeaderHeight: 20
-    });
-
-    expect(renderer.getScene().getSurface("column-header").rootRect.height).toBe(24 + 20 * 3);
-  });
-
-  it("draws every level's group titles, the right number of times", () => {
-    const ctx = new RecordingCanvasContext();
-    const renderer = createRenderer({
-      ctx,
-      layout: createLayout(4),
-      headerManager: threeLevelHeaderManager(),
-      columnHeaderHeight: 24,
-      groupHeaderHeight: 20
-    });
-    renderer.setViewport(VIEWPORT);
-
-    renderer.paint();
-
-    const titles = ctx.calls.filter((call) => call.method === "fillText").map((call) => call.args[0]);
-    expect(titles.filter((title) => title === "Root")).toHaveLength(1);
-    expect(titles.filter((title) => title === "Dept")).toHaveLength(1);
-    expect(titles.filter((title) => title === "Cat A")).toHaveLength(1);
-    expect(titles.filter((title) => title === "Cat B")).toHaveLength(1);
-  });
-
-  it("stacks levels outward-to-inward: outermost (level 2) at y=0, leaf-adjacent (level 0) just above the leaf row", () => {
-    const ctx = new RecordingCanvasContext();
-    const renderer = createRenderer({
-      ctx,
-      layout: createLayout(4),
-      headerManager: threeLevelHeaderManager(),
-      columnHeaderHeight: 24,
-      groupHeaderHeight: 20
-    });
-    renderer.setViewport(VIEWPORT);
-
-    renderer.paint();
-
-    const fillRectYs = ctx.calls.filter((call) => call.method === "fillRect").map((call) => call.args[1]);
-    // Root (level 2, outermost): y=0. Dept (level 1): y=20. Cat A/B (level 0): y=40.
-    // Leaf row: y=60 (groupHeaderHeight * groupDepth).
-    expect(fillRectYs).toContain(0);
-    expect(fillRectYs).toContain(20);
-    expect(fillRectYs).toContain(40);
-    expect(fillRectYs).toContain(60);
-  });
-
-  it("a shallower branch leaves its higher levels blank (no fillText for it there)", () => {
-    const ctx = new RecordingCanvasContext();
-    const headerManager = new HeaderManager({
-      columns: [{ }, { }, { }, { }],
-      groups: [
-        { id: "shallow", title: "Shallow", columns: [0, 1] },
-        { id: "wrapper", title: "Wrapper", children: [{ id: "deep", title: "Deep", columns: [2, 3] }] }
-      ]
-    });
-    const renderer = createRenderer({
-      ctx,
-      layout: createLayout(4),
-      headerManager,
-      columnHeaderHeight: 24,
-      groupHeaderHeight: 20
-    });
-    renderer.setViewport(VIEWPORT);
-
-    renderer.paint();
-
-    const titles = ctx.calls.filter((call) => call.method === "fillText").map((call) => call.args[0]);
-    expect(titles).toContain("Shallow");
-    expect(titles).toContain("Wrapper");
-    // "Shallow" only ever appears once — it has nothing painted at level 1.
-    expect(titles.filter((title) => title === "Shallow")).toHaveLength(1);
-  });
-
-  it("depth 0 (no groups) and depth 1 (Step 9's flat case) behave exactly as before", () => {
-    const ctxNoGroups = new RecordingCanvasContext();
-    const noGroups = createRenderer({
-      ctx: ctxNoGroups,
-      layout: createLayout(2),
-      headerManager: new HeaderManager({ columns: [{ }, { }] }),
-      columnHeaderHeight: 24,
-      groupHeaderHeight: 20
-    });
-    expect(noGroups.getScene().getSurface("column-header").rootRect.height).toBe(24);
-
-    const ctxFlat = new RecordingCanvasContext();
-    const flat = createRenderer({
-      ctx: ctxFlat,
-      layout: createLayout(2),
-      headerManager: new HeaderManager({
-        columns: [{ }, { }],
-        groups: [{ id: "g", title: "G", columns: [0, 1] }]
-      }),
-      columnHeaderHeight: 24,
-      groupHeaderHeight: 20
-    });
-    expect(flat.getScene().getSurface("column-header").rootRect.height).toBe(24 + 20);
-  });
-});
-
 describe("HeaderCanvasRenderer — background/font/border styling", () => {
   it("fills a background rect behind each leaf header before drawing its title", () => {
     const ctx = new RecordingCanvasContext();
@@ -483,27 +255,6 @@ describe("HeaderCanvasRenderer — background/font/border styling", () => {
     expect(fillRectCalls).toContainEqual({ method: "fillRect", args: [0, 23, 200, 2] });
   });
 
-  it("draws a background fill for a group fragment too", () => {
-    const ctx = new RecordingCanvasContext();
-    const headerManager = new HeaderManager({
-      columns: [{ }, { }],
-      groups: [{ id: "g1", title: "Group", columns: [0, 1] }]
-    });
-    const renderer = createRenderer({
-      ctx,
-      layout: createLayout(2),
-      headerManager,
-      columnHeaderHeight: 24,
-      groupHeaderHeight: 20
-    });
-    renderer.setViewport(VIEWPORT);
-
-    renderer.paint();
-
-    const fillRectCalls = ctx.calls.filter((call) => call.method === "fillRect");
-    // Group fragment spans both columns: x=0, y=0, width=100, height=20.
-    expect(fillRectCalls).toContainEqual({ method: "fillRect", args: [0, 0, 100, 20] });
-  });
 });
 
 describe("HeaderCanvasRenderer — clipping", () => {

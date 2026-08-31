@@ -161,39 +161,6 @@ describe("HeaderSelectionController column-header", () => {
     expect(selection.snapshot.active.column).toBe(3);
   });
 
-  it("declines group bands and selects only inside the configured leaf band", () => {
-    const layout = createLayout();
-    const scene = new SceneSnapshot({
-      version: 1,
-      skeleton: SkeletonSnapshot.fromLayout(layout, 1),
-      viewport: new ViewportSnapshot({ version: 1, ...VIEWPORT }),
-      surfaceMetrics: {
-        columnHeaderHeight: 60,
-        columnHeaderBands: [
-          { role: "group", level: 0, y: 0, height: 20 },
-          { role: "leaf", y: 20, height: 40 }
-        ],
-        rowHeaderWidth: 30
-      }
-    });
-    const { controller, selection } = createFixture(scene);
-
-    expect(controller.down(
-      columnPoint(125, 19),
-      scene,
-      selection,
-      STRUCTURE_VERSION
-    )).toBeNull();
-    expect(controller.dragging).toBe(false);
-
-    expect(controller.down(
-      columnPoint(125, 20),
-      scene,
-      selection,
-      STRUCTURE_VERSION
-    )?.snapshot.active.column).toBe(2);
-    expect(controller.dragging).toBe(true);
-  });
 });
 
 describe("HeaderSelectionController row-header and corner", () => {

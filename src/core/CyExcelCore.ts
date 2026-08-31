@@ -50,7 +50,6 @@ import {
 import { WorkbookModel, type SheetModel, type WorkbookSnapshot } from "./sheet";
 import type { CellEditorFactory } from "./editors";
 import { EditorManager } from "./editors";
-import { CyExcelError, CyExcelErrorCode } from "./errors";
 import { EventBus } from "./events";
 import {
   DomHeaderManager,
@@ -59,7 +58,6 @@ import {
   RowHeaderCanvasRenderer,
   defaultHeaderHitTest,
   type HeaderAction,
-  type HeaderGroupDefinition,
   type HeaderState,
   type RuntimeHeader
 } from "./headers";
@@ -137,7 +135,6 @@ import {
 import { columnWidthOf } from "./mutations/columnWidthMeta";
 import {
   validateCyExcelCoreDataDimensions,
-  validateCyExcelCoreHeaderGeometry,
   validateCyExcelCoreOptions
 } from "./validateCyExcelCoreOptions";
 
@@ -213,8 +210,6 @@ export interface CyExcelCoreOptions {
    * band that displays it is.
    */
   readonly headerHeight?: number;
-  /** Arbitrary-depth nested column groups (Step 19), drawn in rows above the column titles — only shown when `headerHeight > 0`. */
-  readonly headerGroups?: readonly HeaderGroupDefinition[];
   /**
    * When a column has no explicit `header`, show its spreadsheet-style
    * letter (A, B, ..., Z, AA, ...). **Default `true`** (ADR 0004 §3.8.1):
@@ -569,7 +564,6 @@ export class CyExcelCore {
   readonly #measurement: WrapMeasurementService;
 
   #columns: readonly CyExcelColumnConfig[];
-  readonly #headerGroups: readonly HeaderGroupDefinition[];
   readonly #cellTypeRegistry: CellTypeRegistry;
   readonly #columnManager: ColumnManager;
   readonly #headerManager: HeaderManager;
@@ -584,7 +578,6 @@ export class CyExcelCore {
    */
   #sortState: SortState | null = null;
   readonly #columnHeaderHeight: number;
-  readonly #groupHeaderHeight: number;
   readonly #rowHeaderWidth: number;
   /**
    * 表格数据的唯一权威（ADR 0004 §3.1）。这里只留 sheet 不留 workbook：
@@ -690,26 +683,16 @@ export class CyExcelCore {
     // `options.columns` array.
     // （`options.snapshot` 不需要同样的保护：它只被读一遍装进存储模型。）
     this.#columns = snapshotColumnDefinitions(options.columns ?? []);
-    this.#headerGroups = options.headerGroups ?? [];
     this.#scrollCommitPolicy = options.scrollCommitPolicy ?? "commit";
     this.#overscanRows = options.overscanRows ?? 0;
     this.#overscanColumns = options.overscanColumns ?? 0;
 
     this.#headerManager = new HeaderManager({
       columns: this.#columns,
-      groups: this.#headerGroups,
       columnLetterFallback: options.columnLetterFallback ?? true
     });
     this.#columnHeaderHeight = options.headerHeight ?? 0;
-    this.#groupHeaderHeight =
-      this.#columnHeaderHeight > 0 && (options.headerGroups?.length ?? 0) > 0
-        ? this.#columnHeaderHeight
-        : 0;
     this.#rowHeaderWidth = options.rowHeaderWidth ?? 0;
-    validateCyExcelCoreHeaderGeometry(
-      this.#columnHeaderHeight,
-      this.#headerManager.groupDepth
-    );
 
     const sheet = buildWorkbook(options, this.#columns).sheet();
     const initialDimensions = {
@@ -728,7 +711,7 @@ export class CyExcelCore {
     try {
     const dom = createDom(
       container,
-      this.#headerHeight(), // #headerManager/#columnHeaderHeight/#groupHeaderHeight are all assigned above
+      this.#headerHeight(), // #headerManager/#columnHeaderHeight are both assigned above
       this.#rowHeaderWidth
     );
     initialization.defer(() => dom.scroller.remove());
@@ -815,9 +798,8 @@ export class CyExcelCore {
       },
       // Forwards through the same public "error" event `EventBus`'s own
       // listener-threw path uses (see EventBus.#reportError) — a menu
-      // action throwing (e.g. insertColumns() blocked by headerGroups) is
-      // otherwise only visible via console.error, which a host app has no
-      // way to respond to it.
+      // action throwing is otherwise only visible via console.error, which
+      // a host app has no way to respond to it.
       onActionError: (itemId, error) => this.#events.emit("error", { error, eventName: `contextMenu:${itemId}` })
     });
     initialization.defer(() => this.#contextMenuService.dispose());
@@ -835,7 +817,6 @@ export class CyExcelCore {
       deleteColumns: (start, count) => this.deleteColumns(start, count),
       moveColumns: (start, count, target) => this.moveColumns(start, count, target),
       hideColumn: (column) => this.hideColumn(column),
-      hasHeaderGroups: () => this.#headerGroups.length > 0,
       registerShortcut: (combo, handler) => this.registerShortcut(combo, handler)
     });
     initialization.defer(() => this.#pluginManager.dispose());
@@ -1006,7 +987,6 @@ export class CyExcelCore {
       replaceColumns: (columns) => {
         this.#columns = columns;
       },
-      headerGroups: this.#headerGroups,
       columnManager: this.#columnManager,
       headerManager: this.#headerManager,
       layout: this.#layout,
@@ -1562,7 +1542,6 @@ export class CyExcelCore {
   insertColumns(start: number, columns: readonly CyExcelColumnConfig[]): void {
     const inserted = snapshotColumnDefinitions(columns);
     this.#enqueueOrRunMutation(() => {
-      this.#assertNoHeaderGroups("insert");
       validateAxisChange({ axis: "column", operation: "insert", start, count: inserted.length }, this.#columns.length);
       this.#cancelActiveEdit();
       this.#applyCommandNow(new InsertColumnsCommand(start, inserted));
@@ -1571,7 +1550,6 @@ export class CyExcelCore {
 
   deleteColumns(start: number, count = 1): void {
     this.#enqueueOrRunMutation(() => {
-      this.#assertNoHeaderGroups("delete");
       validateAxisChange({ axis: "column", operation: "delete", start, count }, this.#columns.length);
       this.#cancelActiveEdit();
       this.#applyCommandNow(new DeleteColumnsCommand(start, count));
@@ -1581,7 +1559,6 @@ export class CyExcelCore {
   /** `target` is the insertion index in the pre-move index space (same convention `SheetModel.moveColumns()` uses). */
   moveColumns(start: number, count: number, target: number): void {
     this.#enqueueOrRunMutation(() => {
-      this.#assertNoHeaderGroups("move");
       validateAxisChange({ axis: "column", operation: "move", start, count, target }, this.#columns.length);
       this.#cancelActiveEdit();
       this.#applyCommandNow(new MoveColumnsCommand(start, count, target));
@@ -1738,26 +1715,6 @@ export class CyExcelCore {
       if (this.#finalizationDepth === 0) {
         this.#mutationIntents.drain();
       }
-    }
-  }
-
-  /**
-   * `headerGroups`' `HeaderGroupDefinition.columns` are plain column
-   * indices — a structural change would need to remap or invalidate them,
-   * which is deferred to Step 19 (arbitrary-depth grouped headers) when the
-   * group data structure gets redesigned anyway (see the Step 17 plan's
-   * "key design decisions" §5). Checked before `#cancelActiveEdit()` so a
-   * doomed call doesn't cancel an in-progress edit for nothing, and well
-   * before any Command runs, so a rejected call never leaves the Store/
-   * History committed while `#columns`/`ColumnManager`/`LayoutEngine` are
-   * still out of sync.
-   */
-  #assertNoHeaderGroups(operation: "insert" | "delete" | "move"): void {
-    if (this.#headerGroups.length > 0) {
-      throw new CyExcelError(
-        CyExcelErrorCode.HeaderGroupsBlockColumnStructureChange,
-        `Cannot ${operation} columns while headerGroups is configured — grouped headers reference column indices that a structural change would invalidate`
-      );
     }
   }
 
@@ -2089,9 +2046,9 @@ export class CyExcelCore {
     });
   }
 
-  /** Total pixel height of the column header band: the leaf title row plus every group row (Step 19 — `groupHeaderHeight` is a per-level height, multiplied by however many levels `#headerManager` actually resolved). */
+  /** Total pixel height of the column header band — a single title row. */
   #headerHeight(): number {
-    return this.#columnHeaderHeight + this.#groupHeaderHeight * this.#headerManager.groupDepth;
+    return this.#columnHeaderHeight;
   }
 
   #resizeCanvases(): void {
@@ -2143,22 +2100,6 @@ export class CyExcelCore {
       }),
       surfaceMetrics: {
         columnHeaderHeight: this.#headerHeight(),
-        columnHeaderBands: [
-          ...Array.from({ length: this.#headerManager.groupDepth }, (_unused, index) => {
-            const level = this.#headerManager.groupDepth - 1 - index;
-            return {
-              role: "group" as const,
-              level,
-              y: index * this.#groupHeaderHeight,
-              height: this.#groupHeaderHeight
-            };
-          }),
-          {
-            role: "leaf" as const,
-            y: this.#groupHeaderHeight * this.#headerManager.groupDepth,
-            height: this.#columnHeaderHeight
-          }
-        ],
         rowHeaderWidth: this.#rowHeaderWidth
       }
     });

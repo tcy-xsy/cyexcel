@@ -50,7 +50,7 @@ export interface ContextMenuServiceOptions {
   readonly restoreFocus?: () => void;
   /** Computed fresh on every open() and handed to the renderer as `ContextMenuRenderContext.bounds`; Core derives it from the menu-overlay Surface snapshot. */
   readonly getBounds?: () => DOMRect | null;
-  /** Called (in addition to the unconditional console.error) whenever an action's `run()` throws or its returned Promise rejects — CyExcelCore passes a callback that forwards to its own `events` "error" emit, so a host app can surface the failure to the user instead of it only landing in devtools (see doc/progress.md's Step 19 playground entry: without this, a blocked insertColumns()/deleteColumns() call while headerGroups is configured just closes the menu with no visible feedback). */
+  /** Called (in addition to the unconditional console.error) whenever an action's `run()` throws or its returned Promise rejects — CyExcelCore passes a callback that forwards to its own `events` "error" emit, so a host app can surface the failure to the user instead of it only landing in devtools. */
   readonly onActionError?: (itemId: string, error: unknown) => void;
 }
 
@@ -221,9 +221,7 @@ export class ContextMenuService {
       result = item.run(context, controller.signal);
     } catch (error) {
       // A synchronous throw (e.g. a plugin action calling a Command path
-      // that rejects, like insertColumns() while headerGroups is
-      // configured — see doc/progress.md's Step 19 playground entry for the
-      // real report) used to propagate straight out of this method,
+      // that rejects) used to propagate straight out of this method,
       // uncaught, leaving the menu stuck open. Closing it here matches the
       // synchronous-success path just below; console.error (not a silent
       // swallow) matches HookManager's own "onHookError itself threw"

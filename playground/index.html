@@ -75,10 +75,6 @@
               <label>行 overscan <input id="overscanRowsInput" type="number" min="0" value="4" /></label>
               <label>列 overscan <input id="overscanColumnsInput" type="number" min="0" value="2" /></label>
             </div>
-            <label class="field-checkbox">
-              <input id="headerGroupsToggle" type="checkbox" checked />
-              分组表头（Step 19，开启后列头右键菜单的插入/删除/隐藏列会被禁用——分组引用了列索引，结构变了索引就错位了）
-            </label>
             <button class="button primary" id="rebuildButton" type="button">应用并重建</button>
             <p class="hint">
               修改后会整个 <code>dispose()</code> + 重新 <code>new CyExcelCore()</code>——
@@ -121,11 +117,6 @@
                 选项，插入式移动，不会覆盖/丢失目标位置原有数据）；拖拽过程中按 Esc 可以
                 取消，拖到可视区域边缘会自动滚动。边缘之外的拖拽仍然是原有的多选，行为
                 不变</li>
-              <li>表头是三层嵌套分组（<code>headerGroups</code> 的 <code>children</code>
-                递归结构，Step 19）——"全部字段"下面是"商品信息"/"运营信息"两个中间层，
-                再往下才是"标识"/"价格数量"这些贴着列标题的叶子分组。配置了分组后，列头
-                右键菜单里"插入/删除/隐藏列"这几项会被阻塞（分组引用了列索引，结构变了
-                索引就错位了）——点击后菜单会正常关闭、错误打到控制台，不会卡死</li>
               <li>叶子表头里，<code>sku</code>/<code>price</code>/<code>inStock</code>/
                 <code>status</code> 四列配了自定义标题，其余列没配——没配的那几列显示
                 电子表格字母（B、D、E...）——列已经没有 id 可当兜底了（ADR 0004

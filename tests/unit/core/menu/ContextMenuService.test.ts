@@ -331,7 +331,7 @@ describe("ContextMenuService — async actions", () => {
   it("catches a synchronous throw from run() instead of propagating it — closes the menu and reports to console.error", () => {
     const { factory, renderers } = createFakeRendererFactory();
     const service = new ContextMenuService({ container: fakeContainer(), rendererFactory: factory });
-    const thrown = new Error("headerGroups blocks this");
+    const thrown = new Error("insertColumns blocks this");
     service.registerProvider({ name: "p" }, () => [
       {
         type: "action",
@@ -355,7 +355,7 @@ describe("ContextMenuService — async actions", () => {
 
   it("forwards a synchronous throw to onActionError, in addition to console.error", () => {
     const { factory, renderers } = createFakeRendererFactory();
-    const thrown = new Error("headerGroups blocks this");
+    const thrown = new Error("insertColumns blocks this");
     const onActionError = vi.fn();
     const service = new ContextMenuService({ container: fakeContainer(), rendererFactory: factory, onActionError });
     service.registerProvider({ name: "p" }, () => [

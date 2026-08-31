@@ -12,7 +12,7 @@ import {
   TEXT_COLOR
 } from "../render/theme";
 import type { HeaderManager } from "./HeaderManager";
-import type { HeaderAction, HeaderRenderContext, HeaderState, RuntimeHeaderGroup } from "./types";
+import type { HeaderAction, HeaderRenderContext, HeaderState } from "./types";
 
 export interface HeaderCanvasRendererOptions {
   readonly ctx: Canvas2DLike;
@@ -27,9 +27,9 @@ const DEFAULT_PADDING = 4;
  * Width, in pixels, of the clickable strip reserved at the trailing edge of
  * a *default*-rendered leaf header cell for `toggle-sort`. Deliberately not
  * the whole cell: the rest of the cell is where a plain click still selects
- * the column (`headers.spec.ts`/`nested-headers.spec.ts`/`row-headers.spec.ts`
- * all click at column midpoints and must keep doing that), so only a narrow
- * reserved zone lets both gestures coexist on the same default header.
+ * the column (`headers.spec.ts`/`row-headers.spec.ts` both click at column
+ * midpoints and must keep doing that), so only a narrow reserved zone lets
+ * both gestures coexist on the same default header.
  */
 export const DEFAULT_HEADER_SORT_ZONE_WIDTH = 18;
 
@@ -160,13 +160,11 @@ function defaultHeaderPainter(context: HeaderRenderContext): void {
 }
 
 /**
- * Paints the (up to two-row) column header band: an optional group row on
- * top, the leaf column title row below it. Headers never move vertically
+ * Paints the single-row column header band. Headers never move vertically
  * (the band is always fully pinned), only horizontally as columns scroll —
  * frozen columns stay put on that axis too. Both membership and clipping
- * come from Scene's canonical column-header panes, so a partially scrolled cell can
- * never paint back across the frozen boundary. A group whose column span
- * straddles pane boundaries is drawn as one fragment per pane.
+ * come from Scene's canonical column-header panes, so a partially scrolled
+ * cell can never paint back across the frozen boundary.
  */
 export class HeaderCanvasRenderer {
   readonly #ctx: Canvas2DLike;
@@ -194,21 +192,6 @@ export class HeaderCanvasRenderer {
           .find((candidate) => candidate.pane === paneFragment.pane);
         if (fragment) {
           this.#paintLeafHeader(column, fragment);
-        }
-      }
-    }
-
-    for (const band of scene.getColumnHeaderBands()) {
-      if (band.role !== "group") {
-        continue;
-      }
-      for (const group of this.#headerManager.getGroups(band.level)) {
-        for (const fragment of scene.getColumnHeaderBandFragments(
-          band,
-          group.startColumn,
-          group.endColumn
-        )) {
-          this.#paintGroupFragment(group, fragment);
         }
       }
     }
@@ -255,26 +238,6 @@ export class HeaderCanvasRenderer {
       // behind) — same reasoning as ContentLayerRenderer's own per-cell
       // gridline stroke, and safe regardless because #withClip's
       // save()/restore() already isolates this from every other cell.
-      this.#ctx.strokeStyle = GRID_LINE_COLOR;
-      this.#ctx.lineWidth = 1;
-      this.#ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-    });
-  }
-
-  #paintGroupFragment(
-    group: RuntimeHeaderGroup,
-    fragment: SceneColumnHeaderFragment
-  ): void {
-    const rect = fragment.rect;
-    this.#withPaneClip(rect, fragment.clipRect, () => {
-      this.#ctx.clearRect(rect.x, rect.y, rect.width, rect.height);
-      this.#ctx.fillStyle = HEADER_BACKGROUND_COLOR;
-      this.#ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
-      this.#ctx.fillStyle = TEXT_COLOR;
-      this.#ctx.font = HEADER_FONT;
-      this.#ctx.textBaseline = "middle";
-      this.#ctx.textAlign = "left";
-      this.#ctx.fillText(group.title, rect.x + DEFAULT_PADDING, rect.y + rect.height / 2);
       this.#ctx.strokeStyle = GRID_LINE_COLOR;
       this.#ctx.lineWidth = 1;
       this.#ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
