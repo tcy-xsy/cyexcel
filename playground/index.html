@@ -99,6 +99,28 @@
           </section>
 
           <section class="panel">
+            <h2>合并单元格</h2>
+            <div class="cell-form">
+              <div class="field-grid">
+                <label>起始行 <input id="mergeStartRow" type="number" min="0" value="0" /></label>
+                <label>起始列 <input id="mergeStartColumn" type="number" min="0" value="0" /></label>
+                <label>结束行 <input id="mergeEndRow" type="number" min="0" value="1" /></label>
+                <label>结束列 <input id="mergeEndColumn" type="number" min="0" value="1" /></label>
+              </div>
+              <div class="cell-form-actions">
+                <button class="button primary" id="mergeCellsButton" type="button">合并</button>
+                <button class="button" id="unmergeCellsButton" type="button">取消合并</button>
+              </div>
+            </div>
+            <p class="hint" id="mergeFormResult">
+              调用 <code>core.mergeCells()</code> / <code>core.unmergeCells()</code>，四个坐标
+              闭区间组成 <code>CellRange</code>。部分重叠已有合并区会抛
+              <code>MergeOverlapsExistingMerge</code>；合并区跨越随后一次结构操作的边界会抛
+              <code>MergeSpansMoveBoundary</code>——两者都会在这里可读地显示出来。
+            </p>
+          </section>
+
+          <section class="panel">
             <h2>操作提示（真实交互）</h2>
             <ul class="hint-list">
               <li>点击 / 拖拽移动选中的单元格（会画出蓝色高亮框），用来决定双击 / Enter

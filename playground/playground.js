@@ -1,5 +1,6 @@
 import {
   CyExcelCore,
+  CyExcelError,
   createBasicContextMenuPlugin,
   createBooleanCellEditor,
   createDateCellEditor,
@@ -249,6 +250,13 @@ const cellValue = document.getElementById("cellValue");
 const readCellButton = document.getElementById("readCellButton");
 const writeCellButton = document.getElementById("writeCellButton");
 const cellFormResult = document.getElementById("cellFormResult");
+const mergeStartRow = document.getElementById("mergeStartRow");
+const mergeStartColumn = document.getElementById("mergeStartColumn");
+const mergeEndRow = document.getElementById("mergeEndRow");
+const mergeEndColumn = document.getElementById("mergeEndColumn");
+const mergeCellsButton = document.getElementById("mergeCellsButton");
+const unmergeCellsButton = document.getElementById("unmergeCellsButton");
+const mergeFormResult = document.getElementById("mergeFormResult");
 const sortColumn = document.getElementById("sortColumn");
 const sortAscButton = document.getElementById("sortAscButton");
 const sortDescButton = document.getElementById("sortDescButton");
@@ -477,6 +485,54 @@ writeCellButton.addEventListener("click", () => {
   core.setCell(row, columnIndex, result.value);
   cellFormResult.textContent =
     `已写入 (${row}, ${columnIndex}) = ${JSON.stringify(result.value)}，可以用撤销按钮回退`;
+});
+
+/** Reads the four merge-form inputs into a CellRange. */
+function readMergeRangeFromForm() {
+  return {
+    startRow: clampNumber(Number(mergeStartRow.value), 0, Math.max(0, currentRowCount - 1), 0),
+    startColumn: clampNumber(Number(mergeStartColumn.value), 0, COLUMNS.length - 1, 0),
+    endRow: clampNumber(Number(mergeEndRow.value), 0, Math.max(0, currentRowCount - 1), 0),
+    endColumn: clampNumber(Number(mergeEndColumn.value), 0, COLUMNS.length - 1, 0)
+  };
+}
+
+mergeCellsButton.addEventListener("click", () => {
+  if (!core) {
+    return;
+  }
+  const range = readMergeRangeFromForm();
+  try {
+    core.mergeCells(range);
+    mergeFormResult.textContent =
+      `已合并 (${range.startRow}, ${range.startColumn}) - (${range.endRow}, ${range.endColumn})，` +
+      "可以用撤销按钮回退";
+  } catch (error) {
+    if (error instanceof CyExcelError) {
+      mergeFormResult.textContent = `合并失败：${error.code} — ${error.message}`;
+    } else {
+      throw error;
+    }
+  }
+});
+
+unmergeCellsButton.addEventListener("click", () => {
+  if (!core) {
+    return;
+  }
+  const range = readMergeRangeFromForm();
+  try {
+    core.unmergeCells(range);
+    mergeFormResult.textContent =
+      `已取消 (${range.startRow}, ${range.startColumn}) - (${range.endRow}, ${range.endColumn}) ` +
+      "范围内的合并，可以用撤销按钮回退";
+  } catch (error) {
+    if (error instanceof CyExcelError) {
+      mergeFormResult.textContent = `取消合并失败：${error.code} — ${error.message}`;
+    } else {
+      throw error;
+    }
+  }
 });
 
 /**
