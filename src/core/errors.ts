@@ -31,7 +31,9 @@ export const CyExcelErrorCode = {
   MutationRuntimeFaulted: "mutation-runtime-faulted",
   MutationRuntimeDisposed: "mutation-runtime-disposed",
   PluginRuntimeNotReady: "plugin-runtime-not-ready",
-  PluginDisposed: "plugin-disposed"
+  PluginDisposed: "plugin-disposed",
+  MergeOverlapsExistingMerge: "merge-overlaps-existing-merge",
+  MergeSpansMoveBoundary: "merge-spans-move-boundary"
 } as const;
 
 export type CyExcelErrorCode =
