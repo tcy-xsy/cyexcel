@@ -5,6 +5,7 @@ import type { CopyMode } from "./types";
 export interface SerializeContext {
   readonly getCellValue: (row: number, column: number) => unknown;
   readonly getColumn: (column: number) => RuntimeColumn;
+  readonly findMergeAt?: (row: number, column: number) => CellRange | undefined;
 }
 
 /**
@@ -39,6 +40,13 @@ export function buildCellGrid(range: CellRange, mode: CopyMode, ctx: SerializeCo
     for (let column = range.startColumn; column <= range.endColumn; column += 1) {
       const runtimeColumn = ctx.getColumn(column);
       if (runtimeColumn.clipboard.copy === false) {
+        rowCells.push("");
+        continue;
+      }
+
+      const merge = ctx.findMergeAt?.(row, column);
+      const isCoveredCell = merge !== undefined && (merge.startRow !== row || merge.startColumn !== column);
+      if (isCoveredCell) {
         rowCells.push("");
         continue;
       }

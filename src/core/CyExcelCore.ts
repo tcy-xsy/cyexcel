@@ -894,6 +894,7 @@ export class CyExcelCore {
       painter: createColumnAwarePainter(() => this.#columnManager.getColumns()),
       onError: (error, cell) =>
         this.#events.emit("error", { error, eventName: `finalize:canvas-cell:${cell.row}:${cell.column}` }),
+      findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column),
       ...(options.showGridLines !== undefined ? { showGridLines: options.showGridLines } : {})
     });
     this.#selectionRenderer = new SelectionLayerRenderer({
@@ -901,7 +902,8 @@ export class CyExcelCore {
       getScene: () => this.#scene,
       getSelection: () => this.#selectionModel.snapshot,
       isVisible: () => !this.#editorManager.isEditing(),
-      getFillPreviewRange: () => this.#fillHandleController.previewRange
+      getFillPreviewRange: () => this.#fillHandleController.previewRange,
+      findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column)
     });
     this.#headerCanvasRenderer = new HeaderCanvasRenderer({
       ctx: headerCtx,
@@ -1250,6 +1252,7 @@ export class CyExcelCore {
         new Worker(new URL("./clipboard/worker/serializeWorker.ts", import.meta.url), {
           type: "module"
         }) as unknown as SerializeWorkerLike,
+      findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column),
       ...(options.clipboard !== undefined ? { options: options.clipboard } : {})
     });
     initialization.defer(() => this.#clipboardService.dispose());
@@ -2460,7 +2463,8 @@ export class CyExcelCore {
     const range = this.#selectionModel.snapshot.range;
     const grid = buildCellGrid(range, "display", {
       getCellValue: (row, column) => this.#store.getCell(row, column),
-      getColumn: (column) => this.#columnManager.getColumn(column)
+      getColumn: (column) => this.#columnManager.getColumn(column),
+      findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column)
     });
     event.clipboardData?.setData("text/plain", encodeTsv(grid));
     event.preventDefault();

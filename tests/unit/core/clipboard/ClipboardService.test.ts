@@ -219,6 +219,33 @@ describe("ClipboardService.copy", () => {
     expect(io.writeText).not.toHaveBeenCalled();
     expect(capturedWorker?.terminate).toHaveBeenCalled();
   });
+
+  it("blanks out a covered-but-not-anchor merge cell when findMergeAt is wired in", async () => {
+    const s = setup();
+    const io = fakeIo();
+    // Merge spans rows 0-1 of column 0 ("Alice"/"Bob"); row 1 is covered.
+    const merge = { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 };
+    const service = new ClipboardService({
+      getCellValue: (row, column) => s.store.getCell(row, column),
+      getColumn: (column) => s.columnManager.getColumn(column),
+      getRowCount: () => s.sheet.rowCount(),
+      getColumnCount: () => s.columnManager.columnCount,
+      parseValue: (_row, _column, text) => text,
+      getSelectionRange: () => ({ startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 }),
+      getStoreVersion: () => s.store.version,
+      applyRangeCommand: (range, values) => { s.commandManager.execute(new SetRangeCommand(range, values)); },
+      io,
+      findMergeAt: (row, column) =>
+        row >= merge.startRow && row <= merge.endRow && column >= merge.startColumn && column <= merge.endColumn
+          ? merge
+          : undefined
+    });
+
+    const result = await service.copy({ range: { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 } });
+
+    expect(result.status).toBe("copied");
+    expect(io.writeText).toHaveBeenCalledWith("Alice\r\n");
+  });
 });
 
 describe("ClipboardService.paste", () => {

@@ -113,4 +113,27 @@ describe("CopyPlanner", () => {
     expect(elapsed).toBeLessThan(50);
     expect(plan.containsComplexValues).toBe(true);
   });
+
+  it("skips covered-but-not-anchor merge cells — never reads their value nor counts their bytes", () => {
+    const merge = { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 };
+    const reads: Array<[number, number]> = [];
+    const planner = new CopyPlanner({
+      getCellValue: (row, column) => {
+        reads.push([row, column]);
+        return "x".repeat(10);
+      },
+      getColumn: () => columnWithPolicy(),
+      maxCells: 1_000_000,
+      maxBytes: 1_000_000,
+      findMergeAt: (row, column) =>
+        row >= merge.startRow && row <= merge.endRow && column >= merge.startColumn && column <= merge.endColumn
+          ? merge
+          : undefined
+    });
+
+    const plan = planner.plan({ startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 });
+
+    expect(reads).toEqual([[0, 0]]);
+    expect(plan.estimatedBytes).toBe(10);
+  });
 });

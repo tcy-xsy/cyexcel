@@ -32,6 +32,7 @@ export interface SelectionLayerRendererOptions {
    * geometry assumptions.
    */
   readonly getFillPreviewRange?: () => CellRange | null;
+  readonly findMergeAt?: (row: number, column: number) => CellRange | undefined;
 }
 
 /**
@@ -47,6 +48,7 @@ export class SelectionLayerRenderer {
   readonly #getSelection: () => SelectionSnapshot;
   readonly #isVisible: () => boolean;
   readonly #getFillPreviewRange: () => CellRange | null;
+  readonly #findMergeAt: SelectionLayerRendererOptions["findMergeAt"];
   #width = 0;
   #height = 0;
 
@@ -56,6 +58,7 @@ export class SelectionLayerRenderer {
     this.#getSelection = options.getSelection;
     this.#isVisible = options.isVisible ?? (() => true);
     this.#getFillPreviewRange = options.getFillPreviewRange ?? (() => null);
+    this.#findMergeAt = options.findMergeAt;
   }
 
   setSize(width: number, height: number): void {
@@ -94,7 +97,8 @@ export class SelectionLayerRenderer {
    * selection never touches `globalAlpha` at all.
    */
   #paintRangeBox(scene: SceneSnapshot, range: CellRange, active: boolean): void {
-    const fragments = scene.getFragmentsForRange(range);
+    const expandedRange = this.#expandForMerge(range);
+    const fragments = scene.getFragmentsForRange(expandedRange);
 
     this.#ctx.strokeStyle = SELECTION_STROKE_COLOR;
     this.#ctx.lineWidth = SELECTION_STROKE_WIDTH;
@@ -119,11 +123,28 @@ export class SelectionLayerRenderer {
     }
 
     if (active && fragments.length > 0) {
-      const handle = scene.getSelectionHandleFragment(range, SELECTION_HANDLE_SIZE);
+      const handle = scene.getSelectionHandleFragment(expandedRange, SELECTION_HANDLE_SIZE);
       if (handle) {
         this.#paintFillHandle(handle);
       }
     }
+  }
+
+  /**
+   * Widens a selection that is exactly one cell and happens to sit on a
+   * merge's anchor into that merge's full range, so it gets the same
+   * bounding-box treatment `getFragmentsForRange` already gives any
+   * multi-cell range — without this, selecting a merged cell would draw a
+   * box around only its top-left cell (design doc §5). Deliberately scoped
+   * to just this 1x1-selection case: a multi-cell selection already gets a
+   * correct spanning box, and overlap between a multi-cell selection and
+   * several merges is out of scope (YAGNI).
+   */
+  #expandForMerge(range: CellRange): CellRange {
+    if (range.startRow !== range.endRow || range.startColumn !== range.endColumn) {
+      return range;
+    }
+    return this.#findMergeAt?.(range.startRow, range.startColumn) ?? range;
   }
 
   /** Dashed preview of the range a fill-handle drag would extend into. */

@@ -615,6 +615,68 @@ describe("SelectionLayerRenderer.paintSelection — multiple regions", () => {
     expect(ctx.calls.indexOf(alphaCalls[1]!)).toBeGreaterThan(nonActiveStroke);
   });
 
+  it("expands a single-cell selection sitting on a merge anchor into the merge's full bounding box", () => {
+    const ctx = new RecordingCanvasContext();
+    const merge = { startRow: 3, startColumn: 2, endRow: 4, endColumn: 3 };
+    const renderer = createSelectionRenderer({
+      ctx,
+      layout: createLayout(),
+      getSelection: () => cellSnapshot(3, 2), // selection is exactly the merge's anchor cell
+      findMergeAt: (row, column) =>
+        row >= merge.startRow && row <= merge.endRow && column >= merge.startColumn && column <= merge.endColumn
+          ? merge
+          : undefined
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 200, height: 200 });
+
+    renderer.paintSelection();
+
+    const strokeRectCalls = ctx.calls.filter((call) => call.method === "strokeRect");
+    // rows 3-4 (y: 60 to 100), columns 2-3 (x: 100 to 200) — the merge's
+    // full bounding box, not just the anchor's own {100,60,50,20} cell.
+    expect(strokeRectCalls).toEqual([{ method: "strokeRect", args: [100, 60, 100, 40] }]);
+  });
+
+  it("leaves a non-merge single-cell selection untouched when findMergeAt returns undefined", () => {
+    const ctx = new RecordingCanvasContext();
+    const renderer = createSelectionRenderer({
+      ctx,
+      layout: createLayout(),
+      getSelection: () => cellSnapshot(3, 2),
+      findMergeAt: () => undefined
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 200, height: 200 });
+
+    renderer.paintSelection();
+
+    const strokeRectCalls = ctx.calls.filter((call) => call.method === "strokeRect");
+    expect(strokeRectCalls).toEqual([{ method: "strokeRect", args: [100, 60, 50, 20] }]);
+  });
+
+  it("leaves a multi-cell selection untouched even when findMergeAt is provided (YAGNI scope)", () => {
+    const ctx = new RecordingCanvasContext();
+    const findMergeAtCalls: Array<[number, number]> = [];
+    const renderer = createSelectionRenderer({
+      ctx,
+      layout: createLayout(),
+      getSelection: () => cellSnapshot(1, 1, 2, 3),
+      findMergeAt: (row, column) => {
+        findMergeAtCalls.push([row, column]);
+        return { startRow: 0, startColumn: 0, endRow: 5, endColumn: 5 };
+      }
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 200, height: 200 });
+
+    renderer.paintSelection();
+
+    // Multi-cell selections already get a correct spanning box from
+    // getFragmentsForRange — #expandForMerge must not even consult
+    // findMergeAt for them.
+    expect(findMergeAtCalls).toHaveLength(0);
+    const strokeRectCalls = ctx.calls.filter((call) => call.method === "strokeRect");
+    expect(strokeRectCalls).toEqual([{ method: "strokeRect", args: [50, 20, 150, 40] }]);
+  });
+
   it("a single-region selection never touches globalAlpha (unchanged from before multi-region support)", () => {
     const ctx = new RecordingCanvasContext();
     const renderer = createSelectionRenderer({

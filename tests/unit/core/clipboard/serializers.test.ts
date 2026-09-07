@@ -140,3 +140,44 @@ describe("buildCellGrid — column clipboard policy", () => {
     expect(reads).toBe(0);
   });
 });
+
+describe("buildCellGrid — merge awareness", () => {
+  it("serializes a covered-but-not-anchor cell as empty even though it has a stored value", () => {
+    const columnManager = manager();
+    // Merge spans (0,0)-(1,0): row 1 column 0 is covered but not the anchor.
+    const merge = { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 };
+    const grid = buildCellGrid(
+      { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 },
+      "display",
+      {
+        ...contextFor(columnManager),
+        findMergeAt: (row, column) =>
+          row >= merge.startRow && row <= merge.endRow && column >= merge.startColumn && column <= merge.endColumn
+            ? merge
+            : undefined
+      }
+    );
+
+    expect(grid[0]?.[0]).toBe("Alice"); // anchor keeps its value
+    expect(grid[1]?.[0]).toBe(""); // covered cell serializes to empty
+  });
+
+  it("does not call findMergeAt for cells outside any merge, and leaves them untouched", () => {
+    const columnManager = manager();
+    const calls: Array<[number, number]> = [];
+    const grid = buildCellGrid(
+      { startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 },
+      "display",
+      {
+        ...contextFor(columnManager),
+        findMergeAt: (row, column) => {
+          calls.push([row, column]);
+          return undefined;
+        }
+      }
+    );
+
+    expect(calls).toEqual([[0, 0]]);
+    expect(grid[0]?.[0]).toBe("Alice");
+  });
+});

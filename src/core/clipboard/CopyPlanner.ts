@@ -14,6 +14,7 @@ export interface CopyPlannerOptions {
   readonly getColumn: (column: number) => Pick<RuntimeColumn, "clipboard">;
   readonly maxCells: number;
   readonly maxBytes: number;
+  readonly findMergeAt?: (row: number, column: number) => CellRange | undefined;
 }
 
 function estimateCellBytes(value: unknown): number {
@@ -54,12 +55,14 @@ export class CopyPlanner {
   readonly #getColumn: CopyPlannerOptions["getColumn"];
   readonly #maxCells: number;
   readonly #maxBytes: number;
+  readonly #findMergeAt: CopyPlannerOptions["findMergeAt"];
 
   constructor(options: CopyPlannerOptions) {
     this.#getCellValue = options.getCellValue;
     this.#getColumn = options.getColumn;
     this.#maxCells = options.maxCells;
     this.#maxBytes = options.maxBytes;
+    this.#findMergeAt = options.findMergeAt;
   }
 
   plan(range: CellRange): CopyPlan {
@@ -73,6 +76,10 @@ export class CopyPlanner {
     for (let row = range.startRow; row <= range.endRow; row += 1) {
       for (let column = range.startColumn; column <= range.endColumn; column += 1) {
         if (this.#getColumn(column).clipboard.copy === false) {
+          continue;
+        }
+        const merge = this.#findMergeAt?.(row, column);
+        if (merge && (merge.startRow !== row || merge.startColumn !== column)) {
           continue;
         }
         const value = this.#getCellValue(row, column);

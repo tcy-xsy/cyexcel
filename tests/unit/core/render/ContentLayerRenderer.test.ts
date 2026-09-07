@@ -574,6 +574,98 @@ describe("ContentLayerRenderer — frozen row/column separators", () => {
   });
 });
 
+describe("ContentLayerRenderer — merged cells", () => {
+  function mergeLookup(merge: { startRow: number; startColumn: number; endRow: number; endColumn: number }) {
+    return (row: number, column: number) =>
+      row >= merge.startRow && row <= merge.endRow && column >= merge.startColumn && column <= merge.endColumn
+        ? merge
+        : undefined;
+  }
+
+  it("paints a merged cell once as a single spanning rect using the anchor's value, skipping covered cells", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(3, 2); // rowHeight 20, columnWidths [50, 50]
+    const values: Record<string, unknown> = {
+      "0,0": "Anchor",
+      "1,0": "ShouldNeverPaint",
+      "0,1": "0:1",
+      "1,1": "1:1",
+      "2,0": "2:0",
+      "2,1": "2:1"
+    };
+    const reads: string[] = [];
+    const merge = { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 };
+    const renderer = createContentRenderer({
+      ctx,
+      layout,
+      getCellValue: (row, column) => {
+        const key = `${row},${column}`;
+        reads.push(key);
+        return values[key];
+      },
+      findMergeAt: mergeLookup(merge)
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 60 });
+
+    renderer.paintContent({ kind: "full" });
+
+    const fillTextCalls = ctx.calls.filter((call) => call.method === "fillText");
+    expect(fillTextCalls.map((call) => call.args[0]).sort()).toEqual(
+      ["0:1", "1:1", "2:0", "2:1", "Anchor"].sort()
+    );
+    // The covered cell's own value is never read — it's painted as part of
+    // the anchor's spanning rect, not individually.
+    expect(reads).not.toContain("1,0");
+
+    // The merged rect spans both rows (height 40) at the anchor's (x, y).
+    const clearRectCalls = ctx.calls.filter((call) => call.method === "clearRect");
+    const mergeClears = clearRectCalls.filter(
+      (call) => call.args[0] === 0 && call.args[1] === 0 && call.args[2] === 50 && call.args[3] === 40
+    );
+    expect(mergeClears).toHaveLength(1); // painted exactly once, not once per covered row
+  });
+
+  it("re-scans and repaints the merge on every paintContent call — the dedupe Set never persists across frames", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(2, 1);
+    const merge = { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 };
+    const renderer = createContentRenderer({
+      ctx,
+      layout,
+      getCellValue: (row, column) => (row === 0 && column === 0 ? "Anchor" : "covered"),
+      findMergeAt: mergeLookup(merge)
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 40 });
+
+    renderer.paintContent({ kind: "full" });
+    renderer.paintContent({ kind: "full" });
+
+    const anchorFillTextCalls = ctx.calls.filter(
+      (call) => call.method === "fillText" && call.args[0] === "Anchor"
+    );
+    // If the "already painted this frame" Set were a persistent field
+    // instead of local to each #paintFragment call, the second frame would
+    // find the merge key already marked painted and skip it.
+    expect(anchorFillTextCalls).toHaveLength(2);
+  });
+
+  it("behaves exactly as before (no merge scan) when findMergeAt is not provided", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(2, 1);
+    const renderer = createContentRenderer({
+      ctx,
+      layout,
+      getCellValue: (row) => `row-${row}`
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 40 });
+
+    renderer.paintContent({ kind: "full" });
+
+    const fillTextCalls = ctx.calls.filter((call) => call.method === "fillText");
+    expect(fillTextCalls.map((call) => call.args[0])).toEqual(["row-0", "row-1"]);
+  });
+});
+
 describe("ContentLayerRenderer no-op cases", () => {
   it("does nothing when nothing is visible", () => {
     const ctx = new RecordingCanvasContext();

@@ -1,6 +1,7 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
 import type { CellRect } from "../layout";
 import type { SceneCellFragment, SceneSnapshot } from "../scene";
+import type { CellRange } from "../types";
 import type { Canvas2DLike } from "./Canvas2DLike";
 import type { DirtyState } from "./RenderScheduler";
 import {
@@ -38,6 +39,7 @@ export interface ContentLayerRendererOptions {
   readonly checkSyncRenderers?: boolean;
   /** Draw a light gridline around every cell after it's painted. Default: true. */
   readonly showGridLines?: boolean;
+  readonly findMergeAt?: (row: number, column: number) => CellRange | undefined;
 }
 
 function defaultPainter(context: CellPaintContext): void {
@@ -85,6 +87,7 @@ export class ContentLayerRenderer {
     | undefined;
   readonly #checkSyncRenderers: boolean;
   readonly #showGridLines: boolean;
+  readonly #findMergeAt: ContentLayerRendererOptions["findMergeAt"];
 
   constructor(options: ContentLayerRendererOptions) {
     this.#ctx = options.ctx;
@@ -94,6 +97,7 @@ export class ContentLayerRenderer {
     this.#onError = options.onError;
     this.#checkSyncRenderers = options.checkSyncRenderers ?? true;
     this.#showGridLines = options.showGridLines ?? true;
+    this.#findMergeAt = options.findMergeAt;
   }
 
   paintContent(dirty: DirtyState, scene: SceneSnapshot = this.#getScene()): void {
@@ -171,8 +175,45 @@ export class ContentLayerRenderer {
 
     const lastRow = fragment.rows.start + fragment.rows.count - 1;
     const lastColumn = fragment.columns.start + fragment.columns.count - 1;
+
+    // Every (row, column) this pass has already painted as part of a merged
+    // cell's single spanning rect — a fresh Set on every #paintFragment call,
+    // never a field: a persistent Set would go stale (new merges created
+    // after the first frame would never get re-scanned into it) and could
+    // leak entries from one pane's fragment into another's.
+    const mergeCoveredCells = new Set<string>();
+    if (this.#findMergeAt) {
+      const paintedMerges = new Set<string>();
+      for (let row = fragment.rows.start; row <= lastRow; row += 1) {
+        for (let column = fragment.columns.start; column <= lastColumn; column += 1) {
+          const merge = this.#findMergeAt(row, column);
+          if (!merge) {
+            continue;
+          }
+          mergeCoveredCells.add(`${row},${column}`);
+
+          const mergeKey = `${merge.startRow},${merge.startColumn}`;
+          if (paintedMerges.has(mergeKey)) {
+            continue;
+          }
+          paintedMerges.add(mergeKey);
+
+          const mergeFragment = scene
+            .getFragmentsForRange(merge)
+            .find((candidate) => candidate.pane.id === fragment.pane.id);
+          if (!mergeFragment) {
+            continue;
+          }
+          this.#paintCellAt(merge.startRow, merge.startColumn, mergeFragment.rect);
+        }
+      }
+    }
+
     for (let row = fragment.rows.start; row <= lastRow; row += 1) {
       for (let column = fragment.columns.start; column <= lastColumn; column += 1) {
+        if (mergeCoveredCells.has(`${row},${column}`)) {
+          continue;
+        }
         this.#paintCell(scene, row, column, fragment);
       }
     }
@@ -182,6 +223,10 @@ export class ContentLayerRenderer {
 
   #paintCell(scene: SceneSnapshot, row: number, column: number, fragment: SceneCellFragment): void {
     const rect = scene.getCellRectInPane({ row, column }, fragment.pane);
+    this.#paintCellAt(row, column, rect);
+  }
+
+  #paintCellAt(row: number, column: number, rect: CellRect): void {
     if (rect.width <= 0 || rect.height <= 0) {
       return;
     }
@@ -190,13 +235,6 @@ export class ContentLayerRenderer {
     const value = this.#getCellValue(row, column);
     const context: CellPaintContext = { ctx: this.#ctx, rect, row, column, value };
 
-    // Isolated in its own save/restore so a painter (built-in default or a
-    // custom CanvasCellRenderer) that changes ctx state — font, fillStyle,
-    // textAlign, ... — and never restores it itself can't leak that state
-    // into the next cell painted on this same canvas. Canvas 2D state is
-    // otherwise persistent across draw calls; without this, one column's
-    // renderer choosing e.g. a different font silently changes how every
-    // later cell that never sets its own font gets drawn.
     // Isolated in its own save/restore so a painter (built-in default or a
     // custom CanvasCellRenderer) that changes ctx state — font, fillStyle,
     // textAlign, ... — and never restores it itself can't leak that state

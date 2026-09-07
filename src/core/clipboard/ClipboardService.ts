@@ -28,6 +28,7 @@ export interface ClipboardServiceOptions {
   readonly io: ClipboardIO;
   readonly createWorker?: () => SerializeWorkerLike;
   readonly options?: ClipboardOptions;
+  readonly findMergeAt?: (row: number, column: number) => CellRange | undefined;
 }
 
 /**
@@ -54,7 +55,8 @@ export class ClipboardService {
       getCellValue: options.getCellValue,
       getColumn: options.getColumn,
       maxCells: this.#maxCells,
-      maxBytes: this.#maxBytes
+      maxBytes: this.#maxBytes,
+      ...(options.findMergeAt !== undefined ? { findMergeAt: options.findMergeAt } : {})
     });
     this.#worker = new ClipboardWorkerClient(
       options.createWorker !== undefined ? { createWorker: options.createWorker } : {}
@@ -91,7 +93,8 @@ export class ClipboardService {
 
     const grid = buildCellGrid(range, opts.mode ?? "display", {
       getCellValue: this.#options.getCellValue,
-      getColumn: this.#options.getColumn
+      getColumn: this.#options.getColumn,
+      ...(this.#options.findMergeAt !== undefined ? { findMergeAt: this.#options.findMergeAt } : {})
     });
 
     if (opts.signal?.aborted) {
@@ -178,7 +181,8 @@ export class ClipboardService {
   ): Promise<ClipboardCopyResult> {
     const grid = buildCellGrid(range, opts.mode ?? "raw", {
       getCellValue: this.#options.getCellValue,
-      getColumn: this.#options.getColumn
+      getColumn: this.#options.getColumn,
+      ...(this.#options.findMergeAt !== undefined ? { findMergeAt: this.#options.findMergeAt } : {})
     });
 
     if (opts.signal?.aborted) {
