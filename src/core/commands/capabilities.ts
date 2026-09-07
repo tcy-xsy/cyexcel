@@ -10,6 +10,7 @@ import type {
 export interface DataCommandMutationFactory {
   createSetCell(row: number, column: number, value: unknown): Mutation;
   createSetRange(range: CellRange, values: readonly (readonly unknown[])[]): Mutation;
+  createSetMerges(merges: readonly CellRange[]): Mutation;
   createInsertRows(start: number, rows: readonly (readonly unknown[])[]): Mutation;
   createDeleteRows(start: number, count: number): Mutation;
   createMoveRows(start: number, count: number, target: number): Mutation;

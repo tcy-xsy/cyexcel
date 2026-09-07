@@ -1,4 +1,5 @@
-import type { CellRange } from "../types";
+import { buildMergeClearGrid, rangesIntersect, resolveMergeCells } from "../sheet/merges";
+import type { CellRange, CommandContext } from "../types";
 import type { ClearRangeCommand } from "./ClearRangeCommand";
 import { CommandHandlerRegistry } from "./CommandHandlerRegistry";
 import type { DeleteColumnsCommand } from "./DeleteColumnsCommand";
@@ -6,6 +7,7 @@ import type { DeleteRowsCommand } from "./DeleteRowsCommand";
 import type { HideColumnCommand } from "./HideColumnCommand";
 import type { InsertColumnsCommand } from "./InsertColumnsCommand";
 import type { InsertRowsCommand } from "./InsertRowsCommand";
+import type { MergeCellsCommand } from "./MergeCellsCommand";
 import type { MoveColumnsCommand } from "./MoveColumnsCommand";
 import type { MoveRowsCommand } from "./MoveRowsCommand";
 import type { ReorderRowsCommand } from "./ReorderRowsCommand";
@@ -15,6 +17,7 @@ import type { SetCellCommand } from "./SetCellCommand";
 import type { SetRangeCommand } from "./SetRangeCommand";
 import type { SetRowHeightsCommand } from "./SetRowHeightsCommand";
 import type { ShowColumnCommand } from "./ShowColumnCommand";
+import type { UnmergeCellsCommand } from "./UnmergeCellsCommand";
 import type {
   DataCommandMutationFactory,
   LayoutCommandMutationFactory,
@@ -39,6 +42,36 @@ function createEmptyGrid(range: CellRange): readonly (readonly undefined[])[] {
   );
 }
 
+/**
+ * `mergeCells(range)` 清空非锚点格：`buildMergeClearGrid` 用 `undefined` 表示锚点格
+ * "跳过、保留原值"，但 `valueToRecord`/`writeCell`（`sheet/import.ts`、`sheet/apply.ts`）
+ * 把网格里的 `undefined` 一律当成"删掉这一格"，不是"跳过"——同一份网格整体交给
+ * `createSetRange` 会连锚点格一起清空。于是这里不发一条覆盖整个 `range` 的写入，
+ * 而是拆成两条**都不包含锚点格**的矩形子写入：锚点所在行的其余列一条、锚点行以下
+ * 的所有行一条；`range` 只有一行一列（锚点是唯一的格子）时两条都不发。
+ */
+function stageMergeClear(
+  range: CellRange,
+  data: DataCommandMutationFactory,
+  context: CommandContext
+): void {
+  const grid = buildMergeClearGrid(range);
+  const anchorRow = grid[0];
+  if (range.endColumn > range.startColumn && anchorRow !== undefined) {
+    context.stage(
+      data.createSetRange(
+        { ...range, startColumn: range.startColumn + 1, endRow: range.startRow },
+        [anchorRow.slice(1)]
+      )
+    );
+  }
+  if (range.endRow > range.startRow) {
+    context.stage(
+      data.createSetRange({ ...range, startRow: range.startRow + 1 }, grid.slice(1))
+    );
+  }
+}
+
 export function createBuiltinCommandPlanner(options: BuiltinCommandPlannerOptions): CommandHandlerRegistry {
   const registry = new CommandHandlerRegistry();
 
@@ -49,6 +82,23 @@ export function createBuiltinCommandPlanner(options: BuiltinCommandPlannerOption
   registry.register<SetRangeCommand>({
     type: "set-range",
     plan: ({ range, values }, context) => context.stage(options.data.createSetRange(range, values))
+  });
+  registry.register<MergeCellsCommand>({
+    type: "merge-cells",
+    plan: ({ range }, context) => {
+      // 重叠决策唯一入口是 `resolveMergeCells`：部分相交拒绝、完全包含吸收
+      // （设计稿 §0.2/§2），不是自己拼 `[...merges, range]`。
+      const merges = resolveMergeCells(context.model.merges(), range);
+      context.stage(options.data.createSetMerges(merges));
+      stageMergeClear(range, options.data, context);
+    }
+  });
+  registry.register<UnmergeCellsCommand>({
+    type: "unmerge-cells",
+    plan: ({ range }, context) => {
+      const remaining = context.model.merges().filter((merge) => !rangesIntersect(merge, range));
+      context.stage(options.data.createSetMerges(remaining));
+    }
   });
   registry.register<ClearRangeCommand>({
     type: "clear-range",

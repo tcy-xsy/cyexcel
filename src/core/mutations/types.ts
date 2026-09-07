@@ -4,7 +4,7 @@ import type { SheetMutation } from "../sheet/mutation";
 import type { SheetModel } from "../sheet/SheetModel";
 import type { PreparedSheetMutation } from "../sheet/SheetTransaction";
 import type { ColumnMeta, RowMeta } from "../sheet/types";
-import type { Patch } from "../types";
+import type { CellRange, Patch } from "../types";
 
 export type MutationCoordinatorState =
   | "idle"
@@ -103,6 +103,13 @@ export interface TransactionReadView {
   getRowCount(): number;
   getColumnCount(): number;
   getCell(row: number, column: number): unknown;
+  /**
+   * 当前（暂存后）的合并区表。`merge-cells`/`unmerge-cells` 的 Command handler 在
+   * plan 期靠它读到"目前有哪些合并区"，去做重叠/吸收判断（`../sheet/merges` 的
+   * `resolveMergeCells`）——这条读法与 `getRowCount`/`getColumnCount` 同一个理由，
+   * 不查 dispose：答的是"这次事务规划完的那个状态"，不是一个会过期的数。
+   */
+  merges(): readonly CellRange[];
 }
 
 /** Planning session whose preview advances after every staged mutation. */

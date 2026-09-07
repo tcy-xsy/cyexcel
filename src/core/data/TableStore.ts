@@ -204,6 +204,19 @@ export class TableStore {
     );
   }
 
+  /**
+   * 整体替换合并区表。不经 `changesForSheetMutation`——`merge-layout` 是一个不带
+   * 字段的整表重绘标记，不依赖坐标空间，与 `set-range`/`set-cell` 走同一类字面量
+   * 补丁数组的判断（`changesForSheetMutation` 是给需要按 `space` 算范围的补丁用的）。
+   */
+  createSetMergesMutation(merges: readonly CellRange[]): Mutation {
+    return new TableSheetMutation(
+      this.#sheet,
+      { type: "set-merges", merges: merges.map((range) => ({ ...range })) },
+      [{ type: "merge-layout" }]
+    );
+  }
+
   createInsertRowsMutation(start: number, rows: readonly (readonly unknown[])[]): Mutation {
     this.#assertStructuralShape("row", "insert", start, rows.length);
     return new TableSheetMutation(

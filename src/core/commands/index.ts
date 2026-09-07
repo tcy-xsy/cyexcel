@@ -1,6 +1,8 @@
 export { SetCellCommand, type SetCellCommandParams } from "./SetCellCommand";
 export { dispatchCellAction, type CellActionDispatch } from "./dispatchCellAction";
 export { SetRangeCommand, type SetRangeCommandParams } from "./SetRangeCommand";
+export { MergeCellsCommand, type MergeCellsCommandParams } from "./MergeCellsCommand";
+export { UnmergeCellsCommand, type UnmergeCellsCommandParams } from "./UnmergeCellsCommand";
 export { ClearRangeCommand, type ClearRangeCommandParams } from "./ClearRangeCommand";
 export { InsertRowsCommand, type InsertRowsCommandParams } from "./InsertRowsCommand";
 export { DeleteRowsCommand, type DeleteRowsCommandParams } from "./DeleteRowsCommand";

@@ -1,6 +1,7 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
 import type { ModelRevision } from "../model";
 import type { TransactionReadView } from "../mutations/types";
+import type { CellRange } from "../types";
 import { applySheetMutation, estimateSheetMutationBytes } from "./apply";
 import { invertSheetMutation } from "./invert";
 import type { SheetMutation } from "./mutation";
@@ -92,6 +93,11 @@ export class SheetTransaction implements TransactionReadView {
 
   getColumnCount(): number {
     return this.#shadow.columnCount();
+  }
+
+  /** 影子上的合并区表，`getRowCount`/`getColumnCount` 同一条口径，不查 dispose。 */
+  merges(): readonly CellRange[] {
+    return this.#shadow.merges();
   }
 
   /** 裸值（ADR 0004 §3.6）——`TransactionReadView` 要的正是这个，不需要适配。 */

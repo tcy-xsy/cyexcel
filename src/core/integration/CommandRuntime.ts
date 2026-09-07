@@ -73,6 +73,10 @@ export class TableDataCommandMutationFactory implements DataCommandMutationFacto
     return this.#store.createSetRangeMutation(range, values);
   }
 
+  createSetMerges(merges: readonly CellRange[]): Mutation {
+    return this.#store.createSetMergesMutation(merges);
+  }
+
   createInsertRows(start: number, rows: readonly (readonly unknown[])[]): Mutation {
     return this.#store.createInsertRowsMutation(start, rows);
   }
