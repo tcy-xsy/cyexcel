@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel merge cells fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 400px;
+        height: 200px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+      // 4x4 grid, each cell "<row><field>" so mergeCells()'s "clear every
+      // non-anchor cell, keep the anchor" behavior is verifiable purely from
+      // getCell() values.
+      const fields = ["a", "b", "c", "d"];
+      const columns = fields.map((field) => ({
+        width: 60,
+        header: field.toUpperCase()
+      }));
+      const data = Array.from({ length: 4 }, (_unused, row) =>
+        Object.fromEntries(fields.map((field) => [field, `${row}${field}`]))
+      );
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        snapshot: rowsToWorkbookSnapshot(data, fields),
+        rowHeight: 24,
+        headerHeight: 24
+      });
+
+      window.__sheet = sheet;
+      window.__cyexcelMergeCellsReady = true;
+    </script>
+  </body>
+</html>

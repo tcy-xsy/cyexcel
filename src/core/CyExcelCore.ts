@@ -25,6 +25,8 @@ import {
 import {
   SetCellCommand,
   SetRangeCommand,
+  MergeCellsCommand,
+  UnmergeCellsCommand,
   InsertRowsCommand,
   DeleteRowsCommand,
   MoveRowsCommand,
@@ -1361,6 +1363,29 @@ export class CyExcelCore {
     this.#enqueueOrRunMutation(() =>
       this.#applyCommandNow(new SetCellCommand(row, column, value))
     );
+  }
+
+  /**
+   * Merges `range` into one visual cell. Overlap with existing merges follows
+   * `resolveMergeCells` (ADR 0004 merge-cells design §0.2/§2): a range that
+   * only partially overlaps an existing merge throws
+   * `MergeOverlapsExistingMerge`; one that fully contains an existing merge
+   * absorbs it. Every non-anchor cell in `range` is cleared (its prior value
+   * is restored on undo) — the anchor (`range`'s top-left cell) keeps its
+   * value. No geometry changes, so unlike the structural row/column methods
+   * this does not cancel an in-progress edit — same as `setCell()`.
+   */
+  mergeCells(range: CellRange): void {
+    this.#enqueueOrRunMutation(() => this.#applyCommandNow(new MergeCellsCommand(range)));
+  }
+
+  /**
+   * Un-merges every merged range that intersects `range` — not just one
+   * exactly equal to it, matching Excel. Only the merge table changes; cell
+   * values already cleared by the original merge are not restored.
+   */
+  unmergeCells(range: CellRange): void {
+    this.#enqueueOrRunMutation(() => this.#applyCommandNow(new UnmergeCellsCommand(range)));
   }
 
   /**
