@@ -30,7 +30,8 @@ describe("applySheetMutation — writeTables 的守卫", () => {
       start: 0,
       rows: [{}],
       meta: [undefined],
-      tables: { "com.acme.nope": ["x"] }
+      tables: { "com.acme.nope": ["x"] },
+      mergesBefore: []
     };
     expect(() => {
       applySheetMutation(modelWithoutTables(), mutation);
@@ -100,20 +101,36 @@ describe("estimateSheetMutationBytes", () => {
     { type: "set-range", range: { startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }, records: [[{ v: 1 }]] },
     { type: "insert-rows", start: 0, rows: [{ 0: { v: 1 } }] },
     { type: "delete-rows", start: 0, count: 1 },
-    { type: "restore-rows", start: 0, rows: [{ 0: { v: 1 } }], meta: [{ h: 20 }], tables: {} },
+    {
+      type: "restore-rows",
+      start: 0,
+      rows: [{ 0: { v: 1 } }],
+      meta: [{ h: 20 }],
+      tables: {},
+      mergesBefore: []
+    },
     { type: "move-rows", start: 0, count: 1, target: 2 },
     { type: "reorder-rows", order: Int32Array.from([1, 0]) },
     { type: "insert-columns", start: 0, count: 1 },
     { type: "delete-columns", start: 0, count: 1 },
-    { type: "restore-columns", start: 0, count: 1, cells: [{ 0: { v: 1 } }], meta: [{ w: 10 }], tables: {} },
+    {
+      type: "restore-columns",
+      start: 0,
+      count: 1,
+      cells: [{ 0: { v: 1 } }],
+      meta: [{ w: 10 }],
+      tables: {},
+      mergesBefore: []
+    },
     { type: "move-columns", start: 0, count: 1, target: 2 },
     { type: "set-row-meta", row: 0, meta: { h: 20 } },
-    { type: "set-column-meta", column: 0, meta: { w: 10 } }
+    { type: "set-column-meta", column: 0, meta: { w: 10 } },
+    { type: "set-merges", merges: [{ startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }] }
   ];
 
   it("每个成员都给一个正的有限数", () => {
-    // 反空洞：这个数组必须真的覆盖了整个联合，少一个成员这条就是在给 12 个背书
-    expect(new Set(everyMember.map((m) => m.type)).size).toBe(13);
+    // 反空洞：这个数组必须真的覆盖了整个联合，少一个成员这条就是在给 13 个背书
+    expect(new Set(everyMember.map((m) => m.type)).size).toBe(14);
     for (const mutation of everyMember) {
       const bytes = estimateSheetMutationBytes(mutation);
       expect(Number.isFinite(bytes)).toBe(true);
@@ -129,7 +146,14 @@ describe("estimateSheetMutationBytes", () => {
 
   it("带内容的成员，估值跟着内容长，而且同阶", () => {
     const rows = Array.from({ length: 100 }, () => ({ 0: { v: "x" }, 1: { v: "y" } }));
-    const restore = estimateSheetMutationBytes({ type: "restore-rows", start: 0, rows, meta: [], tables: {} });
+    const restore = estimateSheetMutationBytes({
+      type: "restore-rows",
+      start: 0,
+      rows,
+      meta: [],
+      tables: {},
+      mergesBefore: []
+    });
     const del = estimateSheetMutationBytes({ type: "delete-rows", start: 0, count: 100 });
     expect(restore).toBeGreaterThan(del * 100);
   });
@@ -153,13 +177,21 @@ describe("estimateSheetMutationBytes", () => {
   });
 
   it("插件侧表的条目计入 restore-* 的估值", () => {
-    const base: SheetMutation = { type: "restore-rows", start: 0, rows: [{}], meta: [undefined], tables: {} };
+    const base: SheetMutation = {
+      type: "restore-rows",
+      start: 0,
+      rows: [{}],
+      meta: [undefined],
+      tables: {},
+      mergesBefore: []
+    };
     const withEntries: SheetMutation = {
       type: "restore-rows",
       start: 0,
       rows: [{}],
       meta: [undefined],
-      tables: { "com.acme.rowKeys": ["k"] }
+      tables: { "com.acme.rowKeys": ["k"] },
+      mergesBefore: []
     };
     expect(estimateSheetMutationBytes(withEntries)).toBeGreaterThan(estimateSheetMutationBytes(base));
   });

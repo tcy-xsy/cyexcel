@@ -26,7 +26,14 @@ describe("changesForSheetMutation — 十三个成员一条不落", () => {
     { mutation: { type: "insert-rows", start: 0, rows: [{}] }, patchType: "row-structure" },
     { mutation: { type: "delete-rows", start: 0, count: 1 }, patchType: "row-structure" },
     {
-      mutation: { type: "restore-rows", start: 0, rows: [{}], meta: [undefined], tables: {} },
+      mutation: {
+        type: "restore-rows",
+        start: 0,
+        rows: [{}],
+        meta: [undefined],
+        tables: {},
+        mergesBefore: []
+      },
       patchType: "row-structure"
     },
     { mutation: { type: "move-rows", start: 0, count: 1, target: 3 }, patchType: "row-structure" },
@@ -34,7 +41,15 @@ describe("changesForSheetMutation — 十三个成员一条不落", () => {
     { mutation: { type: "insert-columns", start: 0, count: 1 }, patchType: "column-structure" },
     { mutation: { type: "delete-columns", start: 0, count: 1 }, patchType: "column-structure" },
     {
-      mutation: { type: "restore-columns", start: 0, count: 1, cells: [{}], meta: [undefined], tables: {} },
+      mutation: {
+        type: "restore-columns",
+        start: 0,
+        count: 1,
+        cells: [{}],
+        meta: [undefined],
+        tables: {},
+        mergesBefore: []
+      },
       patchType: "column-structure"
     },
     { mutation: { type: "move-columns", start: 0, count: 1, target: 3 }, patchType: "column-structure" },
@@ -60,7 +75,14 @@ describe("changesForSheetMutation — 十三个成员一条不落", () => {
 describe("changesForSheetMutation — `restore-*` 在下游眼里就是一次插入", () => {
   it("`restore-rows` 与同形状的 `insert-rows` 产出逐字段相同的补丁", () => {
     const rows = [{}, {}, {}];
-    const restore = onlyPatch({ type: "restore-rows", start: 2, rows, meta: [undefined, undefined, undefined], tables: {} });
+    const restore = onlyPatch({
+      type: "restore-rows",
+      start: 2,
+      rows,
+      meta: [undefined, undefined, undefined],
+      tables: {},
+      mergesBefore: []
+    });
     const insert = onlyPatch({ type: "insert-rows", start: 2, rows });
     expect(restore).toStrictEqual(insert);
     expect(restore).toStrictEqual({ type: "row-structure", operation: "insert", start: 2, count: 3 });
@@ -73,7 +95,8 @@ describe("changesForSheetMutation — `restore-*` 在下游眼里就是一次插
       count: 2,
       cells: [{}, {}],
       meta: [undefined, undefined],
-      tables: {}
+      tables: {},
+      mergesBefore: []
     });
     const insert = onlyPatch({ type: "insert-columns", start: 1, count: 2 });
     expect(restore).toStrictEqual(insert);

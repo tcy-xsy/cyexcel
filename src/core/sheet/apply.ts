@@ -60,6 +60,7 @@ export function applySheetMutation(model: SheetModel, mutation: SheetMutation): 
         model.insertRows(mutation.start, mutation.rows.length);
         writeRows(model, mutation.start, mutation.rows, mutation.meta);
         writeTables(model, mutation.start, mutation.tables);
+        model.setMerges(mutation.mergesBefore);
       });
       return;
 
@@ -110,6 +111,7 @@ export function applySheetMutation(model: SheetModel, mutation: SheetMutation): 
           }
         }
         writeTables(model, mutation.start, mutation.tables);
+        model.setMerges(mutation.mergesBefore);
       });
       return;
 
@@ -139,6 +141,14 @@ export function applySheetMutation(model: SheetModel, mutation: SheetMutation): 
         } else {
           model.setColumnMeta(mutation.column, mutation.meta);
         }
+      });
+      return;
+
+    // 合并区变化不改坐标空间——仍然套 `writeValues`，与 `set-row-meta` 同款，
+    // 钉住这条纪律，即使 `setMerges` 实际上不可能触发轴变化。
+    case "set-merges":
+      writeValues(model, () => {
+        model.setMerges(mutation.merges);
       });
       return;
   }
@@ -328,14 +338,16 @@ export function estimateSheetMutationBytes(mutation: SheetMutation): number {
         BASE_BYTES +
         countRowCells(mutation.rows) * RECORD_BYTES +
         countDefined(mutation.meta) * META_BYTES +
-        countTableEntries(mutation.tables) * ENTRY_BYTES
+        countTableEntries(mutation.tables) * ENTRY_BYTES +
+        mutation.mergesBefore.length * MERGE_BYTES
       );
     case "restore-columns":
       return (
         BASE_BYTES +
         countRowCells(mutation.cells) * RECORD_BYTES +
         countDefined(mutation.meta) * META_BYTES +
-        countTableEntries(mutation.tables) * ENTRY_BYTES
+        countTableEntries(mutation.tables) * ENTRY_BYTES +
+        mutation.mergesBefore.length * MERGE_BYTES
       );
     case "reorder-rows":
       // `Int32Array` 是这条变更里唯一随表长增长的东西，按它的实际字节数算
@@ -343,6 +355,8 @@ export function estimateSheetMutationBytes(mutation: SheetMutation): number {
     case "set-row-meta":
     case "set-column-meta":
       return BASE_BYTES + (mutation.meta === undefined ? 0 : META_BYTES);
+    case "set-merges":
+      return BASE_BYTES + mutation.merges.length * MERGE_BYTES;
     case "delete-rows":
     case "move-rows":
     case "insert-columns":
@@ -361,6 +375,8 @@ const RECORD_BYTES = 48;
 const META_BYTES = 32;
 /** 一条插件侧表条目：载荷由插件定义，核心估不了，按小对象算。 */
 const ENTRY_BYTES = 32;
+/** 一条 `CellRange`：四个数字字段。 */
+const MERGE_BYTES = 32;
 
 function countRowCells(rows: readonly (RowCells | ColumnCells)[]): number {
   let cells = 0;

@@ -129,5 +129,12 @@ export function changesForSheetMutation(
       // `column-layout` 这个变体本来就不带 `range`——列宽变化的失效范围由下游按
       // 整条列轴处理（`changes.ts` 的 `hasColumnLayout`）。这里不替它补一个。
       return [{ type: "column-layout", column: mutation.column }];
+
+    // `Patch` 还没有一个描述"合并区变了"的专用变体——那是 T5 的工作
+    // （doc/merge-cells-plan.md §Task 5：新增 `merge-layout`）。这里先落一条
+    // `full-reset` 占位，保证 `switch` 穷尽、不阻断 T3+T4 的落地；T5 落地时把这一支
+    // 换成 `{ type: "merge-layout" }` 即可，不影响其余任何一支。
+    case "set-merges":
+      return [{ type: "full-reset" }];
   }
 }

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CyExcelError } from "../../../../src/core/errors";
+import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
 import { applySheetMutation as apply } from "../../../../src/core/sheet/apply";
 import { invertSheetMutation } from "../../../../src/core/sheet/invert";
 import type { SheetMutation } from "../../../../src/core/sheet/mutation";
 import { SheetModel } from "../../../../src/core/sheet/SheetModel";
 import { WorkbookModel } from "../../../../src/core/sheet/WorkbookModel";
-import type { WorkbookSnapshot } from "../../../../src/core/sheet/types";
+import type { SheetSnapshot, WorkbookSnapshot } from "../../../../src/core/sheet/types";
 
 /**
  * `applySheetMutation` 在 4A 是本文件里的一个本地 helper（当时的注释写着"4A 没有
@@ -171,6 +171,23 @@ function mergedFixture(): SheetModel {
   });
 }
 
+/**
+ * `mergedFixture` 的 workbook 版本——需要 `WorkbookModel.toSnapshot()` 才能看见
+ * 插件侧表（见 `assertOracleSeesPluginTables`），往返用例因此要走这一个而不是
+ * `mergedFixture`。合并区与 `mergedFixture` 同一个：`[0,0]`-`[1,1]`。
+ */
+function mergedWorkbookFixture(): WorkbookModel {
+  const snapshot = workbookFixture().toSnapshot();
+  const sheetId = snapshot.sheetOrder[0] as string;
+  const sheet: SheetSnapshot = snapshot.sheets[sheetId] as SheetSnapshot;
+  const mergedSheet: SheetSnapshot = {
+    ...sheet,
+    mergeData: [{ startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }]
+  };
+  const sheets: Record<string, SheetSnapshot> = { ...snapshot.sheets, [sheetId]: mergedSheet };
+  return WorkbookModel.fromSnapshot({ ...snapshot, sheets });
+}
+
 /** 抓住抛出的错误本身——要比对类型与消息，`toThrow` 的正则做不到。 */
 function grabError(run: () => void): Error | undefined {
   try {
@@ -278,7 +295,8 @@ describe("invertSheetMutation — 纯算术分支的形状", () => {
         start: 2,
         rows: [{ 1: { v: "y" } }, {}],
         meta: [{ h: 30 }, undefined],
-        tables: {}
+        tables: {},
+        mergesBefore: []
       })
     ).toStrictEqual({ type: "delete-rows", start: 2, count: 2 });
   });
@@ -299,7 +317,8 @@ describe("invertSheetMutation — 纯算术分支的形状", () => {
         count: 3,
         cells: [{ 0: { v: "z" } }, {}, {}],
         meta: [{ w: 80 }, undefined, undefined],
-        tables: {}
+        tables: {},
+        mergesBefore: []
       })
     ).toStrictEqual({ type: "delete-columns", start: 1, count: 3 });
   });
@@ -489,44 +508,30 @@ describe("invertSheetMutation — 参数校验前置到 prepare", () => {
     ).not.toThrow();
   });
 
-  it("存在合并区时，九个结构变更在求逆时就被拒，且与 commit 期抛的是同一个错", () => {
-    // 每条配一个"施加它会走到的 SheetModel 方法"，逐对比较两处抛出的错误。
-    // restore-* 配的是 insertRows / insertColumns——apply 就是那么施加它们的。
+  /**
+   * 任务四之后，九个结构操作里**只剩 `reorder-rows`** 在存在合并区时无条件拒绝
+   * （`SheetModel.#assertNoMerges` 仍然只服务它）。另外八个已经改用 `merges.ts`
+   * 的 `relocateMergesFor*` 正确搬移合并区——插入/删除/`restore-*` 永远能搬，
+   * 两个 `move` 成员只在跨越块边界时才拒绝，见下面"合并区"那一组用例。
+   */
+  it("reorder-rows：存在合并区时仍然无条件拒绝，且与 commit 期抛的是同一个错", () => {
     const order = Int32Array.from([2, 0, 1, 4, 3]);
-    const pairs: readonly (readonly [SheetMutation, (model: SheetModel) => void])[] = [
-      [{ type: "insert-rows", start: 1, rows: [{}] }, (m) => m.insertRows(1, 1)],
-      [{ type: "delete-rows", start: 1, count: 1 }, (m) => m.deleteRows(1, 1)],
-      [{ type: "restore-rows", start: 1, rows: [{}], meta: [undefined], tables: {} }, (m) => m.insertRows(1, 1)],
-      [{ type: "move-rows", start: 1, count: 2, target: 4 }, (m) => m.moveRows(1, 2, 4)],
-      [{ type: "reorder-rows", order }, (m) => m.reorderRows(order)],
-      [{ type: "insert-columns", start: 1, count: 1 }, (m) => m.insertColumns(1, 1)],
-      [{ type: "delete-columns", start: 1, count: 1 }, (m) => m.deleteColumns(1, 1)],
-      [
-        { type: "restore-columns", start: 1, count: 1, cells: [{}], meta: [undefined], tables: {} },
-        (m) => m.insertColumns(1, 1)
-      ],
-      [{ type: "move-columns", start: 0, count: 1, target: 3 }, (m) => m.moveColumns(0, 1, 3)]
-    ];
-    for (const [mutation, commit] of pairs) {
-      const fromPrepare = grabError(() => invertSheetMutation(mergedFixture(), mutation));
-      const fromCommit = grabError(() => {
-        commit(mergedFixture());
-      });
-      expect(fromCommit).toBeInstanceOf(CyExcelError);
-      expect(fromPrepare?.constructor).toBe(fromCommit?.constructor);
-      expect(fromPrepare?.message).toBe(fromCommit?.message);
-    }
+    const fromPrepare = grabError(() => invertSheetMutation(mergedFixture(), { type: "reorder-rows", order }));
+    const fromCommit = grabError(() => {
+      mergedFixture().reorderRows(order);
+    });
+    expect(fromCommit).toBeInstanceOf(CyExcelError);
+    expect(fromPrepare?.constructor).toBe(fromCommit?.constructor);
+    expect(fromPrepare?.message).toBe(fromCommit?.message);
 
     // 格子变更不受合并区阻拦——commit 期的 setRecord / deleteCell 也不查
     expect(() =>
       invertSheetMutation(mergedFixture(), { type: "set-cell", row: 0, column: 0, record: { v: 1 } })
     ).not.toThrow();
+  });
 
-    // 先后顺序也要与 commit 期一致。**任务四之前 `reorderRows` 是这里唯一的例外**
-    // ——七个方法里只有它先查合并区。任务四把它改成与另外六个同序（先校验参数、
-    // 再查合并区），理由就是那六个共用的注释 ①："参数非法与有没有合并区无关，
-    // 先报 `MutationNotSupported` 会误导调用方"，这条理由对排列同样成立。
-    // 下面三条各钉一段顺序，抄错就红。
+  it("先后顺序与 commit 期一致：move 先校验参数、reorder 先校验排列，合并区都排在后面", () => {
+    // move-rows：target 落在块内是参数错，与合并区无关，必须先报这条
     const paramsFirst = grabError(() => invertSheetMutation(mergedFixture(), { type: "move-rows", start: 1, count: 2, target: 2 }));
     const paramsFirstCommit = grabError(() => mergedFixture().moveRows(1, 2, 2));
     expect(paramsFirst).toBeInstanceOf(RangeError);
@@ -551,6 +556,185 @@ describe("invertSheetMutation — 参数校验前置到 prepare", () => {
     expect(permutationFirst).toBeInstanceOf(RangeError);
     expect(permutationFirst?.message).toMatch(/not a permutation/);
     expect(permutationFirst?.message).toBe(permutationFirstCommit?.message);
+  });
+});
+
+/**
+ * 决策 4：插入/删除/`restore-*`（八个非 `reorder-rows` 的结构成员里的六个）永远
+ * 能搬，不再因为合并区存在就拒绝——`relocateMergesForInsert` / `relocateMergesForDelete`
+ * 是 `(现有合并区, 操作参数)` 的纯函数，不会失败。`mergedFixture` 的合并区是
+ * `[0,0]`-`[1,1]`（rows 0..1 × columns 0..1）。
+ */
+describe("invertSheetMutation — 插入/删除/restore 不再因合并区被拒绝，而是正确搬移", () => {
+  it("insert-rows：插入点落在合并区内部，合并区被撑大，往返后逐字段相等", () => {
+    const workbook = mergedWorkbookFixture();
+    const model = workbook.sheet();
+    const before = workbook.toSnapshot();
+    const mutation: SheetMutation = { type: "insert-rows", start: 1, rows: [{}] };
+    const inverse = invertSheetMutation(model, mutation);
+    apply(model, mutation);
+    // 插入点 1 严格落在 [0,1] 内部——relocateIntervalForInsert 的撑大分支
+    expect(model.merges()).toStrictEqual([{ startRow: 0, startColumn: 0, endRow: 2, endColumn: 1 }]);
+    apply(model, inverse);
+    expect(workbook.toSnapshot()).toStrictEqual(before);
+  });
+
+  it("delete-rows：删除区间部分落在合并区内，合并区收缩，往返后逐字段相等", () => {
+    const workbook = mergedWorkbookFixture();
+    const model = workbook.sheet();
+    const before = workbook.toSnapshot();
+    const mutation: SheetMutation = { type: "delete-rows", start: 1, count: 1 };
+    const inverse = invertSheetMutation(model, mutation);
+    apply(model, mutation);
+    // 删掉合并区的下沿那一行——relocateIntervalForDelete 的"部分重叠"分支，收缩为 [0,0]
+    expect(model.merges()).toStrictEqual([{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }]);
+    apply(model, inverse);
+    expect(workbook.toSnapshot()).toStrictEqual(before);
+  });
+
+  it("insert-columns / delete-columns：列轴同理，不再因合并区被拒绝", () => {
+    const model = mergedFixture();
+    expect(() => invertSheetMutation(model, { type: "insert-columns", start: 1, count: 1 })).not.toThrow();
+    expect(() => invertSheetMutation(model, { type: "delete-columns", start: 1, count: 1 })).not.toThrow();
+  });
+
+  it("restore-rows / restore-columns：走的也是 insertRows / insertColumns，同样不再被拒绝", () => {
+    const model = mergedFixture();
+    expect(() =>
+      invertSheetMutation(model, {
+        type: "restore-rows",
+        start: 1,
+        rows: [{}],
+        meta: [undefined],
+        tables: {},
+        mergesBefore: []
+      })
+    ).not.toThrow();
+    expect(() =>
+      invertSheetMutation(model, {
+        type: "restore-columns",
+        start: 1,
+        count: 1,
+        cells: [{}],
+        meta: [undefined],
+        tables: {},
+        mergesBefore: []
+      })
+    ).not.toThrow();
+  });
+});
+
+/**
+ * 决策 4：两个 `move` 成员可能因为合并区**跨越移动块边界**而失败——合并区既不
+ * 完全落在块内、也不完全落在块外，`relocateMergesForMove` 返回 `ok: false`。
+ * `assertMergesDoNotStraddleMove` 与 `assertNoMerges`（存在即拒）不同，只在这
+ * 一种情形下才抛，且错误码与消息与 `SheetModel.moveRows` / `moveColumns` 在
+ * commit 期抛出的逐字一致。
+ */
+describe("invertSheetMutation — move 合并区跨越移动块边界时抛 MergeSpansMoveBoundary", () => {
+  it("move-rows：合并区 [0,1] 与移动块 [1,2] 只有第 1 行重叠，跨越边界", () => {
+    const mutation: SheetMutation = { type: "move-rows", start: 1, count: 2, target: 5 };
+    const fromPrepare = grabError(() => invertSheetMutation(mergedFixture(), mutation));
+    const fromCommit = grabError(() => mergedFixture().moveRows(1, 2, 5));
+    expect(fromCommit).toBeInstanceOf(CyExcelError);
+    expect((fromCommit as CyExcelError).code).toBe(CyExcelErrorCode.MergeSpansMoveBoundary);
+    expect(fromPrepare?.constructor).toBe(fromCommit?.constructor);
+    expect(fromPrepare?.message).toBe(fromCommit?.message);
+  });
+
+  it("move-columns：合并区 [0,1] 与移动块 [1,2] 只有第 1 列重叠，跨越边界", () => {
+    const mutation: SheetMutation = { type: "move-columns", start: 1, count: 2, target: 4 };
+    const fromPrepare = grabError(() => invertSheetMutation(mergedFixture(), mutation));
+    const fromCommit = grabError(() => mergedFixture().moveColumns(1, 2, 4));
+    expect(fromCommit).toBeInstanceOf(CyExcelError);
+    expect((fromCommit as CyExcelError).code).toBe(CyExcelErrorCode.MergeSpansMoveBoundary);
+    expect(fromPrepare?.constructor).toBe(fromCommit?.constructor);
+    expect(fromPrepare?.message).toBe(fromCommit?.message);
+  });
+
+  it("move-rows：合并区完全落在移动块内，跟着块走，不抛错", () => {
+    // 块 [0,2] 完全覆盖合并区 [0,1]——containedInBlock 分支，不是跨越边界
+    expect(() =>
+      invertSheetMutation(mergedFixture(), { type: "move-rows", start: 0, count: 3, target: 6 })
+    ).not.toThrow();
+  });
+
+  it("move-rows：合并区完全落在移动块外，也不抛错", () => {
+    // 合并区 [0,1] 与块 [3,4] 不相交——outsideBlock 分支
+    expect(() =>
+      invertSheetMutation(mergedFixture(), { type: "move-rows", start: 3, count: 2, target: 0 })
+    ).not.toThrow();
+  });
+});
+
+/**
+ * 决策 3：`delete-rows` / `delete-columns` 的求逆必须捕获 `mergesBefore`，理由是
+ * "全覆盖消失"这个信息丢失场景——`insert` 无从凭空造出一条被删掉的合并区。这里的
+ * 反例是决策 3 文本里手算的那个场景的一个具体实例：删除范围**全覆盖**合并区，
+ * 合并区从数组里整条消失，撤销必须能把它精确复原，而不是靠"重新插入"能凑出来的。
+ */
+describe("invertSheetMutation — delete-rows/delete-columns 全覆盖合并区的撤销（决策 3）", () => {
+  it("delete-rows：删除范围全覆盖合并区，合并区消失，撤销精确复原", () => {
+    const workbook = mergedWorkbookFixture();
+    const model = workbook.sheet();
+    const before = workbook.toSnapshot();
+    const mutation: SheetMutation = { type: "delete-rows", start: 0, count: 2 };
+    const inverse = invertSheetMutation(model, mutation);
+    // 求逆必须捕获施加删除之前的整份合并区数组
+    expect((inverse as { mergesBefore: readonly unknown[] }).mergesBefore).toStrictEqual([
+      { startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }
+    ]);
+    apply(model, mutation);
+    // 全覆盖：delStart(0) <= mStart(0) && delEnd(1) >= mEnd(1)，合并区整条消失
+    expect(model.merges()).toStrictEqual([]);
+    apply(model, inverse);
+    expect(model.merges()).toStrictEqual([{ startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }]);
+    expect(workbook.toSnapshot()).toStrictEqual(before);
+  });
+
+  it("delete-columns：同理，列轴的合并区全覆盖消失后也能精确复原", () => {
+    const workbook = mergedWorkbookFixture();
+    const model = workbook.sheet();
+    const before = workbook.toSnapshot();
+    const mutation: SheetMutation = { type: "delete-columns", start: 0, count: 2 };
+    const inverse = invertSheetMutation(model, mutation);
+    expect((inverse as { mergesBefore: readonly unknown[] }).mergesBefore).toStrictEqual([
+      { startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }
+    ]);
+    apply(model, mutation);
+    expect(model.merges()).toStrictEqual([]);
+    apply(model, inverse);
+    expect(model.merges()).toStrictEqual([{ startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }]);
+    expect(workbook.toSnapshot()).toStrictEqual(before);
+  });
+});
+
+/**
+ * 决策 1：`set-merges` 是整体替换的哑变更，求逆读的是施加前的整份 `merges()`——
+ * 与 `set-row-meta` 的 `meta: model.getRowMeta(…)` 同一个模式。
+ */
+describe("invertSheetMutation — set-merges", () => {
+  it("往返后逐字段相等", () => {
+    expectExactRoundTrip({
+      type: "set-merges",
+      merges: [{ startRow: 2, startColumn: 2, endRow: 3, endColumn: 3 }]
+    });
+  });
+
+  it("逆是施加前的那份合并区数组，不是施加后的", () => {
+    const model = mergedFixture();
+    const inverse = invertSheetMutation(model, {
+      type: "set-merges",
+      merges: [{ startRow: 3, startColumn: 3, endRow: 4, endColumn: 4 }]
+    });
+    expect(inverse).toStrictEqual({
+      type: "set-merges",
+      merges: [{ startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }]
+    });
+  });
+
+  it("求逆不改模型", () => {
+    expectNonInvasive({ type: "set-merges", merges: [{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 }] });
   });
 });
 
@@ -650,7 +834,8 @@ describe("invertSheetMutation — 任务三那道临时守卫已撤除", () => {
       start: 1,
       rows: [{ 0: { v: "a1" }, 2: { v: "c1", s: "s1" } }, { 1: { v: "b2", f: "=1+1" } }],
       meta: [{ h: 40 }, undefined],
-      tables: sideTables({ "com.acme.rowKeys": ["k1", undefined] })
+      tables: sideTables({ "com.acme.rowKeys": ["k1", undefined] }),
+      mergesBefore: []
     });
 
     expect(invertSheetMutation(model, { type: "delete-columns", start: 0, count: 1 })).toStrictEqual({
@@ -659,7 +844,8 @@ describe("invertSheetMutation — 任务三那道临时守卫已撤除", () => {
       count: 1,
       cells: [{ 0: { v: "a0" }, 1: { v: "a1" }, 3: { v: "a3" } }],
       meta: [{ w: 100 }],
-      tables: sideTables({ "com.acme.colTags": ["t0"] })
+      tables: sideTables({ "com.acme.colTags": ["t0"] }),
+      mergesBefore: []
     });
   });
 });
@@ -798,7 +984,8 @@ describe("invertSheetMutation — restore-* 的 tables 校验", () => {
       rows: [{}, {}],
       meta: [undefined, undefined],
       // 两行的 restore 带了三条条目，第三条会落到 insert 往下推的那一行上
-      tables: sideTables({ "com.acme.rowKeys": ["a", "b", "c"] })
+      tables: sideTables({ "com.acme.rowKeys": ["a", "b", "c"] }),
+      mergesBefore: []
     };
     const error = grabError(() => invertSheetMutation(model, mutation));
     expect(error).toBeInstanceOf(CyExcelError);
@@ -813,7 +1000,8 @@ describe("invertSheetMutation — restore-* 的 tables 校验", () => {
         start: 1,
         rows: [{}],
         meta: [undefined],
-        tables: sideTables({ "com.acme.nope": ["a"] })
+        tables: sideTables({ "com.acme.nope": ["a"] }),
+        mergesBefore: []
       })
     );
     expect(error).toBeInstanceOf(CyExcelError);
@@ -828,7 +1016,8 @@ describe("invertSheetMutation — restore-* 的 tables 校验", () => {
         rows: [{}],
         meta: [undefined],
         // 这是一张列表，拿它的条目去写行下标
-        tables: sideTables({ "com.acme.colTags": ["a"] })
+        tables: sideTables({ "com.acme.colTags": ["a"] }),
+        mergesBefore: []
       })
     );
     expect(error).toBeInstanceOf(CyExcelError);

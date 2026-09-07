@@ -70,18 +70,37 @@ export type SheetMutation =
   | { readonly type: "set-range"; readonly range: CellRange; readonly records: readonly (readonly (CellRecord | undefined)[])[] }
   | { readonly type: "insert-rows"; readonly start: number; readonly rows: readonly RowCells[] }
   | { readonly type: "delete-rows"; readonly start: number; readonly count: number }
-  | { readonly type: "restore-rows"; readonly start: number; readonly rows: readonly RowCells[]; readonly meta: readonly (RowMeta | undefined)[]; readonly tables: SideTableEntries }
+  | {
+      readonly type: "restore-rows";
+      readonly start: number;
+      readonly rows: readonly RowCells[];
+      readonly meta: readonly (RowMeta | undefined)[];
+      readonly tables: SideTableEntries;
+      readonly mergesBefore: readonly CellRange[];
+    }
   | { readonly type: "move-rows"; readonly start: number; readonly count: number; readonly target: number }
   | { readonly type: "reorder-rows"; readonly order: Int32Array }
   | { readonly type: "insert-columns"; readonly start: number; readonly count: number }
   | { readonly type: "delete-columns"; readonly start: number; readonly count: number }
-  | { readonly type: "restore-columns"; readonly start: number; readonly count: number; readonly cells: readonly ColumnCells[]; readonly meta: readonly (ColumnMeta | undefined)[]; readonly tables: SideTableEntries }
+  | {
+      readonly type: "restore-columns";
+      readonly start: number;
+      readonly count: number;
+      readonly cells: readonly ColumnCells[];
+      readonly meta: readonly (ColumnMeta | undefined)[];
+      readonly tables: SideTableEntries;
+      readonly mergesBefore: readonly CellRange[];
+    }
   | { readonly type: "move-columns"; readonly start: number; readonly count: number; readonly target: number }
   // `meta: undefined` 表示"这一行/列原先在 `rowData` / `columnData` 里没有条目"，
   // 施加下去是**删条目**，不是写一个空的 `{}`——与 `set-cell` 的
   // `record: undefined` 同一口径（spec §11 不变量 1：不存空记录，稀疏性依赖这点）。
   | { readonly type: "set-row-meta"; readonly row: number; readonly meta: RowMeta | undefined }
-  | { readonly type: "set-column-meta"; readonly column: number; readonly meta: ColumnMeta | undefined };
+  | { readonly type: "set-column-meta"; readonly column: number; readonly meta: ColumnMeta | undefined }
+  // 合并区是整体替换的哑变更，与 `set-row-meta` / `set-column-meta` 同一类
+  // （见下面 `isStructuralSheetMutation` 的口径）：不移动任何下标，只是换一整份
+  // 状态。求逆同样是"读现在的整份 `merges()`"，见 `invert.ts`。
+  | { readonly type: "set-merges"; readonly merges: readonly CellRange[] };
 
 const STRUCTURAL = new Set<SheetMutation["type"]>([
   "insert-rows",

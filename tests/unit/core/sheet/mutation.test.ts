@@ -37,7 +37,7 @@ describe("SheetMutation — 行", () => {
       { type: "delete-rows", start: 0, count: 1 },
       { type: "move-rows", start: 0, count: 1, target: 2 },
       { type: "reorder-rows", order: Int32Array.from([0]) },
-      { type: "restore-rows", start: 0, rows: [], meta: [], tables: {} }
+      { type: "restore-rows", start: 0, rows: [], meta: [], tables: {}, mergesBefore: [] }
     ];
     for (const m of rows) {
       expect(isStructuralSheetMutation(m)).toBe(true);
@@ -62,7 +62,8 @@ describe("SheetMutation — 列", () => {
       count: 1,
       cells: [{ 0: { v: "x" } }],
       meta: [{ w: 140 }],
-      tables: {}
+      tables: {},
+      mergesBefore: []
     };
     expect(m.meta[0]?.w).toBe(140);
   });
@@ -72,7 +73,7 @@ describe("SheetMutation — 列", () => {
       { type: "insert-columns", start: 0, count: 1 },
       { type: "delete-columns", start: 0, count: 1 },
       { type: "move-columns", start: 0, count: 1, target: 2 },
-      { type: "restore-columns", start: 0, count: 1, cells: [], meta: [], tables: {} }
+      { type: "restore-columns", start: 0, count: 1, cells: [], meta: [], tables: {}, mergesBefore: [] }
     ];
     for (const m of columns) {
       expect(isStructuralSheetMutation(m)).toBe(true);

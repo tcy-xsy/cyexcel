@@ -3,6 +3,7 @@ import { assertValidRowOrder, invertRowOrder } from "../layout/rowOrder";
 import { validateAxisChange } from "../layout/structuralChange";
 import type { CellRange } from "../types";
 import { assertRestoreTablesAreWritable } from "./apply";
+import { relocateMergesForMove } from "./merges";
 import type { ColumnCells, RowCells, SheetMutation, SideTableEntries } from "./mutation";
 import type { SheetModel } from "./SheetModel";
 import type { CellRecord, ColumnMeta, RowMeta } from "./types";
@@ -74,7 +75,11 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
         start: mutation.start,
         rows,
         meta,
-        tables: capturePluginTables(model, "row", mutation.start, mutation.count)
+        tables: capturePluginTables(model, "row", mutation.start, mutation.count),
+        // 施加删除之前的完整合并区数组。`delete` 会让全覆盖被删区间的合并区整条
+        // 消失，`insert` 无从凭空造出一条——这是真正的信息丢失（决策 3），必须捕获
+        // 整份数组，而不是只捕获消失掉的那几条。
+        mergesBefore: model.merges()
       };
     }
 
@@ -112,7 +117,9 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
         count: mutation.count,
         cells,
         meta,
-        tables: capturePluginTables(model, "column", mutation.start, mutation.count)
+        tables: capturePluginTables(model, "column", mutation.start, mutation.count),
+        // 同上——列轴同理，见 `delete-rows` 分支的注释。
+        mergesBefore: model.merges()
       };
     }
 
@@ -133,6 +140,11 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
 
     case "set-column-meta":
       return { type: "set-column-meta", column: mutation.column, meta: model.getColumnMeta(mutation.column) };
+
+    // 与 `set-row-meta` / `set-column-meta` 同一套路：`set-merges` 是整体替换的
+    // 哑变更，求逆不需要算增量，只需要带上施加之前的整份状态。
+    case "set-merges":
+      return { type: "set-merges", merges: model.merges() };
   }
 }
 
@@ -155,7 +167,10 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
  * start/count/target），所以逐条对着 `SheetModel.reorderRows` 的 commit 期检查复制
  * **顺序**、复用**同一批函数**——见下面那一支的注释。
  *
- * 合并区这条**模型状态**前置条件，九个结构成员一个不落地查，见 `assertNoMerges`。
+ * 合并区这条**模型状态**前置条件，九个结构成员按 T1（`merges.ts`）的搬移能力分两类：
+ * `reorderRows` 一个不落地查（`assertNoMerges`，合并区存在就拒）；插入、删除与
+ * `restore-*` 永远能搬，不再查；两个 `move` 成员可能因跨越块边界失败，改查
+ * `assertMergesDoNotStraddleMove`。
  *
  * **`restore-rows` / `restore-columns` 的 `tables` 三条不变量，4B 补上了**（4A 记的
  * 是"4B 的前置条件，不是可选项"）。促成它的不是"出现了外部生产者"——这两个成员今天
@@ -165,8 +180,7 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
  * （`writeTables`）待在同一个文件里，两处因此不会分叉。
  *
  * 仍然不校验的只剩 `restore-*` 的 `start` 与行列数：那部分按构造合法（由一条已经过
- * 上面校验的 delete 产出）。一条参数就非法、同时又撞上合并区的 `restore-*` 会在这里
- * 先报合并区，而 commit 期先报参数；对按构造合法的那些（也就是全部）两边一致。
+ * 上面校验的 delete 产出）。
  */
 function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): void {
   switch (mutation.type) {
@@ -190,20 +204,24 @@ function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): 
       assertNoMerges(model, "reorderRows");
       return;
     }
+    // 插入/删除永远能搬（`relocateMergesForInsert` / `relocateMergesForDelete` 是
+    // `(现有合并区, 操作参数)` 的纯函数，不会失败），所以这里不再查合并区——与
+    // `SheetModel.insertRows` / `deleteRows` 的 commit 期口径一致（T2）。
     case "insert-rows":
       validateAxisChange(
         { axis: "row", operation: "insert", start: mutation.start, count: mutation.rows.length },
         model.rowCount()
       );
-      assertNoMerges(model, "insertRows");
       return;
     case "delete-rows":
       validateAxisChange(
         { axis: "row", operation: "delete", start: mutation.start, count: mutation.count },
         model.rowCount()
       );
-      assertNoMerges(model, "deleteRows");
       return;
+    // 移动可能因为合并区跨越块边界而失败（`relocateMergesForMove` 的
+    // `ok: false` 分支），所以这里换成 `assertMergesDoNotStraddleMove`——与
+    // `assertNoMerges` 不同，它读的是 T1 的搬移结果，不是"存在即拒绝"。
     case "move-rows":
       validateAxisChange(
         {
@@ -216,21 +234,19 @@ function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): 
         },
         model.rowCount()
       );
-      assertNoMerges(model, "moveRows");
+      assertMergesDoNotStraddleMove(model, "row", mutation.start, mutation.count, mutation.target);
       return;
     case "insert-columns":
       validateAxisChange(
         { axis: "column", operation: "insert", start: mutation.start, count: mutation.count },
         model.columnCount()
       );
-      assertNoMerges(model, "insertColumns");
       return;
     case "delete-columns":
       validateAxisChange(
         { axis: "column", operation: "delete", start: mutation.start, count: mutation.count },
         model.columnCount()
       );
-      assertNoMerges(model, "deleteColumns");
       return;
     case "move-columns":
       validateAxisChange(
@@ -244,59 +260,75 @@ function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): 
         },
         model.columnCount()
       );
-      assertNoMerges(model, "moveColumns");
+      assertMergesDoNotStraddleMove(model, "column", mutation.start, mutation.count, mutation.target);
       return;
-    // `restore-*` 的 `start` 与行列数不在这里校验（见上），但另外两条要查：合并区
-    // ——施加它们走的是 `insertRows` / `insertColumns`，合并区存在时正是那两个方法
-    // 在 commit 期拒绝；以及 `tables` 的三条不变量。
-    //
-    // 顺序上合并区在前，与六个轴向成员"先参数、后合并区"看着相反，其实是同一条
-    // 口径：那六个先报的是**变更自身**的参数错，这里的 `tables` 检查读了模型
-    // （表登记状态），属于前置条件那一类，与合并区同级，排在它后面。
+    // `restore-*` 的 `start` 与行列数不在这里校验（见上）。合并区这条前置条件也
+    // 不再查——施加它们走的是 `insertRows` / `insertColumns`，与那两条一样永远能
+    // 搬；只剩 `tables` 的三条不变量要查。
     case "restore-rows":
-      assertNoMerges(model, "insertRows");
       assertRestoreTablesAreWritable(model, "row", mutation.tables, mutation.rows.length);
       return;
     case "restore-columns":
-      assertNoMerges(model, "insertColumns");
       assertRestoreTablesAreWritable(model, "column", mutation.tables, mutation.count);
       return;
-    // 格子与元数据变更：`setRecord` / `deleteCell` / `setRowMeta` / `setColumnMeta`
-    // 在 commit 期不查合并区，这里也不查。
+    // 格子、元数据、合并区变更：`setRecord` / `deleteCell` / `setRowMeta` /
+    // `setColumnMeta` / `setMerges` 在 commit 期不查合并区，这里也不查。
     case "set-cell":
     case "set-range":
     case "set-row-meta":
     case "set-column-meta":
+    case "set-merges":
       return;
   }
 }
 
 /**
- * 合并区存在时，九个结构操作在 commit 期全都会被 `SheetModel.#assertNoMerges` 拒掉
- * （"合并区跟着结构操作正确搬移是一整块 Excel 语义……属于阶段 5。在那之前**拒绝**
- * 而不是错着搬"）。这里把同一条前置条件提到 prepare 期。
+ * 合并区存在时无条件拒绝。**任务四之后，九个结构操作里只剩 `reorderRows` 会被这样
+ * 拒绝**——合并区跟着排列正确搬移不在这一阶段的范围内（"静默错搬比拒绝糟得多"），
+ * 其余八个（六个轴向方法与两个 `restore-*`）已经改用 `merges.ts` 的 `relocateMergesFor*`
+ * 正确搬移合并区，见 `SheetModel` 的六个结构方法与本文件的 `assertMergesDoNotStraddleMove`。
  *
  * **为什么这是安全的等价，而不是一次抢跑。** `SheetMutation` 没有任何改合并区的
  * 成员，所以合并区在一个 transaction 之内不会变——prepare 期看到的合并区状态与
  * commit 期必然相同，提前拒绝与到时候拒绝是同一个判断。
  *
- * **错误码与消息逐字照抄 `#assertNoMerges`。** 那个方法是私有的，这里只能复制这行
- * 消息；复制就会分叉，所以测试直接比对两处抛出的 constructor 与 message 是否相等，
- * 把这份复制钉住（`occupied row … would be silently dropped` 那条同理）。
+ * **错误码与消息逐字照抄 `SheetModel.#assertNoMerges`。** 那个方法是私有的，这里只能
+ * 复制这行消息；复制就会分叉，所以测试直接比对两处抛出的 constructor 与 message 是否
+ * 相等，把这份复制钉住。
  *
- * **调用位置逐个跟着 `SheetModel` 走。** 七个方法现在口径一致：先校验参数、后查
- * 合并区，理由是六个轴向方法共用的那条注释"① 放在 `#assertNoMerges` 之前——参数
- * 非法与有没有合并区无关，先报 `MutationNotSupported` 会误导调用方"。任务三交付时
- * `reorderRows` 是唯一的例外（它先查合并区），这里当时只能逐成员镜像那个例外；
- * 任务四把 `SheetModel.reorderRows` 拉齐到那条理由上，两边一起改——**改的是
- * `SheetModel`，不是让求逆这一侧偷偷与它分叉**，prepare 与 commit 仍然对同一个输入
- * 给同一个错误。`restore-*` 走的是 `insertRows` / `insertColumns`，跟着那两个走。
+ * **调用位置跟着 `SheetModel.reorderRows` 走**：先校验参数（extent、排列），后查合并区
+ * ——理由是"参数非法与有没有合并区无关，先报 `MutationNotSupported` 会误导调用方"，
+ * prepare 与 commit 仍然对同一个输入给同一个错误。
  */
 function assertNoMerges(model: SheetModel, operation: string): void {
   if (model.merges().length > 0) {
     throw new CyExcelError(
       CyExcelErrorCode.MutationNotSupported,
       `${operation} is not supported while merged ranges exist`
+    );
+  }
+}
+
+/**
+ * `move-rows` / `move-columns` 的合并区前置条件：能搬则搬，只有合并区**跨越移动块
+ * 边界**（既不完全落在块内、也不完全落在块外）时才拒绝——`relocateMergesForMove` 的
+ * `ok: false` 分支。与 `assertNoMerges`（存在即拒）不同，这里读的是 T1 的搬移结果。
+ *
+ * 错误码与消息与 `SheetModel.moveRows` / `moveColumns` 在 commit 期抛出的逐字一致
+ * （同一个理由：两处不得对同一个输入给出两个答案）。
+ */
+function assertMergesDoNotStraddleMove(
+  model: SheetModel,
+  axis: "row" | "column",
+  start: number,
+  count: number,
+  target: number
+): void {
+  const relocated = relocateMergesForMove(model.merges(), axis, start, count, target);
+  if (!relocated.ok) {
+    throw new CyExcelError(
+      CyExcelErrorCode.MergeSpansMoveBoundary,
+      `move${axis === "row" ? "Rows" : "Columns"} would split a merged range`
     );
   }
 }
