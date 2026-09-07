@@ -60,6 +60,7 @@ function snapshotChange(change: SemanticChange): SemanticChange {
     case "row-structure":
     case "column-structure":
     case "column-layout":
+    case "merge-layout":
     case "full-reset":
       return Object.freeze({ ...change });
   }
@@ -185,6 +186,14 @@ export function compileDirtySet(changes: readonly SemanticChange[]): DirtySet {
         domCells = columnHeader = rowHeader = domHeaders = true;
         content = "full";
         skeleton = skeleton === "row-axis" ? "full" : "column-axis";
+        selection = true;
+        break;
+      case "merge-layout":
+        // Narrower than `column-layout`: merges don't move row/column
+        // geometry, so the headers stay untouched — only the cell content
+        // and selection outline can look different after a merge/unmerge.
+        domCells = true;
+        content = "full";
         selection = true;
         break;
       case "full-reset":

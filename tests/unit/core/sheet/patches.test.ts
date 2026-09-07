@@ -12,7 +12,7 @@ function onlyPatch(mutation: SheetMutation, space: SheetAxisSpace = SPACE): Patc
   return patches[0] as Patch;
 }
 
-describe("changesForSheetMutation — 十三个成员一条不落", () => {
+describe("changesForSheetMutation — 十四个成员一条不落", () => {
   const table: readonly { mutation: SheetMutation; patchType: Patch["type"] }[] = [
     { mutation: { type: "set-cell", row: 0, column: 0, record: { v: 1 } }, patchType: "cell-value" },
     {
@@ -54,13 +54,20 @@ describe("changesForSheetMutation — 十三个成员一条不落", () => {
     },
     { mutation: { type: "move-columns", start: 0, count: 1, target: 3 }, patchType: "column-structure" },
     { mutation: { type: "set-row-meta", row: 0, meta: { h: 20 } }, patchType: "row-layout" },
-    { mutation: { type: "set-column-meta", column: 0, meta: { w: 80 } }, patchType: "column-layout" }
+    { mutation: { type: "set-column-meta", column: 0, meta: { w: 80 } }, patchType: "column-layout" },
+    {
+      mutation: {
+        type: "set-merges",
+        merges: [{ startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }]
+      },
+      patchType: "merge-layout"
+    }
   ];
 
   it("每个成员都恰好产出一条补丁，类型按 §5 的映射表", () => {
     // 反空洞：上面那张表少抄一个成员，这一条先红。TypeScript 只保证 `switch` 穷尽，
-    // 保证不了这里真的把十三个都过了一遍。
-    expect(new Set(table.map((entry) => entry.mutation.type)).size).toBe(13);
+    // 保证不了这里真的把十四个都过了一遍。
+    expect(new Set(table.map((entry) => entry.mutation.type)).size).toBe(14);
     for (const entry of table) {
       expect(onlyPatch(entry.mutation).type).toBe(entry.patchType);
     }
@@ -207,23 +214,14 @@ describe("changesForSheetMutation — `set-column-meta` → `column-layout`", ()
 });
 
 /**
- * `set-merges` 目前映射到 `full-reset`，这是 T3+T4 落地时为了让 `switch` 穷尽而打的
- * **临时占位**（见 `patches.ts` 该分支上方的注释）——`Patch` 还没有专用的
- * `merge-layout` 变体，那是 T5 的工作（`doc/merge-cells-plan.md` §Task 5）。
- *
- * **这条用例断言的是当前的临时占位行为，不是最终行为。** `doc/architecture.md:207`
- * 规定 `full-reset` 只能用于替换数据源、主题等低频操作，合并单元格是高频交互，
- * 现在这样映射本身就是对那条限制的临时违反。T5 把 `merge-layout` 接上之后，这条
- * 用例要跟着改成断言 `{ type: "merge-layout" }`，不能让它继续绿下去而误导后来的人
- * 以为 `full-reset` 就是设计好的最终形态。
- *
- * 刻意不把它并进上面"十三个成员一条不落"的穷举表——那张表的所有权留给 T5（评审
- * 已认可），这里单独写一条小用例就够了。
+ * `merge-layout` 比照 `column-layout`：不带任何字段，是纯粹的"发生过合并区变化"
+ * 标记（`doc/merge-cells-plan.md` §Task 5）。传入的 `merges` 载荷本身不出现在补丁
+ * 里——下游按全量重画处理，不需要知道具体是哪些区被合并/取消合并了。
  */
-describe("changesForSheetMutation — `set-merges` 目前的临时占位（T5 落地前）", () => {
-  it("映射到 full-reset——T5 补上 merge-layout 之后这条要改成断言 merge-layout", () => {
+describe("changesForSheetMutation — `set-merges` → `merge-layout`", () => {
+  it("不带任何字段，`merges` 载荷不会泄漏进补丁", () => {
     expect(
       onlyPatch({ type: "set-merges", merges: [{ startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }] })
-    ).toStrictEqual({ type: "full-reset" });
+    ).toStrictEqual({ type: "merge-layout" });
   });
 });

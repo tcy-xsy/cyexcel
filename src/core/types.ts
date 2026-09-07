@@ -60,6 +60,13 @@ export type Patch =
     }
   | { readonly type: "column-layout"; readonly column: number }
   /**
+   * A whole-sheet "merges changed" marker, carrying no fields — like
+   * `column-layout`, it does not describe a value change or an index shift,
+   * so downstream treats it as a full repaint rather than an incremental
+   * range (doc/merge-cells-plan.md §Task 5).
+   */
+  | { readonly type: "merge-layout" }
+  /**
    * One atomic row-height mutation. `rows` names every changed row while
    * `range` starts at the earliest one because its geometry shift affects
    * every row below it.

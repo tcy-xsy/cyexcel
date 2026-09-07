@@ -127,6 +127,19 @@ describe("compileDirtySet", () => {
     });
   });
 
+  it("marks content and selection dirty for a merge-layout fact, but leaves headers untouched", () => {
+    // Narrower than column-layout: merges don't move row/column geometry, so
+    // unlike the column-axis facts below, the header bands stay clean.
+    const dirty = compileDirtySet([{ type: "merge-layout" }]);
+
+    expect(dirty).toEqual({
+      content: "full",
+      skeleton: "none",
+      selection: true,
+      presentation: { domCells: true, columnHeader: false, rowHeader: false, domHeaders: false }
+    });
+  });
+
   it("escalates every band for a column-axis fact, matching the old per-patch invalidateAll", () => {
     const columnAxisFacts: readonly SemanticChange[] = [
       { type: "column-structure", operation: "insert", start: 0, count: 1 },

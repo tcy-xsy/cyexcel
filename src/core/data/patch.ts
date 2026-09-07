@@ -53,6 +53,8 @@ function patchKey(patch: KeyedPatch): string {
         patch.range.endRow,
         patch.range.endColumn
       ].join(":");
+    case "merge-layout":
+      return "merge-layout";
     case "full-reset":
       return "full-reset";
   }

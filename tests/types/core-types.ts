@@ -39,6 +39,8 @@ function describeChange(value: SemanticChange): string {
       return `column-structure:${value.operation}:${value.start}:${value.count}`;
     case "column-layout":
       return `column-layout:${value.column}`;
+    case "merge-layout":
+      return "merge-layout";
     case "row-layout":
       return `row-layout:${value.rows.join(",")}`;
     case "full-reset":

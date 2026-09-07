@@ -130,18 +130,10 @@ export function changesForSheetMutation(
       // 整条列轴处理（`changes.ts` 的 `hasColumnLayout`）。这里不替它补一个。
       return [{ type: "column-layout", column: mutation.column }];
 
-    // `Patch` 还没有一个描述"合并区变了"的专用变体——那是 T5 的工作
-    // （doc/merge-cells-plan.md §Task 5：新增 `merge-layout`）。这里先落一条
-    // `full-reset` 占位，保证 `switch` 穷尽、不阻断 T3+T4 的落地；T5 落地时把这一支
-    // 换成 `{ type: "merge-layout" }` 即可，不影响其余任何一支。
-    //
-    // **这一步临时违反了 `full-reset` 的既定用途限制，直到 T5 落地为止。**
-    // `doc/architecture.md:207` 明确写着"`full-reset` 只能用于替换数据源、主题等
-    // 低频操作"——合并/取消合并单元格是普通的高频交互操作，不属于这一类。在 T5
-    // 补上 `merge-layout` 之前，任何触发 `set-merges` 的路径（`mergeCells` /
-    // `unmergeCells` 命令）都会经这一支导致一次不必要的**全量重画**，而不是文档
-    // 期望的那种"仅在低频操作时才整体重置"。这是明知故犯的临时状态，不是疏漏。
     case "set-merges":
-      return [{ type: "full-reset" }];
+      // 比照 `column-layout`（129-130 行注释）：合并区变化不描述某个格子的值变了，
+      // 也没有 `row-structure`/`column-structure` 那套下标位移形状，是一整片
+      // 几何/绘制方式的整体标记，不携带增量范围。`merge-layout` 完全没有字段。
+      return [{ type: "merge-layout" }];
   }
 }

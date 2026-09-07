@@ -26,12 +26,14 @@ describe("mergePatches", () => {
         range: { startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }
       },
       { type: "full-reset" },
-      { type: "full-reset" }
+      { type: "full-reset" },
+      { type: "merge-layout" },
+      { type: "merge-layout" }
     ];
 
     const merged = mergePatches(patches);
 
-    expect(merged).toHaveLength(4);
+    expect(merged).toHaveLength(5);
     expect(merged).toEqual([
       { type: "cell-value", row: 0, column: 0 },
       { type: "cell-style", row: 0, column: 0 },
@@ -39,7 +41,8 @@ describe("mergePatches", () => {
         type: "range-value",
         range: { startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }
       },
-      { type: "full-reset" }
+      { type: "full-reset" },
+      { type: "merge-layout" }
     ]);
   });
 
