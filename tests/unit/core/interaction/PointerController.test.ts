@@ -5,6 +5,7 @@ import type { SelectionSnapshot } from "../../../../src/core/interaction";
 import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "../../../../src/core/layout";
 import type { ViewportState } from "../../../../src/core/layout";
 import { SceneSnapshot } from "../../../../src/core/scene";
+import type { CellRange } from "../../../../src/core/types";
 
 const STRUCTURE_VERSION = 7;
 const VIEWPORT: ViewportState = {
@@ -325,6 +326,59 @@ describe("PointerController structure generation", () => {
     controller.move({ x: 260, y: 110 }, scene, STRUCTURE_VERSION);
 
     expect(selection.snapshot.active).toEqual({ row: 0, column: 0 });
+  });
+});
+
+describe("PointerController merge-anchor normalization", () => {
+  // A 3-row-by-3-column merge whose anchor is not the origin.
+  const MERGE: CellRange = { startRow: 3, endRow: 5, startColumn: 2, endColumn: 4 };
+  const findMergeAt = (row: number, column: number): CellRange | undefined =>
+    row >= MERGE.startRow && row <= MERGE.endRow && column >= MERGE.startColumn && column <= MERGE.endColumn
+      ? MERGE
+      : undefined;
+
+  function createMergeAwareFixture() {
+    const layout = createLayout();
+    const selection = new SelectionModel({ rowCount: 20, columnCount: 10 });
+    const controller = new PointerController({ selection, findMergeAt });
+    return { controller, selection, scene: createScene(layout) };
+  }
+
+  it("clicking a non-anchor cell of the merge selects the merge's anchor", () => {
+    const { controller, selection, scene } = createMergeAwareFixture();
+
+    // row 4, column 3 (x=170,y=90) is inside the merge but not its anchor.
+    controller.down({ x: 170, y: 90 }, scene, STRUCTURE_VERSION);
+
+    expect(selection.snapshot.active).toEqual({ row: 3, column: 2 });
+    expect(selection.snapshot.range).toEqual({
+      startRow: 3,
+      startColumn: 2,
+      endRow: 3,
+      endColumn: 2
+    });
+  });
+
+  it("dragging into a merge extends the range to the merge's anchor, not the physical cell", () => {
+    const { controller, selection, scene } = createMergeAwareFixture();
+
+    controller.down({ x: 10, y: 10 }, scene, STRUCTURE_VERSION);
+    controller.move({ x: 170, y: 90 }, scene, STRUCTURE_VERSION);
+
+    expect(selection.snapshot.range).toEqual({
+      startRow: 0,
+      startColumn: 0,
+      endRow: 3,
+      endColumn: 2
+    });
+  });
+
+  it("a click outside any merge is unaffected", () => {
+    const { controller, selection, scene } = createMergeAwareFixture();
+
+    controller.down({ x: 55, y: 25 }, scene, STRUCTURE_VERSION);
+
+    expect(selection.snapshot.active).toEqual({ row: 1, column: 1 });
   });
 });
 

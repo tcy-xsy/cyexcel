@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "../../../../src/core/layout";
 import type { ViewportState } from "../../../../src/core/layout";
 import { SceneSnapshot } from "../../../../src/core/scene";
+import type { CellRange } from "../../../../src/core/types";
 
 const VIEWPORT: ViewportState = { scrollTop: 0, scrollLeft: 0, width: 300, height: 200 };
 
@@ -106,6 +107,66 @@ describe("SceneSnapshot.hitTestCellGeometry", () => {
     expect(scene.hitTestCellGeometry({ x: 50, y: 19 })?.cell).toEqual({ row: 0, column: 1 });
     expect(scene.hitTestCellGeometry({ x: 49, y: 20 })?.cell).toEqual({ row: 1, column: 0 });
     expect(scene.hitTestCellGeometry({ x: 50, y: 20 })?.cell).toEqual({ row: 1, column: 1 });
+  });
+});
+
+describe("SceneSnapshot.hitTestCellGeometry merge-anchor normalization", () => {
+  // A 3-row-by-3-column merge whose anchor is not the origin — exercising
+  // both "not at (0,0)" and "spans more than 2 cells" in the same fixture.
+  const MERGE: CellRange = { startRow: 2, endRow: 4, startColumn: 1, endColumn: 3 };
+  const findMergeAt = (row: number, column: number): CellRange | undefined =>
+    row >= MERGE.startRow && row <= MERGE.endRow && column >= MERGE.startColumn && column <= MERGE.endColumn
+      ? MERGE
+      : undefined;
+
+  function createMergeAwareScene(): SceneSnapshot {
+    return new SceneSnapshot({
+      version: 1,
+      skeleton: SkeletonSnapshot.fromLayout(createLayout(), 1),
+      viewport: new ViewportSnapshot({ version: 1, ...VIEWPORT }),
+      findMergeAt
+    });
+  }
+
+  it("normalizes a click on a non-anchor cell of the merge to the merge's anchor", () => {
+    const scene = createMergeAwareScene();
+
+    // row 3, column 2 — the merge's interior, not its anchor.
+    const hit = scene.hitTestCellGeometry({ x: 120, y: 70 });
+
+    expect(hit?.cell).toEqual({ row: 2, column: 1 });
+  });
+
+  it("normalizes a click on the merge's far corner (not just an edge cell) to the anchor", () => {
+    const scene = createMergeAwareScene();
+
+    // row 4, column 3 — the merge's bottom-right corner.
+    const hit = scene.hitTestCellGeometry({ x: 170, y: 90 });
+
+    expect(hit?.cell).toEqual({ row: 2, column: 1 });
+  });
+
+  it("keeps rect/localPoint describing the physically clicked cell, not the whole merge", () => {
+    const scene = createMergeAwareScene();
+
+    const hit = scene.hitTestCellGeometry({ x: 120, y: 70 });
+
+    // Physical cell (row 3, column 2) rect: x=100..150, y=60..80.
+    expect(hit?.rect).toEqual({ x: 100, y: 60, width: 50, height: 20 });
+    expect(hit?.localPoint).toEqual({ x: 20, y: 10 });
+  });
+
+  it("leaves a click outside any merge unaffected", () => {
+    const scene = createMergeAwareScene();
+
+    expect(scene.hitTestCellGeometry({ x: 0, y: 0 })?.cell).toEqual({ row: 0, column: 0 });
+    expect(scene.hitTestCellGeometry({ x: 210, y: 145 })?.cell).toEqual({ row: 7, column: 4 });
+  });
+
+  it("defaults to no merge-anchor normalization when findMergeAt is not provided", () => {
+    const scene = createScene(createLayout());
+
+    expect(scene.hitTestCellGeometry({ x: 120, y: 70 })?.cell).toEqual({ row: 3, column: 2 });
   });
 });
 

@@ -50,6 +50,7 @@ import {
   summarizeStructuralChanges
 } from "./data";
 import { WorkbookModel, type SheetModel, type WorkbookSnapshot } from "./sheet";
+import { findMergeAt } from "./sheet/merges";
 import type { CellEditorFactory } from "./editors";
 import { EditorManager } from "./editors";
 import { EventBus } from "./events";
@@ -1029,7 +1030,8 @@ export class CyExcelCore {
 
     this.#pointerController = new PointerController({
       selection: this.#selectionModel,
-      onSelectionChange: () => this.#renderScheduler.invalidateSelection()
+      onSelectionChange: () => this.#renderScheduler.invalidateSelection(),
+      findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column)
     });
     this.#headerGestures = new HeaderGestureController({
       resizeController: this.#headerResizeController,
@@ -1164,12 +1166,14 @@ export class CyExcelCore {
 
     this.#keyboardController = new KeyboardController({
       selection: this.#selectionModel,
-      onSelectionChange: () => this.#renderScheduler.invalidateSelection()
+      onSelectionChange: () => this.#renderScheduler.invalidateSelection(),
+      findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column)
     });
 
     this.#editorManager = new EditorManager({
       container: dom.editorLayer,
       getScene: () => this.#scene,
+      findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column),
       ...(options.editorFactory !== undefined ? { editorFactory: options.editorFactory } : {}),
       getCellValue: (row, column) => this.#store.getCell(row, column),
       commitValue: (row, column, value) =>
@@ -2126,7 +2130,8 @@ export class CyExcelCore {
       surfaceMetrics: {
         columnHeaderHeight: this.#headerHeight(),
         rowHeaderWidth: this.#rowHeaderWidth
-      }
+      },
+      findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column)
     });
   }
 

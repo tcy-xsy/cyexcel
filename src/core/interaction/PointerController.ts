@@ -1,9 +1,18 @@
 import type { SceneSnapshot } from "../scene";
+import type { CellRange } from "../types";
 import type { SelectionModel, SelectionSnapshot } from "./SelectionModel";
 
 export interface PointerControllerOptions {
   readonly selection: SelectionModel;
   readonly onSelectionChange?: (snapshot: SelectionSnapshot) => void;
+  /**
+   * Resolves the merged range (if any) owning a cell. `down()`/`move()`
+   * resolve physical row/column via `scene.resolveRow`/`resolveColumn`,
+   * bypassing `SceneSnapshot.hitTestCellGeometry()`'s own merge-anchor
+   * normalization entirely — so click/drag selection needs this independent
+   * normalization to land on the merge's anchor instead of the physical cell.
+   */
+  readonly findMergeAt?: (row: number, column: number) => CellRange | undefined;
 }
 
 export interface PointerModifiers {
@@ -52,6 +61,7 @@ export function resolveColumn(x: number, scene: SceneSnapshot): number {
 export class PointerController {
   readonly #selection: SelectionModel;
   readonly #onSelectionChange: ((snapshot: SelectionSnapshot) => void) | undefined;
+  readonly #findMergeAt: ((row: number, column: number) => CellRange | undefined) | undefined;
   #structureVersion: number | null = null;
   #dragStartPoint: PointerPoint | null = null;
   #dragThresholdExceeded = false;
@@ -59,6 +69,7 @@ export class PointerController {
   constructor(options: PointerControllerOptions) {
     this.#selection = options.selection;
     this.#onSelectionChange = options.onSelectionChange;
+    this.#findMergeAt = options.findMergeAt;
   }
 
   down(
@@ -68,8 +79,11 @@ export class PointerController {
     modifiers: PointerModifiers = { shift: false }
   ): void {
     this.cancel();
-    const row = resolveRow(point.y, scene);
-    const column = resolveColumn(point.x, scene);
+    const physicalRow = resolveRow(point.y, scene);
+    const physicalColumn = resolveColumn(point.x, scene);
+    const merge = this.#findMergeAt?.(physicalRow, physicalColumn);
+    const row = merge ? merge.startRow : physicalRow;
+    const column = merge ? merge.startColumn : physicalColumn;
 
     // Context-menu invocation inside the active range preserves the current
     // selection and does not begin a drag gesture.
@@ -105,7 +119,12 @@ export class PointerController {
       this.#dragThresholdExceeded = true;
     }
 
-    this.#selection.extendTo(resolveRow(point.y, scene), resolveColumn(point.x, scene));
+    const physicalRow = resolveRow(point.y, scene);
+    const physicalColumn = resolveColumn(point.x, scene);
+    const merge = this.#findMergeAt?.(physicalRow, physicalColumn);
+    const row = merge ? merge.startRow : physicalRow;
+    const column = merge ? merge.startColumn : physicalColumn;
+    this.#selection.extendTo(row, column);
     this.#notify();
   }
 

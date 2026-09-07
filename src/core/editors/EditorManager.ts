@@ -1,5 +1,6 @@
 import type { CellRect } from "../layout";
 import type { SceneSnapshot } from "../scene";
+import type { CellRange } from "../types";
 import type { CellEditor, CellEditorFactory } from "./CellEditor";
 import { createTextCellEditor } from "./TextCellEditor";
 
@@ -7,6 +8,8 @@ export interface EditorManagerOptions {
   /** DOM node editors mount into; must already be connected to the document. */
   readonly container: HTMLElement;
   readonly getScene: () => SceneSnapshot;
+  /** Resolves the merged range (if any) owning a cell — the editor overlay spans the whole merge. */
+  readonly findMergeAt?: (row: number, column: number) => CellRange | undefined;
   readonly getCellValue: (row: number, column: number) => unknown;
   readonly commitValue: (
     row: number,
@@ -53,6 +56,7 @@ function intersectRect(rect: CellRect, clipRect: CellRect): CellRect | null {
 export class EditorManager {
   readonly #container: HTMLElement;
   readonly #getScene: () => SceneSnapshot;
+  readonly #findMergeAt: ((row: number, column: number) => CellRange | undefined) | undefined;
   readonly #getCellValue: (row: number, column: number) => unknown;
   readonly #commitValue: (
     row: number,
@@ -72,6 +76,7 @@ export class EditorManager {
   constructor(options: EditorManagerOptions) {
     this.#container = options.container;
     this.#getScene = options.getScene;
+    this.#findMergeAt = options.findMergeAt;
     this.#getCellValue = options.getCellValue;
     this.#commitValue = options.commitValue;
     this.#editorFactory = options.editorFactory ?? createTextCellEditor;
@@ -97,7 +102,14 @@ export class EditorManager {
     if (!active) {
       return;
     }
-    const fragment = scene.getCellFragments({ row: active.row, column: active.column })[0];
+    const activeMerge = this.#findMergeAt?.(active.row, active.column);
+    const activeRange: CellRange = activeMerge ?? {
+      startRow: active.row,
+      endRow: active.row,
+      startColumn: active.column,
+      endColumn: active.column
+    };
+    const fragment = scene.getFragmentsForRange(activeRange)[0];
     const rect = fragment ? intersectRect(fragment.rect, fragment.pane.clipRect) : null;
     if (!rect) {
       this.cancelEdit();
@@ -112,7 +124,9 @@ export class EditorManager {
     }
 
     const scene = this.#getScene();
-    const fragment = scene.getCellFragments({ row, column })[0];
+    const merge = this.#findMergeAt?.(row, column);
+    const range: CellRange = merge ?? { startRow: row, endRow: row, startColumn: column, endColumn: column };
+    const fragment = scene.getFragmentsForRange(range)[0];
     if (!fragment) {
       return;
     }

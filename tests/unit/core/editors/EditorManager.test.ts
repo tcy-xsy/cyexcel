@@ -5,6 +5,7 @@ import type { CellEditor, CellEditorContext, ValidationResult } from "../../../.
 import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "../../../../src/core/layout";
 import type { ViewportState } from "../../../../src/core/layout";
 import { SceneSnapshot } from "../../../../src/core/scene";
+import type { CellRange } from "../../../../src/core/types";
 
 interface FakeContainer {
   readonly element: HTMLElement;
@@ -248,6 +249,64 @@ describe("EditorManager.startEdit", () => {
     manager.startEdit(5, 5);
 
     expect(calls).toEqual(["mount", "focus"]);
+  });
+});
+
+describe("EditorManager merge-spanning editor overlay", () => {
+  // A 3-row-by-3-column merge whose anchor is not the origin.
+  const MERGE: CellRange = { startRow: 2, endRow: 4, startColumn: 1, endColumn: 3 };
+  const findMergeAt = (row: number, column: number): CellRange | undefined =>
+    row >= MERGE.startRow && row <= MERGE.endRow && column >= MERGE.startColumn && column <= MERGE.endColumn
+      ? MERGE
+      : undefined;
+
+  function createMergeAwareManager() {
+    const layout = createLayout();
+    const recording = createRecordingEditor();
+    const container = createFakeContainer();
+    let scene = createScene(layout);
+    const manager = new EditorManager({
+      container: container.element,
+      getScene: () => scene,
+      findMergeAt,
+      getCellValue: () => "current-value",
+      commitValue: () => {},
+      editorFactory: () => recording.editor
+    });
+    return {
+      manager,
+      layout,
+      ...recording,
+      setViewport: (viewport: ViewportState) => {
+        scene = createScene(layout, viewport);
+      }
+    };
+  }
+
+  it("spans the whole merge's rect when starting an edit at its anchor", () => {
+    const { manager, getLastContext } = createMergeAwareManager();
+
+    manager.startEdit(2, 1);
+
+    expect(getLastContext()?.rect).toEqual({ x: 50, y: 40, width: 150, height: 60 });
+  });
+
+  it("keeps spanning the whole merge's rect after a Scene reprojection", () => {
+    const { manager, getLastGeometry, setViewport } = createMergeAwareManager();
+    manager.startEdit(2, 1);
+
+    setViewport({ scrollTop: 0, scrollLeft: 10, width: 300, height: 200 });
+    manager.updateGeometry();
+
+    expect(getLastGeometry()).toEqual({ x: 40, y: 40, width: 150, height: 60 });
+  });
+
+  it("uses only the single cell's rect when the cell is not merged", () => {
+    const { manager, getLastContext } = createMergeAwareManager();
+
+    manager.startEdit(0, 0);
+
+    expect(getLastContext()?.rect).toEqual({ x: 0, y: 0, width: 50, height: 20 });
   });
 });
 

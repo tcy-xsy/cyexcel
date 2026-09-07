@@ -22,6 +22,8 @@ export interface SceneSnapshotOptions {
   readonly viewport: ViewportSnapshot;
   /** Header bands are measured once and published with every surface in this Scene generation. */
   readonly surfaceMetrics?: SceneSurfaceMetrics;
+  /** Resolves the merged range (if any) owning a cell. Defaults to "no merges". */
+  readonly findMergeAt?: (row: number, column: number) => CellRange | undefined;
 }
 
 export type SceneSurfaceId = "body" | "column-header" | "row-header" | "corner" | "menu-overlay";
@@ -257,12 +259,14 @@ export class SceneSnapshot {
   readonly #surfaces: readonly SceneSurfaceDescriptor[];
   readonly #bodyPanes: readonly ScenePaneDescriptor[];
   readonly #columnHeaderBands: readonly SceneColumnHeaderBandDescriptor[];
+  readonly #findMergeAt: (row: number, column: number) => CellRange | undefined;
 
   constructor(options: SceneSnapshotOptions) {
     assertNonNegativeInteger("version", options.version);
     this.version = options.version;
     this.#skeleton = options.skeleton;
     this.#viewport = options.viewport;
+    this.#findMergeAt = options.findMergeAt ?? (() => undefined);
     this.modelVersion = options.skeleton.modelVersion;
     this.layoutVersion = options.skeleton.layoutVersion;
     this.viewportVersion = options.viewport.version;
@@ -667,9 +671,18 @@ export class SceneSnapshot {
       return null;
     }
 
+    // rect/localPoint/clipRect keep describing the physical cell the point
+    // landed in — a custom renderer's hitTest() needs geometry relative to
+    // that cell, not the merge's overall bounding rect — but `cell` itself
+    // is normalized to the merge's anchor so every consumer of `.cell`
+    // (selection, editing, ...) treats a click anywhere in a merge the same.
+    const merge = this.#findMergeAt(row, column);
+    const anchorRow = merge ? merge.startRow : row;
+    const anchorColumn = merge ? merge.startColumn : column;
+
     return Object.freeze({
       surface: "body",
-      cell: Object.freeze({ row, column }),
+      cell: Object.freeze({ row: anchorRow, column: anchorColumn }),
       pane,
       rect,
       clipRect: pane.clipRect,
