@@ -17,6 +17,11 @@ import {
   buildInsertColumnsShift,
   buildMoveColumnsShift
 } from "./columnShift";
+import {
+  relocateMergesForDelete,
+  relocateMergesForInsert,
+  relocateMergesForMove
+} from "./merges";
 import { validateAxisChange } from "../layout/structuralChange";
 import { assertValidRowOrder } from "../layout/rowOrder";
 
@@ -301,9 +306,14 @@ export class SheetModel {
   }
 
   /**
-   * 合并区跟着结构操作正确搬移是一整块 Excel 语义（跨插入点延展、被删范围
-   * 完全覆盖则消失、部分覆盖则收缩），属于阶段 5。在那之前**拒绝**而不是
-   * 错着搬——静默错搬比拒绝糟得多。
+   * `insertRows` / `deleteRows` / `moveRows` / `insertColumns` / `deleteColumns` /
+   * `moveColumns` 六个结构方法已经改用 `merges.ts` 的 `relocateMergesFor*` 正确
+   * 搬移合并区（跨插入点延展、被删范围完全覆盖则消失、部分覆盖则收缩、跨移动
+   * 边界则拒绝），不再调用这个方法——现在只有 `reorderRows` 还用它。
+   *
+   * `reorderRows` 接受的是一个**任意排列**，不是"挪一段连续区间"，没有良定义的
+   * "合并区怎么跟着走"规则（挪到哪算合并区的哪一部分被打散，排列本身说不清楚），
+   * 所以它继续无条件拒绝存在合并区的情形，而不是尝试 relocate。
    */
   #assertNoMerges(operation: string): void {
     if (this.#mergeData.length > 0) {
@@ -389,14 +399,15 @@ export class SheetModel {
    * 六个结构方法共用的参数防线，复用被替换的 `ArrayDataSource` 那一份
    * （`../layout/structuralChange`），不另写。三条口径：
    *
-   * ① **放在 `#assertNoMerges` 之前**——参数非法与有没有合并区无关，
-   *    先报 `MutationNotSupported` 会误导调用方。
+   * ① **放在合并区处理之前**（`relocateMergesFor*` 或 `reorderRows` 用的
+   *    `#assertNoMerges`）——参数非法与有没有合并区无关，先报合并区那一类
+   *    错误会误导调用方。
    * ② **轴长取 `rowCount()` / `columnCount()`（坐标空间，spec §3.3），
    *    不是占用范围**——"在空白区里选几行删掉"是 Excel 允许的合法操作，
    *    用占用范围会把它误挡掉。
    * ③ **抛的是 `RangeError` 而不是 `CyExcelError`，不包装**——与被替换的
-   *    `ArrayDataSource` 保持同一种失败方式，比与 `#assertNoMerges` 内部
-   *    一致更重要；错误类型的统一属于后续公开 API 收口。
+   *    `ArrayDataSource` 保持同一种失败方式，比与合并区错误内部一致更
+   *    重要；错误类型的统一属于后续公开 API 收口。
    *
    * 没有这道防线时的静默后果：`insertRows(-2, 1)` 让 `newRow - count`
    * 算出 `-1`，而 `-1` 就是 `ROW_PLAN_HOLE`——哨兵撞车，一行真数据变成
@@ -406,7 +417,7 @@ export class SheetModel {
   insertRows(start: number, count: number): void {
     const space = this.rowCount();
     validateAxisChange({ axis: "row", operation: "insert", start, count }, space);
-    this.#assertNoMerges("insertRows");
+    this.#mergeData = relocateMergesForInsert(this.#mergeData, "row", start, count);
     const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildInsertRowsPlan(extent, start, count), extent);
     this.#pinRowSpace(space + count);
@@ -415,7 +426,7 @@ export class SheetModel {
   deleteRows(start: number, count: number): void {
     const space = this.rowCount();
     validateAxisChange({ axis: "row", operation: "delete", start, count }, space);
-    this.#assertNoMerges("deleteRows");
+    this.#mergeData = relocateMergesForDelete(this.#mergeData, "row", start, count);
     const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildDeleteRowsPlan(extent, start, count), extent);
     this.#pinRowSpace(space - count);
@@ -427,7 +438,11 @@ export class SheetModel {
       { axis: "row", operation: "move", start, count, target, targetSpace: "pre-removal" },
       space
     );
-    this.#assertNoMerges("moveRows");
+    const relocated = relocateMergesForMove(this.#mergeData, "row", start, count, target);
+    if (!relocated.ok) {
+      throw new CyExcelError(CyExcelErrorCode.MergeSpansMoveBoundary, "moveRows would split a merged range");
+    }
+    this.#mergeData = relocated.merges;
     const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildMoveRowsPlan(extent, start, count, target), extent);
     this.#pinRowSpace(space);
@@ -474,7 +489,7 @@ export class SheetModel {
   insertColumns(start: number, count: number): void {
     const space = this.columnCount();
     validateAxisChange({ axis: "column", operation: "insert", start, count }, space);
-    this.#assertNoMerges("insertColumns");
+    this.#mergeData = relocateMergesForInsert(this.#mergeData, "column", start, count);
     const shift = buildInsertColumnsShift(start, count);
     this.#matrix.insertColumns(start, count);
     this.#tables.applyColumnShift(shift);
@@ -484,7 +499,7 @@ export class SheetModel {
   deleteColumns(start: number, count: number): void {
     const space = this.columnCount();
     validateAxisChange({ axis: "column", operation: "delete", start, count }, space);
-    this.#assertNoMerges("deleteColumns");
+    this.#mergeData = relocateMergesForDelete(this.#mergeData, "column", start, count);
     const shift = buildDeleteColumnsShift(start, count);
     this.#matrix.deleteColumns(start, count);
     this.#tables.applyColumnShift(shift);
@@ -497,7 +512,14 @@ export class SheetModel {
       { axis: "column", operation: "move", start, count, target, targetSpace: "pre-removal" },
       space
     );
-    this.#assertNoMerges("moveColumns");
+    const relocated = relocateMergesForMove(this.#mergeData, "column", start, count, target);
+    if (!relocated.ok) {
+      throw new CyExcelError(
+        CyExcelErrorCode.MergeSpansMoveBoundary,
+        "moveColumns would split a merged range"
+      );
+    }
+    this.#mergeData = relocated.merges;
     const shift = buildMoveColumnsShift(start, count, target);
     this.#matrix.moveColumns(start, count, target);
     this.#tables.applyColumnShift(shift);
@@ -575,6 +597,15 @@ export class SheetModel {
 
   merges(): readonly CellRange[] {
     return this.#mergeData;
+  }
+
+  /**
+   * 整体替换合并区列表——`mergeCells` / `unmergeCells` 等命令层入口写这个，几何
+   * 计算（重叠判定、吸收）由 `merges.ts` 的纯函数在调用方那一侧做完，这里只管
+   * 冻结落地，与构造函数/`fromSnapshot` 对 `mergeData` 的冻结口径一致。
+   */
+  setMerges(merges: readonly CellRange[]): void {
+    this.#mergeData = Object.freeze(merges.map((range) => Object.freeze({ ...range })));
   }
 
   occupiedCount(): number {

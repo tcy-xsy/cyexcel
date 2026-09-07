@@ -191,43 +191,101 @@ describe("SheetModel column operations", () => {
 });
 
 describe("SheetModel merge guard", () => {
-  function modelWithMerge(): SheetModel {
+  function modelWithMerge(merge: { startRow: number; startColumn: number; endRow: number; endColumn: number }): SheetModel {
     const base = SheetModel.createEmpty();
-    base.setCell(0, 0, "a");
+    base.setCell(merge.startRow, merge.startColumn, "a");
     const snapshot = base.toSnapshot();
-    return SheetModel.fromSnapshot({
-      ...snapshot,
-      mergeData: [{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }]
-    });
+    return SheetModel.fromSnapshot({ ...snapshot, mergeData: [merge] });
   }
 
   it("exposes merges through an accessor", () => {
-    expect(modelWithMerge().merges()).toEqual([
-      { startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }
-    ]);
+    const model = modelWithMerge({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 });
+    expect(model.merges()).toEqual([{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }]);
   });
 
-  it("refuses every structural operation while merges exist", () => {
-    expect.hasAssertions();
-    const operations: ReadonlyArray<readonly [string, (m: SheetModel) => void]> = [
-      ["insertRows", (m) => m.insertRows(0, 1)],
-      ["deleteRows", (m) => m.deleteRows(0, 1)],
-      ["moveRows", (m) => m.moveRows(0, 1, 1)],
-      ["reorderRows", (m) => m.reorderRows(Int32Array.from([0]))],
-      ["insertColumns", (m) => m.insertColumns(0, 1)],
-      ["deleteColumns", (m) => m.deleteColumns(0, 1)],
-      ["moveColumns", (m) => m.moveColumns(0, 1, 1)]
-    ];
-    for (const [name, run] of operations) {
-      let threw = false;
-      try {
-        run(modelWithMerge());
-      } catch (error) {
-        threw = true;
-        expect((error as CyExcelError).code).toBe(CyExcelErrorCode.MutationNotSupported);
-      }
-      expect(threw, `${name} should refuse while merges exist`).toBe(true);
+  it("setMerges replaces the merge list wholesale", () => {
+    const model = modelWithMerge({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 });
+    model.setMerges([{ startRow: 2, startColumn: 2, endRow: 3, endColumn: 3 }]);
+    expect(model.merges()).toEqual([{ startRow: 2, startColumn: 2, endRow: 3, endColumn: 3 }]);
+  });
+
+  it("insertRows shifts a merge that starts at or after the insertion point", () => {
+    // merge spans row 2 only; insert(1, 2) 落在合并区起点之前 => 整体下移 2 行
+    const model = modelWithMerge({ startRow: 2, startColumn: 0, endRow: 2, endColumn: 0 });
+    model.insertRows(1, 2);
+    expect(model.merges()).toEqual([{ startRow: 4, startColumn: 0, endRow: 4, endColumn: 0 }]);
+  });
+
+  it("deleteRows that fully covers a merge removes it", () => {
+    // merge 只占 row 0；delete(0, 1) 全覆盖 => 合并区消失
+    const model = modelWithMerge({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 });
+    model.deleteRows(0, 1);
+    expect(model.merges()).toEqual([]);
+  });
+
+  it("moveRows carries a merge that sits entirely inside the moved block", () => {
+    // merge 只占 row 0，block = row [0,0]，target=1 是恒等移动 => 合并区不变
+    const model = modelWithMerge({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 });
+    model.moveRows(0, 1, 1);
+    expect(model.merges()).toEqual([{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }]);
+  });
+
+  it("moveRows rejects a merge that straddles the move boundary", () => {
+    // merge 跨 rows [0,1]，block 只有 row 0：merge 一部分在块内一部分在块外
+    const model = modelWithMerge({ startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 });
+    let error: unknown;
+    try {
+      model.moveRows(0, 1, 2);
+    } catch (e) {
+      error = e;
     }
+    expect((error as CyExcelError).code).toBe(CyExcelErrorCode.MergeSpansMoveBoundary);
+    // 拒绝时合并区保持原样，没有被部分改写
+    expect(model.merges()).toEqual([{ startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 }]);
+  });
+
+  it("insertColumns shifts a merge that starts at or after the insertion point", () => {
+    const model = modelWithMerge({ startRow: 0, startColumn: 2, endRow: 0, endColumn: 2 });
+    model.insertColumns(1, 2);
+    expect(model.merges()).toEqual([{ startRow: 0, startColumn: 4, endRow: 0, endColumn: 4 }]);
+  });
+
+  it("deleteColumns that fully covers a merge removes it", () => {
+    const model = modelWithMerge({ startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 });
+    model.deleteColumns(0, 1);
+    expect(model.merges()).toEqual([]);
+  });
+
+  it("moveColumns carries a merge that sits entirely inside the moved block", () => {
+    const model = modelWithMerge({ startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 });
+    model.moveColumns(0, 1, 1);
+    expect(model.merges()).toEqual([{ startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 }]);
+  });
+
+  it("moveColumns rejects a merge that straddles the move boundary", () => {
+    // merge 跨 columns [0,1]，block 只有 column 0
+    const model = modelWithMerge({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 });
+    let error: unknown;
+    try {
+      model.moveColumns(0, 1, 2);
+    } catch (e) {
+      error = e;
+    }
+    expect((error as CyExcelError).code).toBe(CyExcelErrorCode.MergeSpansMoveBoundary);
+    expect(model.merges()).toEqual([{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 }]);
+  });
+
+  it("reorderRows still refuses unconditionally while merges exist", () => {
+    // reorderRows 接受任意排列，没有良定义的"合并区怎么跟着走"，所以它继续
+    // 无条件拒绝——这是与另外六个方法唯一不同的地方，全局约束 3。
+    const model = modelWithMerge({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 });
+    let error: unknown;
+    try {
+      model.reorderRows(Int32Array.from([0]));
+    } catch (e) {
+      error = e;
+    }
+    expect((error as CyExcelError).code).toBe(CyExcelErrorCode.MutationNotSupported);
   });
 
   it("allows structural operations when there are no merges", () => {
