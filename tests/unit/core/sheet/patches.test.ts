@@ -205,3 +205,25 @@ describe("changesForSheetMutation — `set-column-meta` → `column-layout`", ()
     });
   });
 });
+
+/**
+ * `set-merges` 目前映射到 `full-reset`，这是 T3+T4 落地时为了让 `switch` 穷尽而打的
+ * **临时占位**（见 `patches.ts` 该分支上方的注释）——`Patch` 还没有专用的
+ * `merge-layout` 变体，那是 T5 的工作（`doc/merge-cells-plan.md` §Task 5）。
+ *
+ * **这条用例断言的是当前的临时占位行为，不是最终行为。** `doc/architecture.md:207`
+ * 规定 `full-reset` 只能用于替换数据源、主题等低频操作，合并单元格是高频交互，
+ * 现在这样映射本身就是对那条限制的临时违反。T5 把 `merge-layout` 接上之后，这条
+ * 用例要跟着改成断言 `{ type: "merge-layout" }`，不能让它继续绿下去而误导后来的人
+ * 以为 `full-reset` 就是设计好的最终形态。
+ *
+ * 刻意不把它并进上面"十三个成员一条不落"的穷举表——那张表的所有权留给 T5（评审
+ * 已认可），这里单独写一条小用例就够了。
+ */
+describe("changesForSheetMutation — `set-merges` 目前的临时占位（T5 落地前）", () => {
+  it("映射到 full-reset——T5 补上 merge-layout 之后这条要改成断言 merge-layout", () => {
+    expect(
+      onlyPatch({ type: "set-merges", merges: [{ startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }] })
+    ).toStrictEqual({ type: "full-reset" });
+  });
+});
