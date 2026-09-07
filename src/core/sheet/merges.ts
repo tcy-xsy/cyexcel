@@ -207,6 +207,24 @@ export type MergeRelocateResult =
  *   （`relocateIntervalForDelete`）得到中间坐标，再把块当作插回
  *   （`relocateIntervalForInsert`）得到最终坐标。这与 `buildMoveRowsPlan` 自己
  *   "摘出再插入"是同一个组合，不另起第三套公式，保证与既有的行/列搬移同构。
+ *
+ * **"完全在块外"这一支还有第四种结局，同样必须拒绝。** 摘除之后的插入
+ * （`relocateIntervalForInsert`）自己也有三路：插入点在合并区起点或之前——
+ * 平移；插入点在合并区结束之后——不受影响；插入点**严格落在合并区内部**——
+ * 撑大合并区。前两种是合并区的**等距搬移**（长度不变），移动与它的逆（同一个
+ * 复合两步，参数对称）互为精确逆。第三种不是等距的：块被"塞进"了这条外部合并
+ * 区里，合并区被撑大，块本身此后落在这条（已经变大的）合并区内部——那正是
+ * "跨越移动块边界"的定义，逆向搬回去时会被本函数自己拒绝（"合并区与块相交但不
+ * 完全落在块内"），undo 因此在 commit 之前就已经不可达，`CommandManager.undo()`
+ * 却已经先跑了 `#replay(entry.inverse)`（撤销条目在这一步之前不会从栈里摘除），
+ * 于是这一条 undo 记录永久卡死撤销栈——这是撤销时才炸的错误，必须在正向
+ * `move` 这一步就拒绝，不能等它把不可逆的状态造出来了才发现。
+ *
+ * 因此"完全在块外"这一支不能对 `relocateIntervalForInsert` 的结果照单全收：
+ * 先看插入点是否严格落在摘除后的区间内部（`afterDelete[0] < insertAt <=
+ * afterDelete[1]`，与 `relocateIntervalForInsert` 判"撑大"用的是同一个条件），
+ * 是就当作跨越边界处理，`ok: false`；否则才真正调用 `relocateIntervalForInsert`
+ * 取那个平移或不变的结果。
  */
 export function relocateMergesForMove(
   merges: readonly CellRange[],
@@ -238,7 +256,15 @@ export function relocateMergesForMove(
           "unreachable: a merge classified as outside the move block cannot be fully covered by it"
         );
       }
-      const afterInsert = relocateIntervalForInsert(afterDelete[0], afterDelete[1], insertAt, count);
+      const [afterDeleteStart, afterDeleteEnd] = afterDelete;
+      const wouldExpand = insertAt > afterDeleteStart && insertAt <= afterDeleteEnd;
+      if (wouldExpand) {
+        // 插入点严格落在这条外部合并区（摘除后的坐标）内部：块被塞进了它里面，
+        // 撑大而非平移，逆向搬回去必然撞上"跨越移动块边界"——见本函数文档注释
+        // 倒数第二段。拒绝在这里发生，正向 move 就不会造出不可逆的状态。
+        return { ok: false, reason: "straddles-move-boundary" };
+      }
+      const afterInsert = relocateIntervalForInsert(afterDeleteStart, afterDeleteEnd, insertAt, count);
       result.push(withAxisInterval(merge, axis, afterInsert));
       continue;
     }

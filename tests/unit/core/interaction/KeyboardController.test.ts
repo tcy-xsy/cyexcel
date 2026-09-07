@@ -209,6 +209,59 @@ describe("KeyboardController arrow keys over a merge", () => {
   });
 });
 
+describe("KeyboardController selection-kind collapse regression (final-review Finding 2)", () => {
+  // Reachable with zero merges anywhere on the sheet: HeaderSelectionController
+  // calls `selectAll()`/`selectColumn()`/`selectRow()` on the same SelectionModel
+  // instance KeyboardController holds. The old code called
+  // `selection.moveActive(dr, dc, true)` (== `moveActiveTo(..., extend=true)`),
+  // which always collapses `kind` to "cell". Using `extendTo()` instead is a
+  // complete no-op when `kind === "all"` (and preserves "row"/"column" kind
+  // otherwise) — so corner-click (select-all) then Shift+ArrowDown silently did
+  // nothing, a real regression with no merges involved.
+
+  it("select-all then Shift+ArrowUp moves the active cell and collapses kind to \"cell\"", () => {
+    const { selection, controller } = createController(20, 10);
+    selection.selectAll();
+    expect(selection.snapshot.kind).toBe("all");
+    expect(selection.snapshot.active).toEqual({ row: 19, column: 9 });
+
+    controller.handleKeyDown("ArrowUp", { shift: true });
+
+    // Bug: this stayed { kind: "all", active: { row: 19, column: 9 } } — a
+    // total no-op — because `extendTo()` bails out immediately for kind "all".
+    expect(selection.snapshot.kind).toBe("cell");
+    expect(selection.snapshot.active).toEqual({ row: 18, column: 9 });
+    expect(selection.snapshot.anchor).toEqual({ row: 0, column: 0 });
+  });
+
+  it("select-column then Shift+ArrowRight moves the active cell and collapses kind to \"cell\"", () => {
+    const { selection, controller } = createController(20, 10);
+    selection.selectColumn(2);
+    expect(selection.snapshot.kind).toBe("column");
+    expect(selection.snapshot.active).toEqual({ row: 0, column: 2 });
+
+    controller.handleKeyDown("ArrowRight", { shift: true });
+
+    // Bug: `extendTo()` preserves kind "column" instead of collapsing to
+    // "cell", so the selection stayed a full-height column instead of
+    // becoming a normal extending cell range.
+    expect(selection.snapshot.kind).toBe("cell");
+    expect(selection.snapshot.active).toEqual({ row: 0, column: 3 });
+  });
+
+  it("select-row then Shift+ArrowDown (no Shift) moving and collapsing still works without regressing the non-extend path", () => {
+    const { selection, controller } = createController(20, 10);
+    selection.selectRow(4);
+    expect(selection.snapshot.kind).toBe("row");
+
+    controller.handleKeyDown("ArrowDown");
+
+    expect(selection.snapshot.kind).toBe("cell");
+    expect(selection.snapshot.active).toEqual({ row: 5, column: 0 });
+    expect(selection.snapshot.anchor).toEqual({ row: 5, column: 0 });
+  });
+});
+
 describe("KeyboardController unhandled keys", () => {
   it("returns false and does not change selection for an unmapped key", () => {
     const { selection, controller } = createController();

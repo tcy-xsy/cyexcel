@@ -6,6 +6,7 @@ import type { SheetMutation } from "../../../../src/core/sheet/mutation";
 import { SheetModel } from "../../../../src/core/sheet/SheetModel";
 import { WorkbookModel } from "../../../../src/core/sheet/WorkbookModel";
 import type { SheetSnapshot, WorkbookSnapshot } from "../../../../src/core/sheet/types";
+import type { CellRange } from "../../../../src/core/types";
 
 /**
  * `applySheetMutation` 在 4A 是本文件里的一个本地 helper（当时的注释写着"4A 没有
@@ -186,6 +187,18 @@ function mergedWorkbookFixture(): WorkbookModel {
   };
   const sheets: Record<string, SheetSnapshot> = { ...snapshot.sheets, [sheetId]: mergedSheet };
   return WorkbookModel.fromSnapshot({ ...snapshot, sheets });
+}
+
+/**
+ * 一张比 `mergedFixture` 宽得多的空表，专供 Finding 1（final-review-fix）的
+ * outside-block 场景使用——那个场景需要 `start=8, count=2` 这样的下标，
+ * `mergedFixture` 的 7 行 5 列坐标空间放不下。`setMerges` 是唯一的公开写口，
+ * 不必经 `fromSnapshot`。
+ */
+function wideMergedFixture(merges: CellRange[]): SheetModel {
+  const model = SheetModel.createEmpty({ blankRows: 12, blankColumns: 12 });
+  model.setMerges(merges);
+  return model;
 }
 
 /** 抓住抛出的错误本身——要比对类型与消息，`toThrow` 的正则做不到。 */
@@ -664,6 +677,73 @@ describe("invertSheetMutation — move 合并区跨越移动块边界时抛 Merg
     expect(() =>
       invertSheetMutation(mergedFixture(), { type: "move-rows", start: 3, count: 2, target: 0 })
     ).not.toThrow();
+  });
+
+  /**
+   * final-review Finding 1：合并区**完全在移动块外**，但块摘除之后的插入点
+   * 严格落在这条合并区内部——`relocateIntervalForInsert` 的撑大分支会把块
+   * "塞进"这条合并区，逆向搬回去必然撞上"跨越移动块边界"，undo 因此永久卡死
+   * 撤销栈（见 `merges.ts` 的 `relocateMergesForMove` 文档注释）。修复后，这一步
+   * 在**正向** `SheetModel.moveRows`/`moveColumns` 就直接拒绝，不必等到 undo
+   * 才炸——`invert.ts` 的 `assertMergesDoNotStraddleMove` 与 `SheetModel` 的
+   * commit 期检查读的是同一个 `relocateMergesForMove`，两边必须给出同一个答案。
+   */
+  it("move-rows：outside-block 合并区、重新插入点严格落在其内部——正向 moveRows 直接拒绝，不是撑大（Finding 1）", () => {
+    // merge rows [2,6]；block rows [8,9]（start=8,count=2），target=4 =>
+    // insertAt=4，严格落在 [2,6] 内部——修复前会把它错误撑大成 [2,8]。
+    const merges: CellRange[] = [{ startRow: 2, startColumn: 0, endRow: 6, endColumn: 0 }];
+    const mutation: SheetMutation = { type: "move-rows", start: 8, count: 2, target: 4 };
+    const fromPrepare = grabError(() => invertSheetMutation(wideMergedFixture(merges), mutation));
+    const fromCommit = grabError(() => wideMergedFixture(merges).moveRows(8, 2, 4));
+    expect(fromCommit).toBeInstanceOf(CyExcelError);
+    expect((fromCommit as CyExcelError).code).toBe(CyExcelErrorCode.MergeSpansMoveBoundary);
+    expect(fromPrepare?.constructor).toBe(fromCommit?.constructor);
+    expect(fromPrepare?.message).toBe(fromCommit?.message);
+  });
+
+  it("move-columns：outside-block 合并区、重新插入点严格落在其内部——正向 moveColumns 直接拒绝（Finding 1，列轴同构）", () => {
+    const merges: CellRange[] = [{ startRow: 0, startColumn: 2, endRow: 0, endColumn: 6 }];
+    const mutation: SheetMutation = { type: "move-columns", start: 8, count: 2, target: 4 };
+    const fromPrepare = grabError(() => invertSheetMutation(wideMergedFixture(merges), mutation));
+    const fromCommit = grabError(() => wideMergedFixture(merges).moveColumns(8, 2, 4));
+    expect(fromCommit).toBeInstanceOf(CyExcelError);
+    expect((fromCommit as CyExcelError).code).toBe(CyExcelErrorCode.MergeSpansMoveBoundary);
+    expect(fromPrepare?.constructor).toBe(fromCommit?.constructor);
+    expect(fromPrepare?.message).toBe(fromCommit?.message);
+  });
+
+  /**
+   * final-review Finding 1 补的往返覆盖：此前本文件的 move+merge 用例只断言
+   * `invertSheetMutation` 本身"不抛错"（`.not.toThrow()`），从没有真的施加正向
+   * mutation、施加算出的逆、再比对合并区数组——这正是 bug 能躲过 T1-T10 十次
+   * 单任务评审的原因。这里补一条**真正的往返**：outside-block 合并区在一次仍然
+   * 允许成功的移动下（插入点落在摘除后区间的起点，触发的是"平移"支而不是
+   * "撑大"支——见 `merges.test.ts` 的对照用例），施加正向、施加逆，`merges()`
+   * 精确回到搬移前的状态。
+   */
+  it("move-rows：outside-block 合并区在允许成功的搬移下，往返后合并区数组精确复原（Finding 1 round-trip）", () => {
+    // merge rows [4,6]；block rows [8,9]，target=4 => insertAt=4，
+    // 4 <= afterDeleteStart(4)：平移支，不是撑大——见 merges.test.ts 同构用例。
+    const originalMerges: CellRange[] = [{ startRow: 4, startColumn: 0, endRow: 6, endColumn: 0 }];
+    const model = wideMergedFixture(originalMerges);
+    const mutation: SheetMutation = { type: "move-rows", start: 8, count: 2, target: 4 };
+    const inverse = invertSheetMutation(model, mutation);
+    apply(model, mutation);
+    // 正向确实搬动了合并区（平移 +2，不是原地不动）——不然下面的复原断言会空过。
+    expect(model.merges()).toStrictEqual([{ startRow: 6, startColumn: 0, endRow: 8, endColumn: 0 }]);
+    apply(model, inverse);
+    expect(model.merges()).toStrictEqual(originalMerges);
+  });
+
+  it("move-columns：outside-block 合并区在允许成功的搬移下，往返后合并区数组精确复原（Finding 1 round-trip，列轴同构）", () => {
+    const originalMerges: CellRange[] = [{ startRow: 0, startColumn: 4, endRow: 0, endColumn: 6 }];
+    const model = wideMergedFixture(originalMerges);
+    const mutation: SheetMutation = { type: "move-columns", start: 8, count: 2, target: 4 };
+    const inverse = invertSheetMutation(model, mutation);
+    apply(model, mutation);
+    expect(model.merges()).toStrictEqual([{ startRow: 0, startColumn: 6, endRow: 0, endColumn: 8 }]);
+    apply(model, inverse);
+    expect(model.merges()).toStrictEqual(originalMerges);
   });
 });
 

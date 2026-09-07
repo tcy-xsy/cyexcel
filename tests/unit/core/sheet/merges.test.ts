@@ -250,6 +250,31 @@ describe("relocateMergesForMove", () => {
       const result = relocateMergesForMove([merge], "row", 2, 2, 10);
       expect(result).toEqual({ ok: true, merges: [range(3, 0, 4, 0)] });
     });
+
+    it("rejects a merge fully outside the block whose reinsertion point would land strictly inside it (final-review Finding 1)", () => {
+      // merge rows [2,6]；block = rows [8,9]（start=8, count=2），target=4 =>
+      // insertAt = 4（target(4) 不大于 start(8)，取直取支）。
+      // outsideBlock：mEnd(6) < blockStart(8) 成立。
+      // afterDelete：删除区间 [8,9] 整体在 merge 之后 => 不受影响，仍是 [2,6]。
+      // insertAt(4) 严格落在 [2,6] 内部（2 < 4 <= 6）——这正是
+      // `relocateIntervalForInsert` 的撑大分支，撑大后块会落在合并区内部，逆向
+      // 搬回去必然撞上"跨越移动块边界"（504-组合 brute-force 里的代表实例）。
+      // 修复前：{ ok: true, merges: [range(2, 0, 8, 0)] }（错误地撑大）。
+      const merge = range(2, 0, 6, 0);
+      const result = relocateMergesForMove([merge], "row", 8, 2, 4);
+      expect(result).toEqual({ ok: false, reason: "straddles-move-boundary" });
+    });
+
+    it("still allows a merge fully outside the block when the reinsertion point lands at its start (shift, not expand)", () => {
+      // 插入点恰好等于摘除后区间的起点——`relocateIntervalForInsert` 的"平移"支
+      // （start <= mStart），不是撑大，仍然允许。
+      // merge rows [4,6]；block = rows [8,9]，target=4 => insertAt=4。
+      // afterDelete：删除区间 [8,9] 在 merge 之后，不受影响，仍是 [4,6]。
+      // insertAt(4) <= afterDeleteStart(4)：平移支，merge 整体 +count(2) => [6,8]。
+      const merge = range(4, 0, 6, 0);
+      const result = relocateMergesForMove([merge], "row", 8, 2, 4);
+      expect(result).toEqual({ ok: true, merges: [range(6, 0, 8, 0)] });
+    });
   });
 
   describe("column axis", () => {
@@ -269,6 +294,13 @@ describe("relocateMergesForMove", () => {
       const merge = range(0, 5, 0, 6);
       const result = relocateMergesForMove([merge], "column", 2, 2, 10);
       expect(result).toEqual({ ok: true, merges: [range(0, 3, 0, 4)] });
+    });
+
+    it("rejects a merge fully outside the block whose reinsertion point would land strictly inside it (final-review Finding 1)", () => {
+      // 与行轴那条同构：merge columns [2,6]，block columns [8,9]，target=4。
+      const merge = range(0, 2, 0, 6);
+      const result = relocateMergesForMove([merge], "column", 8, 2, 4);
+      expect(result).toEqual({ ok: false, reason: "straddles-move-boundary" });
     });
   });
 });

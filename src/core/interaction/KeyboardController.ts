@@ -103,11 +103,16 @@ export class KeyboardController {
     const landing = this.#findMergeAt?.(targetRow, targetColumn);
     const anchorRow = landing ? landing.startRow : targetRow;
     const anchorColumn = landing ? landing.startColumn : targetColumn;
-    if (shift) {
-      this.#selection.extendTo(anchorRow, anchorColumn);
-    } else {
-      this.#selection.selectCell(anchorRow, anchorColumn);
-    }
+    // `moveActiveTo(..., extend)`, not `extendTo()`/`selectCell()` branched by
+    // hand: `extendTo()` preserves whatever `kind` the selection is currently
+    // in (and is a no-op when `kind === "all"`), while the pre-merge-feature
+    // behavior — and `moveActive()`'s own non-arrow-key callers below — always
+    // collapses to `kind: "cell"` on an arrow key, extended or not. Using
+    // `extendTo()` here regressed corner-click (select-all) + Shift+Arrow into
+    // a no-op even on a sheet with zero merges (final-review Finding 2) — the
+    // normalized row/column computed above still carry the merge-anchor
+    // adjustment, only the SelectionModel call changes.
+    this.#selection.moveActiveTo(anchorRow, anchorColumn, shift);
   }
 
   #notify(): void {
