@@ -261,6 +261,11 @@ const sortColumn = document.getElementById("sortColumn");
 const sortAscButton = document.getElementById("sortAscButton");
 const sortDescButton = document.getElementById("sortDescButton");
 const sortHint = document.getElementById("sortHint");
+const filterColumn = document.getElementById("filterColumn");
+const filterValue = document.getElementById("filterValue");
+const applyFilterButton = document.getElementById("applyFilterButton");
+const clearFilterButton = document.getElementById("clearFilterButton");
+const filterHint = document.getElementById("filterHint");
 const metricConstruct = document.getElementById("metricConstruct");
 const metricFps = document.getElementById("metricFps");
 
@@ -296,6 +301,11 @@ function populateCellColumnSelect() {
  */
 function populateSortColumnSelect() {
   populateColumnSelect(sortColumn, (index) => core.getColumn(index).sortable);
+}
+
+/** Same reasoning as populateSortColumnSelect(): filterable can come from the column or its cell type. */
+function populateFilterColumnSelect() {
+  populateColumnSelect(filterColumn, (index) => core.getColumn(index).filterable);
 }
 
 function readConfigFromForm() {
@@ -405,6 +415,17 @@ function rebuild() {
       "再点一次表头在升/降序间切换，不会回到原始顺序";
   });
 
+  // Step 22 Part B：表头点击 toggle-filter 是纯通知——core 不知道该用什么谓词，
+  // 这里（宿主）拿"过滤值"输入框当前的值对被点的那一列应用过滤，让表头点击和
+  // 下面的按钮看起来是同一件事。
+  core.events.on("header-action", (event) => {
+    if (event.action.type !== "toggle-filter") {
+      return;
+    }
+    filterColumn.value = String(event.column);
+    filterBy("apply");
+  });
+
   const maxRow = Math.max(0, currentRowCount - 1);
   if (Number(cellRow.value) > maxRow) {
     cellRow.value = String(maxRow);
@@ -413,6 +434,7 @@ function rebuild() {
   // Only now: the answer comes off the resolved RuntimeColumn, which does not
   // exist until this rebuild has constructed the sheet.
   populateSortColumnSelect();
+  populateFilterColumnSelect();
 }
 
 const shortcutHint = document.getElementById("shortcutHint");
@@ -556,6 +578,32 @@ function sortBy(direction) {
 
 sortAscButton.addEventListener("click", () => sortBy("asc"));
 sortDescButton.addEventListener("click", () => sortBy("desc"));
+
+/**
+ * Step 22 Part B：sheet.filterByColumn()/clearFilter() 演示——预测值是这里
+ * 手写的精确字符串匹配（`String(value) === 输入框的值`），不是核心提供的默认
+ * 值列表 UI（那一层特意留给宿主，见 filterHint 的说明）。
+ */
+function filterBy(kind) {
+  if (!core) {
+    return;
+  }
+  if (kind === "clear") {
+    core.clearFilter();
+    filterHint.textContent = "上次动作：已清除过滤，所有行的高度逐像素复原";
+    return;
+  }
+  const columnIndex = Number(filterColumn.value);
+  const column = COLUMNS[columnIndex];
+  const target = filterValue.value;
+  core.filterByColumn(columnIndex, (value) => String(value ?? "") === target);
+  filterHint.textContent =
+    `上次动作：只看「${column.label}」等于「${target}」的行` +
+    `（共 ${currentRowCount.toLocaleString("zh-CN")} 行；过滤不进撤销栈，清除过滤即可复原）`;
+}
+
+applyFilterButton.addEventListener("click", () => filterBy("apply"));
+clearFilterButton.addEventListener("click", () => filterBy("clear"));
 
 rebuildButton.addEventListener("click", rebuild);
 

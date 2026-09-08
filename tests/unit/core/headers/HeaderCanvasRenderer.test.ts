@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { CanvasHeaderRenderer, HeaderState } from "../../../../src/core/cells";
 import {
+  DEFAULT_HEADER_FILTER_ZONE_MIN_WIDTH,
+  DEFAULT_HEADER_FILTER_ZONE_WIDTH,
   DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH,
   DEFAULT_HEADER_SORT_ZONE_WIDTH,
   defaultHeaderHitTest,
@@ -416,6 +418,68 @@ describe("defaultHeaderHitTest — sortable columns only", () => {
       rect: { x: 0, y: 0, width: 120, height: 24 },
       point: { x: 119, y: 10 },
       sortable: false
+    })).toBeUndefined();
+  });
+});
+
+describe("defaultHeaderHitTest — filterable columns", () => {
+  const rect = (width: number) => ({ x: 0, y: 0, width, height: 24 });
+
+  it("omitting filterable claims no filter zone (opt-in at this raw layer)", () => {
+    // Unlike `sortable` (omitted = on), `filterable` defaults off here so
+    // every existing direct caller of this pure function is unaffected;
+    // production wiring always resolves and passes it explicitly.
+    expect(defaultHeaderHitTest({ rect: rect(120), point: { x: 90, y: 10 } })).toBeUndefined();
+  });
+
+  it("claims a strip immediately left of the sort zone for toggle-filter", () => {
+    const wide = rect(120);
+    // Filter zone: [120-18-18, 120-18) = [84, 102).
+    expect(defaultHeaderHitTest({ rect: wide, point: { x: 101, y: 10 }, filterable: true }))
+      .toEqual({ type: "toggle-filter" });
+    expect(defaultHeaderHitTest({ rect: wide, point: { x: 84, y: 10 }, filterable: true }))
+      .toEqual({ type: "toggle-filter" });
+    // Still leaves the rest of the cell selectable.
+    expect(defaultHeaderHitTest({ rect: wide, point: { x: 83, y: 10 }, filterable: true }))
+      .toBeUndefined();
+  });
+
+  it("puts the sort zone at the trailing edge even when both are active", () => {
+    expect(defaultHeaderHitTest({ rect: rect(120), point: { x: 119, y: 10 }, filterable: true }))
+      .toEqual({ type: "toggle-sort" });
+  });
+
+  it("gives a filter-only column its own (narrower) reserved strip and min width", () => {
+    // filterable, not sortable: only DEFAULT_HEADER_FILTER_ZONE_WIDTH is reserved,
+    // so the min-width floor is that width's own MIN, not the combined one.
+    expect(defaultHeaderHitTest({
+      rect: rect(DEFAULT_HEADER_FILTER_ZONE_MIN_WIDTH),
+      point: { x: DEFAULT_HEADER_FILTER_ZONE_MIN_WIDTH - 1, y: 10 },
+      sortable: false,
+      filterable: true
+    })).toEqual({ type: "toggle-filter" });
+    expect(defaultHeaderHitTest({
+      rect: rect(DEFAULT_HEADER_FILTER_ZONE_MIN_WIDTH - 1),
+      point: { x: DEFAULT_HEADER_FILTER_ZONE_MIN_WIDTH - 2, y: 10 },
+      sortable: false,
+      filterable: true
+    })).toBeUndefined();
+  });
+
+  it("refuses the filter zone when filterable is explicitly false", () => {
+    expect(defaultHeaderHitTest({
+      rect: rect(120),
+      point: { x: 90, y: 10 },
+      filterable: false
+    })).toBeUndefined();
+  });
+
+  it("a column too narrow for both zones combined gets neither", () => {
+    const combinedFloor = DEFAULT_HEADER_SORT_ZONE_WIDTH + DEFAULT_HEADER_FILTER_ZONE_WIDTH;
+    expect(defaultHeaderHitTest({
+      rect: rect(combinedFloor * 2 - 1),
+      point: { x: combinedFloor * 2 - 2, y: 10 },
+      filterable: true
     })).toBeUndefined();
   });
 });

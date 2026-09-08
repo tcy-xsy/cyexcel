@@ -47,6 +47,8 @@ function describeChange(value: SemanticChange): string {
       return "full-reset";
     case "row-reorder":
       return `row-reorder:${value.order.join(",")}`;
+    case "row-visibility":
+      return "row-visibility";
   }
 }
 void describeChange;

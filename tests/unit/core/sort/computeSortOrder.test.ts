@@ -109,4 +109,62 @@ describe("computeSortOrder", () => {
 
     expect(result).toBeNull();
   });
+
+  describe("visibleRows", () => {
+    it("leaves rows outside visibleRows in place (identity) and sorts only the visible ones among themselves", () => {
+      // values: [row0=30 (hidden), row1=10, row2=20, row3=5 (hidden)]
+      // visible rows 1 and 2 sort ascending among their own slots: row2 (20) then row1 (10)... wait ascending means 10 before 20.
+      const order = computeSortOrder({
+        ...numbers([30, 10, 20, 5]),
+        direction: "asc",
+        visibleRows: [1, 2]
+      })!;
+      // Hidden rows never move.
+      expect(order[0]).toBe(0);
+      expect(order[3]).toBe(3);
+      // Visible rows 1,2 (values 10,20) sorted ascending among slots 1,2 -> [1, 2] unchanged since already ascending.
+      expect(order[1]).toBe(1);
+      expect(order[2]).toBe(2);
+    });
+
+    it("actually reorders visible rows relative to each other", () => {
+      // row1=20, row2=10 -> ascending swaps them within slots {1,2}.
+      const order = computeSortOrder({
+        ...numbers([30, 20, 10, 5]),
+        direction: "asc",
+        visibleRows: [1, 2]
+      })!;
+      expect([...order]).toEqual([0, 2, 1, 3]);
+    });
+
+    it("omitting visibleRows reproduces the same order as before (full-row regression guard)", () => {
+      const withAll = computeSortOrder({ ...numbers([30, 10, 20]), direction: "asc" })!;
+      const withExplicitVisibleRows = computeSortOrder({
+        ...numbers([30, 10, 20]),
+        direction: "asc",
+        visibleRows: [0, 1, 2]
+      })!;
+      expect([...withExplicitVisibleRows]).toEqual([...withAll]);
+    });
+
+    it("only reads sort keys for visible rows", () => {
+      const getSortKey = vi.fn((row: number) => [30, 10, 20, 5][row]);
+      computeSortOrder({
+        rowCount: 4,
+        getSortKey,
+        compare: (a, b) => (a as number) - (b as number),
+        direction: "asc",
+        visibleRows: [1, 2]
+      });
+
+      expect(getSortKey).toHaveBeenCalledTimes(2);
+      expect(getSortKey).toHaveBeenCalledWith(1);
+      expect(getSortKey).toHaveBeenCalledWith(2);
+    });
+
+    it("an empty visibleRows list produces the identity permutation", () => {
+      const order = computeSortOrder({ ...numbers([30, 10, 20]), direction: "asc", visibleRows: [] })!;
+      expect([...order]).toEqual([0, 1, 2]);
+    });
+  });
 });

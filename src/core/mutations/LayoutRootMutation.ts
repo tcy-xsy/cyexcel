@@ -45,7 +45,16 @@ export type LayoutRootAction =
    * permutation) rather than something that has to be read back off the
    * previous root.
    */
-  | { readonly type: "reorder-rows"; readonly order: Int32Array };
+  | { readonly type: "reorder-rows"; readonly order: Int32Array }
+  /**
+   * Replaces the entire `filteredRows` membership (ADR 0003 §3.2/§3.3) — a
+   * whole-set replacement, like `reorder-rows` a root replacement whose
+   * inverse is another action of the same kind (the previous set), not
+   * something read back off the previous root. Stages no data mutation at
+   * all: that absence *is* "过滤没有写数据路径" made structural rather than
+   * just documented.
+   */
+  | { readonly type: "set-filtered-rows"; readonly filteredRows: ReadonlySet<number> };
 
 function patchFor(action: LayoutRootAction, root: LayoutRoot): Patch {
   switch (action.type) {
@@ -62,6 +71,8 @@ function patchFor(action: LayoutRootAction, root: LayoutRoot): Patch {
       };
     case "reorder-rows":
       return { type: "row-reorder", order: action.order };
+    case "set-filtered-rows":
+      return { type: "row-visibility" };
     case "set-column-width":
     case "hide-column":
     case "show-column":
@@ -109,9 +120,15 @@ function sameColumnMeta(a: ColumnMeta | undefined, b: ColumnMeta | undefined): b
   return true;
 }
 
-/** History budgeting: only a permutation carries a payload worth counting. */
+/** History budgeting: only a permutation or a filter set carries a payload worth counting. */
 function estimatedBytesFor(action: LayoutRootAction): number {
-  return action.type === "reorder-rows" ? 96 + action.order.length * 4 : 96;
+  if (action.type === "reorder-rows") {
+    return 96 + action.order.length * 4;
+  }
+  if (action.type === "set-filtered-rows") {
+    return 96 + action.filteredRows.size * 4;
+  }
+  return 96;
 }
 
 function prepareAction(
@@ -139,6 +156,8 @@ function prepareAction(
       );
     case "reorder-rows":
       return layout.prepareReorderRows(action.order, root);
+    case "set-filtered-rows":
+      return layout.prepareSetFilteredRows(action.filteredRows, root);
   }
 }
 
@@ -146,7 +165,8 @@ function inverseAction(
   action: LayoutRootAction,
   previousRowMeta: RowMeta | undefined,
   previousColumnMeta: ColumnMeta | undefined,
-  defaultRowHeight: number
+  defaultRowHeight: number,
+  previousFilteredRows: ReadonlySet<number>
 ): LayoutRootAction {
   switch (action.type) {
     case "set-row-height":
@@ -170,6 +190,11 @@ function inverseAction(
       // The only action whose inverse needs nothing from `root`: undoing a
       // permutation is applying the inverse permutation.
       return { type: "reorder-rows", order: invertRowOrder(action.order) };
+    case "set-filtered-rows":
+      // Whole-set replacement: the inverse is just "write back the previous
+      // set" (O(1) — this never re-scans the model), same shape as
+      // set-column-meta's own inverse.
+      return { type: "set-filtered-rows", filteredRows: previousFilteredRows };
   }
 }
 
@@ -276,7 +301,7 @@ export class LayoutRootMutation implements Mutation {
     const inverse = new LayoutRootMutation(
       this.#layout,
       this.#sheet,
-      inverseAction(action, previousRowMeta, previousColumnMeta, this.#layout.rowHeight)
+      inverseAction(action, previousRowMeta, previousColumnMeta, this.#layout.rowHeight, previousRoot.filteredRows)
     );
     let commitStarted = false;
     let rolledBack = false;

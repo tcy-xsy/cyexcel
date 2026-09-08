@@ -161,3 +161,68 @@ describe("RowMetrics.reorder", () => {
     expect(() => RowMetrics.uniform(3, 24).reorder(Int32Array.from([1, 0]))).toThrow(/length/);
   });
 });
+
+describe("RowMetrics zero height", () => {
+  it("allows exactly 0 as a height, but still rejects negative/NaN/Infinity", () => {
+    expect(RowMetrics.uniform(5, 0).heightAt(0)).toBe(0);
+    expect(() => RowMetrics.uniform(5, -1)).toThrow(RangeError);
+    expect(() => RowMetrics.uniform(5, Number.NaN)).toThrow(RangeError);
+    expect(() => RowMetrics.uniform(5, Number.POSITIVE_INFINITY)).toThrow(RangeError);
+  });
+
+  it("withHeight accepts 0", () => {
+    const metrics = RowMetrics.uniform(3, 20).withHeight(1, 0);
+    expect(metrics.heightAt(0)).toBe(20);
+    expect(metrics.heightAt(1)).toBe(0);
+    expect(metrics.heightAt(2)).toBe(20);
+    expect(metrics.totalHeight).toBe(40);
+  });
+
+  it("fromDenseValues accepts 0 among positive heights", () => {
+    const metrics = RowMetrics.fromDenseValues([0, 5, 0, 3]);
+    expect(metrics.totalHeight).toBe(8);
+    expect([...metrics.exportDenseValues()]).toEqual([0, 5, 0, 3]);
+  });
+});
+
+describe("RowMetrics.withFilteredRows", () => {
+  it("zeroes exactly the given rows and leaves the rest untouched", () => {
+    const metrics = RowMetrics.fromDenseValues([10, 20, 30, 40, 50]);
+    const filtered = metrics.withFilteredRows(new Set([1, 3]));
+
+    expect([...filtered.exportDenseValues()]).toEqual([10, 0, 30, 0, 50]);
+    expect(filtered.totalHeight).toBe(90);
+    // The original is untouched (purity / no write path to the source tree).
+    expect([...metrics.exportDenseValues()]).toEqual([10, 20, 30, 40, 50]);
+  });
+
+  it("is a pure no-op (returns this) for an empty set", () => {
+    const metrics = RowMetrics.fromDenseValues([10, 20, 30]);
+    expect(metrics.withFilteredRows(new Set())).toBe(metrics);
+  });
+
+  it("collapses a large contiguous filtered run so rowAtOffset still walks past it in O(log n) reachability", () => {
+    const rowCount = 5000;
+    const metrics = RowMetrics.uniform(rowCount, 20);
+    const filteredRows = new Set<number>();
+    for (let row = 100; row < 4900; row += 1) {
+      filteredRows.add(row);
+    }
+    const filtered = metrics.withFilteredRows(filteredRows);
+
+    // Rows before/after the filtered run keep their real height and offset.
+    expect(filtered.heightAt(50)).toBe(20);
+    expect(filtered.heightAt(4950)).toBe(20);
+    // The whole filtered run contributes 0 to total height and offsets.
+    expect(filtered.offsetAt(100)).toBe(100 * 20);
+    expect(filtered.offsetAt(4900)).toBe(100 * 20);
+    expect(filtered.totalHeight).toBe((rowCount - 4800) * 20);
+    // rowAtOffset lands exactly on the first visible row after the run.
+    expect(filtered.rowAtOffset(100 * 20)).toBe(4900);
+  });
+
+  it("throws for an out-of-range row", () => {
+    const metrics = RowMetrics.uniform(3, 20);
+    expect(() => metrics.withFilteredRows(new Set([5]))).toThrow(RangeError);
+  });
+});

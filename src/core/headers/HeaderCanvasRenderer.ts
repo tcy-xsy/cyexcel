@@ -34,6 +34,15 @@ const DEFAULT_PADDING = 4;
 export const DEFAULT_HEADER_SORT_ZONE_WIDTH = 18;
 
 /**
+ * Width, in pixels, of the clickable strip reserved immediately to the left
+ * of the sort zone for `toggle-filter` — same reasoning as the sort zone's
+ * own width, just a second reserved strip rather than widening the first
+ * one, so a column that is sortable but not filterable (or vice versa)
+ * reserves only the one strip it actually uses.
+ */
+export const DEFAULT_HEADER_FILTER_ZONE_WIDTH = 18;
+
+/**
  * Narrowest column that gets a sort zone at all. Below this the zone would
  * cover the whole header and there would be nowhere left to click to select
  * the column — the two gestures stop coexisting and selection is simply
@@ -43,13 +52,21 @@ export const DEFAULT_HEADER_SORT_ZONE_WIDTH = 18;
  */
 export const DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH = DEFAULT_HEADER_SORT_ZONE_WIDTH * 2;
 
+/** Sort-zone counterpart for a filter-only column (see `DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH`). */
+export const DEFAULT_HEADER_FILTER_ZONE_MIN_WIDTH = DEFAULT_HEADER_FILTER_ZONE_WIDTH * 2;
+
+/** How wide a strip a column's active affordances reserve at their trailing edge, combined. */
+function reservedZonesWidth(sortable: boolean, filterable: boolean): number {
+  return (sortable ? DEFAULT_HEADER_SORT_ZONE_WIDTH : 0) + (filterable ? DEFAULT_HEADER_FILTER_ZONE_WIDTH : 0);
+}
+
 /**
  * Hit-test for the default (no custom `HeaderRenderer`) header painter —
  * the canvas analog of `defaultHeaderPainter` above. Columns with a custom
  * canvas renderer supply their own `hitTest`; this is only consulted when
  * a leaf column has no renderer at all, so every default header gets
- * click-to-sort without every existing "click the header to select the
- * column" test changing meaning.
+ * click-to-sort/click-to-filter without every existing "click the header to
+ * select the column" test changing meaning.
  *
  * `point` must be *rect-relative* (the same `localPoint` shape Scene's
  * `hitTestColumnHeader` produces, matching the coordinate convention used
@@ -64,15 +81,30 @@ export function defaultHeaderHitTest(zone: {
    * click-to-select — and there is no mark drawn there to click either.
    */
   readonly sortable?: boolean;
+  /**
+   * Deliberately **not** symmetric with `sortable`'s "omitted means on"
+   * default at this raw layer: omitted here means not filterable, so every
+   * existing direct caller of this pure function keeps its exact prior
+   * single-zone behavior unless it opts in. Production wiring
+   * (`CyExcelCore#routeHeaderCanvasAction`) always resolves and passes this
+   * explicitly from `RuntimeColumn.filterable`, which itself defaults to
+   * `true` (`HeaderState.filterable`'s own doc comment) — the "filterable by
+   * default" decision lives at that layer, not here.
+   */
+  readonly filterable?: boolean;
 }): HeaderAction | undefined {
-  if (zone.sortable === false) {
+  const sortable = zone.sortable !== false;
+  const filterable = zone.filterable === true;
+  const reserved = reservedZonesWidth(sortable, filterable);
+  if (reserved === 0 || zone.rect.width < reserved * 2) {
     return undefined;
   }
-  if (zone.rect.width < DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH) {
-    return undefined;
-  }
-  if (zone.point.x >= zone.rect.width - DEFAULT_HEADER_SORT_ZONE_WIDTH) {
+  const sortZoneWidth = sortable ? DEFAULT_HEADER_SORT_ZONE_WIDTH : 0;
+  if (sortable && zone.point.x >= zone.rect.width - sortZoneWidth) {
     return { type: "toggle-sort" };
+  }
+  if (filterable && zone.point.x >= zone.rect.width - sortZoneWidth - DEFAULT_HEADER_FILTER_ZONE_WIDTH) {
+    return { type: "toggle-filter" };
   }
   return undefined;
 }
@@ -134,15 +166,17 @@ function defaultHeaderText(title: string, state: HeaderState): string {
 function defaultHeaderPainter(context: HeaderRenderContext): void {
   const { ctx, rect, title, state } = context;
   const sortable = state.sortable !== false;
+  const filterable = state.filterable === true;
   ctx.font = HEADER_FONT;
   ctx.textBaseline = "middle";
 
-  // The title is clipped to whatever the carets do not occupy, so a long title
-  // cannot run underneath them. Nothing is reserved when the column has no
-  // carets, so a non-sortable column keeps the full width it always had.
-  const titleWidth = sortable
-    ? Math.max(0, rect.width - DEFAULT_HEADER_SORT_ZONE_WIDTH)
-    : rect.width;
+  // The title is clipped to whatever the carets/filter zone do not occupy,
+  // so a long title cannot run underneath them. Nothing is reserved when the
+  // column has neither, so a plain column keeps the full width it always had.
+  const titleWidth = Math.max(
+    0,
+    rect.width - (sortable ? DEFAULT_HEADER_SORT_ZONE_WIDTH : 0) - (filterable ? DEFAULT_HEADER_FILTER_ZONE_WIDTH : 0)
+  );
   ctx.save();
   ctx.beginPath();
   ctx.rect(rect.x, rect.y, titleWidth, rect.height);

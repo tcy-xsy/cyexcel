@@ -31,6 +31,7 @@ import {
   DeleteRowsCommand,
   MoveRowsCommand,
   ReorderRowsCommand,
+  FilterCommand,
   InsertColumnsCommand,
   DeleteColumnsCommand,
   MoveColumnsCommand,
@@ -118,6 +119,7 @@ import {
 import { WrapMeasurementService, type RowHeightProvenanceView } from "./measurement";
 import { ShortcutRegistry, type ShortcutHandler } from "./shortcuts";
 import { computeSortOrder, createDefaultSortCompare, nextSortDirection, type SortState } from "./sort";
+import type { FilterState } from "./filter";
 import {
   ContentLayerRenderer,
   CanvasSurface,
@@ -143,7 +145,7 @@ import {
 
 export type CyExcelColumnConfig = ColumnDefinition;
 
-export type { SortState };
+export type { SortState, FilterState };
 
 /** Emitted after a custom canvas header hitTest returns an action. */
 export interface CyExcelHeaderActionEvent {
@@ -580,6 +582,15 @@ export class CyExcelCore {
    * and the public `sortState` getter.
    */
   #sortState: SortState | null = null;
+  /**
+   * Descriptive only, mirrors `#sortState`'s role — the column/predicate
+   * behind the currently-applied filter, or `null` when unfiltered. Backs
+   * `#headerState()`'s `filtered`/`filterable`; the authoritative
+   * `filteredRows` membership lives on `LayoutRoot` instead (ADR 0003 §3.2),
+   * which is what actually drives geometry and survives undo/redo of
+   * structural row commands.
+   */
+  #filterState: FilterState | null = null;
   readonly #columnHeaderHeight: number;
   readonly #rowHeaderWidth: number;
   /**
@@ -1345,6 +1356,15 @@ export class CyExcelCore {
   }
 
   /**
+   * The currently-applied filter — column and predicate — or `null` when
+   * unfiltered. Reflects `filterByColumn()`/`clearFilter()`'s last outcome,
+   * same one-shot-indicator semantics as `sortState` (ADR 0003 §3.4).
+   */
+  get filterState(): FilterState | null {
+    return this.#filterState;
+  }
+
+  /**
    * Registers a keyboard shortcut (`"Mod+Shift+Z"`-style combo — see
    * ShortcutRegistry.parseShortcut()). The built-in Mod+Z/Mod+Shift+Z/
    * Mod+Y/Enter shortcuts are registered the same way at construction, so a
@@ -1499,10 +1519,19 @@ export class CyExcelCore {
     // Computed inside the mutation slot rather than before it: if the call
     // was deferred, the permutation has to be a permutation of the row count
     // that will actually be there when ReorderRowsCommand validates it.
+    const rowCount = this.#store.getRowCount();
+    // Filtered rows must never move (ADR 0003 §3.1) — omitted entirely when
+    // unfiltered so the common case keeps computeSortOrder's original,
+    // already-tested full-row fast path untouched.
+    const filteredRows = this.#layout.root.filteredRows;
+    const visibleRows = filteredRows.size === 0
+      ? undefined
+      : Array.from({ length: rowCount }, (_unused, row) => row).filter((row) => !filteredRows.has(row));
     const order = computeSortOrder({
-      rowCount: this.#store.getRowCount(),
+      rowCount,
       getSortKey: (row) => this.#store.getCell(row, column),
       compare,
+      ...(visibleRows === undefined ? {} : { visibleRows }),
       direction,
       ...(signal === undefined ? {} : { signal })
     });
@@ -1517,6 +1546,89 @@ export class CyExcelCore {
     this.#sortState = { column, direction };
     this.#renderScheduler.invalidatePresentation({ columnHeader: true, domHeaders: true });
     return true;
+  }
+
+  /**
+   * Filters rows to those where `predicate(value, row)` is true, `value`
+   * being `column`'s cell value for that row. Replaces any previously
+   * active filter — MVP is a single active filter, one column at a time,
+   * not a per-column AND-composition (a clean follow-up, not required by
+   * ADR 0003).
+   *
+   * Filtered-out rows collapse to 0 height (ADR 0003 §3.2): their stored
+   * data and row height are never touched, and `clearFilter()` restores
+   * them pixel for pixel. Unlike `sortByColumn()`, this never enters the
+   * undo/redo stacks and never clears an existing redo entry (§3.3) — it
+   * destroys nothing, so there is nothing an undo would need to recover.
+   */
+  filterByColumn(column: number, predicate: (value: unknown, row: number) => boolean): void {
+    // Resolved eagerly so an out-of-range column throws from the call itself.
+    this.#columnManager.getColumn(column);
+    this.#enqueueOrRunMutation(() => {
+      const rowCount = this.#store.getRowCount();
+      const filteredRows = new Set<number>();
+      for (let row = 0; row < rowCount; row += 1) {
+        if (!predicate(this.#store.getCell(row, column), row)) {
+          filteredRows.add(row);
+        }
+      }
+      this.#runSetFilteredRows({ column, predicate }, filteredRows);
+    });
+  }
+
+  /** Clears the active filter, restoring every row's real height pixel for pixel. */
+  clearFilter(): void {
+    this.#enqueueOrRunMutation(() => {
+      this.#runSetFilteredRows(null, new Set());
+    });
+  }
+
+  /**
+   * The actual `history: "skip"` commit — same call shape as
+   * `#measureAndResizeRows`'s auto-height commit (ADR 0003 §3.3): bypasses
+   * `#applyCommandNow` (which only supports the default `record` policy)
+   * and manually publishes the receipt.
+   *
+   * `#filterState` is written *before* `#publishCommitReceipt`, unlike
+   * `#sortState` (written after `#applyCommandNow`'s own repaint, which
+   * needs a second explicit `invalidatePresentation()` to pick it up
+   * afterward): `FilterCommand`'s own `row-visibility` patch already forces
+   * a header repaint via `compileDirtySet`, and that repaint must see the
+   * *new* filter state or it would paint the old indicator against the new
+   * geometry — writing it first makes the one repaint correct instead of
+   * needing a second pass.
+   */
+  #runSetFilteredRows(nextState: FilterState | null, filteredRows: ReadonlySet<number>): void {
+    this.#cancelActiveEdit();
+    const changes = this.#commandManager.execute(new FilterCommand(filteredRows), { history: "skip" });
+    this.#filterState = nextState;
+    this.#publishCommitReceipt(changes);
+  }
+
+  /**
+   * Deletes exactly the rows in `[startRow, endRow]` that are currently
+   * visible under the active filter, leaving any filtered-out row in that
+   * span untouched — ADR 0003 §3.5's "唯一的非连续行集合": a filtered
+   * view's delete is a predicate over visible rows, not a coordinate
+   * transform. With no active filter every row in the span is visible, so
+   * this behaves like `deleteRows(startRow, endRow - startRow + 1)`. A span
+   * with nothing visible in it is a no-op. This *does* enter history —
+   * deletion is destructive, same reasoning as `sortByColumn()`.
+   */
+  deleteVisibleRowsInRange(startRow: number, endRow: number): void {
+    this.#enqueueOrRunMutation(() => {
+      const rows: number[] = [];
+      for (let row = startRow; row <= endRow; row += 1) {
+        if (this.#layout.isRowVisible(row)) {
+          rows.push(row);
+        }
+      }
+      if (rows.length === 0) {
+        return;
+      }
+      this.#cancelActiveEdit();
+      this.#applyCommandNow(new DeleteRowsCommand(rows));
+    });
   }
 
   /** Sets an exact row height through Command/Mutation/History. */
@@ -1837,6 +1949,15 @@ export class CyExcelCore {
         this.#sortState = null;
         this.#renderScheduler.invalidatePresentation({ columnHeader: true, domHeaders: true });
       }
+      if (hasColumnStructure && this.#filterState !== null) {
+        // Same reasoning as `#sortState` just above: `#filterState.column` is
+        // a one-shot claim about which column the indicator points at, not
+        // remapped on column insert/delete/move. The actual `filteredRows`
+        // row-visibility geometry is untouched — only this descriptive
+        // pointer goes stale.
+        this.#filterState = null;
+        this.#renderScheduler.invalidatePresentation({ columnHeader: true, domHeaders: true });
+      }
 
       // The model revision and all authoritative structural roots are already
       // committed. Derived bookkeeping and user formatters are finalizers too:
@@ -2034,7 +2155,9 @@ export class CyExcelCore {
    * was before segmenting existed.
    */
   #updateSpacerSize(root: LayoutRoot = this.#layout.root): void {
-    this.#viewport.setContentSize(root.columnAxis.getTotalWidth(), root.rowMetrics.totalHeight);
+    // `visibleRowMetrics`, not the authoritative `rowMetrics` — a filtered
+    // row must not count toward the scrollable content height (ADR 0003 §3.2).
+    this.#viewport.setContentSize(root.columnAxis.getTotalWidth(), root.visibleRowMetrics.totalHeight);
   }
 
   /**
@@ -2604,7 +2727,8 @@ export class CyExcelCore {
       action = defaultHeaderHitTest({
         rect: hit.rect,
         point: hit.localPoint,
-        sortable: this.#columnManager.getColumn(hit.column).sortable
+        sortable: this.#columnManager.getColumn(hit.column).sortable,
+        filterable: this.#columnManager.getColumn(hit.column).filterable
       });
     } else if (renderer.kind === "canvas" && renderer.hitTest) {
       try {
@@ -2666,6 +2790,11 @@ export class CyExcelCore {
           return;
         }
       }
+      // `toggle-filter` has no core-owned counterpart to `#applyHeaderSort`:
+      // core has no default value-list UI to build a predicate from, so
+      // every `toggle-filter` action — default renderer or custom — is only
+      // ever a notification. The host listens and calls
+      // `filterByColumn(column, predicate)` itself.
       this.#events.emit("header-action", payload);
     });
     event.preventDefault();
@@ -2673,12 +2802,13 @@ export class CyExcelCore {
     return handleInput(undefined);
   }
 
-  /** `HeaderState` for one column, as shown by its header's sort/filter indicator. Backs both `HeaderCanvasRenderer`/`DomHeaderManager`'s `getHeaderState` and the `state` a custom canvas renderer's `hitTest`/`paint` receive. Filtering is Part B — always `false` for now. */
+  /** `HeaderState` for one column, as shown by its header's sort/filter indicator. Backs both `HeaderCanvasRenderer`/`DomHeaderManager`'s `getHeaderState` and the `state` a custom canvas renderer's `hitTest`/`paint` receive. */
   #headerState(column: number): HeaderState {
     return {
       sorted: this.#sortState !== null && this.#sortState.column === column ? this.#sortState.direction : false,
-      filtered: false,
-      sortable: this.#columnManager.getColumn(column).sortable
+      filtered: this.#filterState !== null && this.#filterState.column === column,
+      sortable: this.#columnManager.getColumn(column).sortable,
+      filterable: this.#columnManager.getColumn(column).filterable
     };
   }
 

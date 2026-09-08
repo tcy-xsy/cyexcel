@@ -61,6 +61,7 @@ function snapshotChange(change: SemanticChange): SemanticChange {
     case "column-structure":
     case "column-layout":
     case "merge-layout":
+    case "row-visibility":
     case "full-reset":
       return Object.freeze({ ...change });
   }
@@ -109,6 +110,12 @@ export function summarizeStructuralChanges(
         hasColumnLayout = true;
         break;
       case "row-layout":
+      case "row-visibility":
+        // A filter apply/clear moves row geometry (rows collapse to/from 0
+        // height) exactly like a row-layout height edit — the spacer and
+        // selection overlay both must respond — but it is not a structural
+        // axis change: no row was inserted/deleted/moved, so `hasRowStructure`
+        // must stay false or `#structure.apply()` would run for no reason.
         hasRowLayout = true;
         break;
     }
@@ -172,10 +179,14 @@ export function compileDirtySet(changes: readonly SemanticChange[]): DirtySet {
         break;
       case "row-structure":
       case "row-reorder":
+      case "row-visibility":
         // A reorder does not itself change row numbers, but each row's
         // height travels with it, so band boundaries move and the gutter
         // must repaint just as it would for insert/delete/move (see
-        // doc/scene-mutation-migration-plan.md §14.7).
+        // doc/scene-mutation-migration-plan.md §14.7). A filtered row's
+        // height collapsing to/from 0 is the same shape of consequence:
+        // row numbers stay put (ADR 0003 §3.4 — the gutter just gaps at
+        // 1,5,9…) but every band boundary below it moves.
         domCells = true;
         rowHeader = true;
         content = "full";

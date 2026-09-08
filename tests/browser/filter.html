@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel filter fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 400px;
+        height: 250px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+
+      // `?header=custom` puts a custom canvas renderer on the "category"
+      // column whose hitTest reports `toggle-filter` for any point in the
+      // cell — a custom renderer's `toggle-filter` is a pure notification,
+      // same contract as `toggle-sort` in sort.html.
+      const customCategoryHeaderRenderer = {
+        kind: "canvas",
+        paint({ ctx, rect, title }) {
+          ctx.fillStyle = "#111827";
+          ctx.textBaseline = "middle";
+          ctx.fillText(title, rect.x + 4, rect.y + rect.height / 2);
+        },
+        hitTest() {
+          return { type: "toggle-filter" };
+        }
+      };
+      const customHeaders = new URLSearchParams(location.search).get("header") === "custom";
+
+      const columns = [
+        { width: 120, header: "Name" },
+        {
+          width: 100,
+          header: customHeaders ? { title: "Category", renderer: customCategoryHeaderRenderer } : "Category",
+          // `?unfilterable=1` turns this column off at the column level.
+          ...(new URLSearchParams(location.search).get("unfilterable") === "1"
+            ? { filterable: false }
+            : {})
+        },
+        { width: 80, header: "Score", type: "number" }
+      ];
+      const fields = ["name", "category", "score"];
+      const rows = [
+        { name: "apple", category: "fruit", score: 3 },
+        { name: "banana", category: "fruit", score: 1 },
+        { name: "carrot", category: "veg", score: 2 },
+        { name: "daikon", category: "veg", score: 5 }
+      ];
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        snapshot: rowsToWorkbookSnapshot(rows, fields),
+        rowHeight: 20,
+        headerHeight: 20,
+        rowHeaderWidth: 40
+      });
+
+      let commitCount = 0;
+      sheet.events.on("change", () => {
+        commitCount += 1;
+      });
+
+      const headerActions = [];
+      sheet.events.on("header-action", ({ action, column }) => {
+        headerActions.push({ action: { ...action }, column });
+      });
+
+      window.__filter = {
+        sheet,
+        getCommitCount: () => commitCount,
+        getHeaderActions: () => headerActions.map((entry) => ({ ...entry }))
+      };
+      window.__filterFixtureReady = true;
+    </script>
+  </body>
+</html>

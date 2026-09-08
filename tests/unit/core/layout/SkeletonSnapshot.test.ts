@@ -123,12 +123,13 @@ describe("SkeletonSnapshot", () => {
   });
 
   it("rejects invalid metrics", () => {
+    // A 0 height is legal (a filtered row, ADR 0003 §3.2) — only negative/non-finite is rejected.
     expect(
       () =>
         new SkeletonSnapshot({
           modelVersion: 0,
           layoutVersion: 0,
-          rowHeights: [20, 0],
+          rowHeights: [20, -1],
           columnAxis: new ColumnAxisSnapshot({ columnWidths: [50], frozenColumnCount: 0 }),
           frozenRowCount: 0
         })

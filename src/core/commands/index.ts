@@ -8,6 +8,7 @@ export { InsertRowsCommand, type InsertRowsCommandParams } from "./InsertRowsCom
 export { DeleteRowsCommand, type DeleteRowsCommandParams } from "./DeleteRowsCommand";
 export { MoveRowsCommand, type MoveRowsCommandParams } from "./MoveRowsCommand";
 export { ReorderRowsCommand, type ReorderRowsCommandParams } from "./ReorderRowsCommand";
+export { FilterCommand, type FilterCommandParams } from "./FilterCommand";
 export { type BeforeRowsChangeContext } from "./checkBeforeRowsChange";
 export { InsertColumnsCommand, type InsertColumnsCommandParams } from "./InsertColumnsCommand";
 export { DeleteColumnsCommand, type DeleteColumnsCommandParams } from "./DeleteColumnsCommand";

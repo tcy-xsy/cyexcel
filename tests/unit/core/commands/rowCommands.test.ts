@@ -115,6 +115,64 @@ describe("DeleteRowsCommand", () => {
   });
 });
 
+describe("DeleteRowsCommand — non-contiguous rows (ADR 0003 §3.5)", () => {
+  it("deletes exactly the given rows, splitting into contiguous runs internally", () => {
+    const { store } = createStore(["A", "B", "C", "D", "E", "F"]);
+    const manager = createTableCommandManager(store);
+    // Delete rows 1,2 (a run) and row 4 (a separate run); leave 0,3,5 (A,D,F).
+    const command = new DeleteRowsCommand([1, 2, 4]);
+
+    manager.execute(command);
+
+    expect(readNames(store, 3)).toEqual(["A", "D", "F"]);
+  });
+
+  it("is exactly one history entry, not one per contiguous run", () => {
+    const { store } = createStore(["A", "B", "C", "D", "E", "F"]);
+    const manager = createTableCommandManager(store);
+
+    manager.execute(new DeleteRowsCommand([1, 2, 4]));
+
+    expect(manager.historySize).toBe(1);
+  });
+
+  it("undo restores every deleted row at its original index in one call", () => {
+    const { store } = createStore(["A", "B", "C", "D", "E", "F"]);
+    const manager = createTableCommandManager(store);
+    manager.execute(new DeleteRowsCommand([1, 2, 4]));
+
+    manager.undo();
+
+    expect(readNames(store, 6)).toEqual(["A", "B", "C", "D", "E", "F"]);
+  });
+
+  it("redo (execute again) deletes the same non-contiguous rows again", () => {
+    const { store } = createStore(["A", "B", "C", "D", "E", "F"]);
+    const manager = createTableCommandManager(store);
+    manager.execute(new DeleteRowsCommand([1, 2, 4]));
+    manager.undo();
+
+    manager.redo();
+
+    expect(readNames(store, 3)).toEqual(["A", "D", "F"]);
+  });
+
+  it("normalizes an unsorted, duplicate-containing row list", () => {
+    const command = new DeleteRowsCommand([3, 1, 1, 2]);
+    expect(command.params).toEqual({ rows: [1, 2, 3] });
+  });
+
+  it("rejects a negative or non-integer row", () => {
+    expect(() => new DeleteRowsCommand([-1])).toThrow(RangeError);
+    expect(() => new DeleteRowsCommand([1.5])).toThrow(RangeError);
+  });
+
+  it("still supports the plain (start, count) contiguous form", () => {
+    const command = new DeleteRowsCommand(2, 3);
+    expect(command.params).toEqual({ start: 2, count: 3 });
+  });
+});
+
 describe("MoveRowsCommand", () => {
   it("moves the given block and produces a row-structure move patch", () => {
     const { store } = createStore(["A", "B", "C", "D", "E"]);

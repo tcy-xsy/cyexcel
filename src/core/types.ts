@@ -85,7 +85,14 @@ export type Patch =
    * `start`/`count` semantics that a permutation does not have, so widening
    * that variant would compile while silently remapping indices wrongly.
    */
-  | { readonly type: "row-reorder"; readonly order: Int32Array };
+  | { readonly type: "row-reorder"; readonly order: Int32Array }
+  /**
+   * A whole-sheet "filtered-row membership changed" marker — like
+   * `merge-layout`, it carries no fields and downstream treats it as a full
+   * repaint: every row below the first hidden/shown one shifts on screen
+   * (ADR 0003 §3.2).
+   */
+  | { readonly type: "row-visibility" };
 
 export interface Command<TType extends string = string, TParams = unknown> {
   readonly type: TType;

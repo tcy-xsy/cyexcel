@@ -85,6 +85,7 @@ function textColumn(): RuntimeColumn {
     clipboard: { copy: true, paste: true },
     wrap: false,
     sortable: true,
+    filterable: true,
     version: 1
   };
 }
@@ -97,6 +98,7 @@ function domColumn(factory: DomCellRendererFactory): RuntimeColumn {
     clipboard: { copy: true, paste: true },
     wrap: false,
     sortable: true,
+    filterable: true,
     version: 1,
     renderer: factory
   };

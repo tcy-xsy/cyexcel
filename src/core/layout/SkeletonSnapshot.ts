@@ -75,7 +75,9 @@ export class SkeletonSnapshot {
     return new SkeletonSnapshot({
       modelVersion,
       layoutVersion: root.version,
-      rowMetrics: root.rowMetrics,
+      // `visibleRowMetrics`, not the authoritative `rowMetrics` — this is the
+      // one place filtering enters rendering/scroll/hit-test (ADR 0003 §3.2).
+      rowMetrics: root.visibleRowMetrics,
       columnAxis: root.columnAxis,
       frozenRowCount: root.frozenRowCount,
     });

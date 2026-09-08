@@ -17,6 +17,7 @@ function textColumn(overrides: Partial<RuntimeColumn> = {}): RuntimeColumn {
     clipboard: { copy: true, paste: true },
     wrap: false,
     sortable: true,
+    filterable: true,
     version: 1,
     ...overrides
   };

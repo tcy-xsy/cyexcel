@@ -5,6 +5,7 @@ import type { ClearRangeCommand } from "./ClearRangeCommand";
 import { CommandHandlerRegistry } from "./CommandHandlerRegistry";
 import type { DeleteColumnsCommand } from "./DeleteColumnsCommand";
 import type { DeleteRowsCommand } from "./DeleteRowsCommand";
+import type { FilterCommand } from "./FilterCommand";
 import type { HideColumnCommand } from "./HideColumnCommand";
 import type { InsertColumnsCommand } from "./InsertColumnsCommand";
 import type { InsertRowsCommand } from "./InsertRowsCommand";
@@ -31,6 +32,20 @@ export interface BuiltinCommandPlannerOptions {
   readonly layout?: LayoutCommandMutationFactory;
   readonly structure?: StructureCommandMutationFactory;
   readonly guards?: StructuralCommandGuards;
+}
+
+/** `rows` must already be ascending (guaranteed by `DeleteRowsCommand`'s own normalization). */
+function toContiguousRuns(rows: readonly number[]): readonly { readonly start: number; readonly count: number }[] {
+  const runs: { start: number; count: number }[] = [];
+  for (const row of rows) {
+    const last = runs.at(-1);
+    if (last !== undefined && row === last.start + last.count) {
+      last.count += 1;
+    } else {
+      runs.push({ start: row, count: 1 });
+    }
+  }
+  return runs;
 }
 
 function createEmptyGrid(range: CellRange): readonly (readonly undefined[])[] {
@@ -121,13 +136,21 @@ export function createBuiltinCommandPlanner(options: BuiltinCommandPlannerOption
   });
   registry.register<DeleteRowsCommand>({
     type: "delete-rows",
-    plan: ({ start, count }, context) => {
-      const change = { operation: "delete" as const, start, count };
-      options.guards?.checkRows(change);
-      context.stage(options.data.createDeleteRows(start, count));
-      const structure = options.structure?.createDeleteRows(start, count);
-      if (structure) {
-        context.stage(structure);
+    plan: (params, context) => {
+      const runs = "rows" in params ? toContiguousRuns(params.rows) : [params];
+      // Bottom-up: a run's own start/count is only meaningful against the
+      // *not-yet-shifted* row indices above it, so the highest-start run must
+      // be staged (and its data physically removed) before any lower run's
+      // indices are touched.
+      for (let index = runs.length - 1; index >= 0; index -= 1) {
+        const { start, count } = runs[index] as { start: number; count: number };
+        const change = { operation: "delete" as const, start, count };
+        options.guards?.checkRows(change);
+        context.stage(options.data.createDeleteRows(start, count));
+        const structure = options.structure?.createDeleteRows(start, count);
+        if (structure) {
+          context.stage(structure);
+        }
       }
     }
   });
@@ -250,6 +273,15 @@ export function createBuiltinCommandPlanner(options: BuiltinCommandPlannerOption
       type: "show-column",
       plan: ({ column }, context) =>
         context.stage(layout.createLayoutMutation({ type: "show-column", column }))
+    });
+    registry.register<FilterCommand>({
+      type: "filter-rows",
+      // Stages only a layout mutation — no `options.data.*` call at all.
+      // That absence *is* ADR 0003 §3.2's "过滤没有写数据路径" made
+      // structural, not just documented; no `options.guards?.checkRows(...)`
+      // either, since nothing here is a row insert/delete/move.
+      plan: ({ filteredRows }, context) =>
+        context.stage(layout.createLayoutMutation({ type: "set-filtered-rows", filteredRows }))
     });
   }
 

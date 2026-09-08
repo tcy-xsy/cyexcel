@@ -35,8 +35,8 @@ function assertCount(name: string, value: number): void {
 }
 
 function assertHeight(name: string, value: number): void {
-  if (!Number.isFinite(value) || value <= 0) {
-    throw new RangeError(`${name} must be a positive finite number: ${value}`);
+  if (!Number.isFinite(value) || value < 0) {
+    throw new RangeError(`${name} must be a non-negative finite number: ${value}`);
   }
 }
 
@@ -529,6 +529,36 @@ export class RowMetrics {
       next[index] = current[order[index] as number] as number;
     }
     return RowMetrics.fromDenseValues(next);
+  }
+
+  /**
+   * Zeroes the given rows' height — the filtering mechanism (ADR 0003 §3.2):
+   * a filtered row contributes 0 to every derived offset/total, and a
+   * zero-height run collapses into one `totalHeight === 0` node via the
+   * `fromDenseValues` adjacent-uniform-leaf merge, so `rowAtOffset`/
+   * `offsetAt` skip a whole hidden run in O(log n) with no other changes.
+   *
+   * Pure: `this` is returned untouched when the set is empty or every named
+   * row is already 0.
+   */
+  withFilteredRows(filteredRows: ReadonlySet<number>): RowMetrics {
+    if (filteredRows.size === 0) {
+      return this;
+    }
+    for (const row of filteredRows) {
+      if (!Number.isSafeInteger(row) || row < 0 || row >= this.rowCount) {
+        throw new RangeError(`row is outside row metrics: ${row}`);
+      }
+    }
+    const values = this.exportDenseValues();
+    let changed = false;
+    for (const row of filteredRows) {
+      if (values[row] !== 0) {
+        values[row] = 0;
+        changed = true;
+      }
+    }
+    return changed ? RowMetrics.fromDenseValues(values) : this;
   }
 
   #assertRange(start: number, count: number): void {

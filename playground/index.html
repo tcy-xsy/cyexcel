@@ -45,6 +45,19 @@
           </span>
         </div>
         <div class="toolbar-group">
+          <label class="hint-inline">过滤列 <select id="filterColumn"></select></label>
+          <input id="filterValue" type="text" placeholder="只看等于这个值的行" aria-label="过滤值" />
+          <button class="button" id="applyFilterButton" type="button">应用过滤</button>
+          <button class="button" id="clearFilterButton" type="button">清除过滤</button>
+          <span class="hint-inline" id="filterHint">
+            调用 <code>sheet.filterByColumn(列, predicate)</code>——不匹配的行折叠成 0 高度，
+            存储的行高和数据一个字节都不动，<code>清除过滤</code>逐像素复原。过滤不进撤销栈、
+            也不会清空已有的重做记录（同自动行高的提交方式）。表头右端第二条窄条
+            （紧挨着排序小三角左边）点一下会用当前输入框的值对那一列过滤——core 自己不知道
+            该用什么谓词，点击只发一个通知，谓词由这里（宿主）决定
+          </span>
+        </div>
+        <div class="toolbar-group">
           <button class="button" id="exportButton" type="button">导出选区为 TSV</button>
           <span class="hint-inline" id="shortcutHint">
             调用 <code>sheet.copy({ download: true })</code>；Ctrl/Cmd+S 是同一个动作的快捷键
@@ -169,7 +182,6 @@
             </p>
             <ul class="roadmap-list">
               <li>多 Sheet</li>
-              <li>排序、过滤（milestone 2 后续 Step）</li>
               <li>可配置的运行时主题（当前 <code>theme.ts</code> 是写死的颜色常量，不能通过
                 <code>CyExcelCoreOptions</code> 自定义）</li>
               <li><code>&lt;cy-excel&gt;</code> 属性化配置入口（Step 13 评估后决定跳过，见

@@ -140,6 +140,7 @@ export class ColumnManager {
       // `builtins.ts`), else sortable. Same shape as `compare`: the type
       // declares the capability, the column sets the policy.
       sortable: definition.sortable ?? cellType.sortable ?? true,
+      filterable: definition.filterable ?? cellType.filterable ?? true,
       version: RESOLVED_VERSION
     };
 

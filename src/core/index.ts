@@ -11,7 +11,8 @@ export {
   type CyExcelColumnConfig,
   type CyExcelCoreOptions,
   type CyExcelHeaderActionEvent,
-  type SortState
+  type SortState,
+  type FilterState
 } from "./CyExcelCore";
 
 export { CyExcelError, CyExcelErrorCode } from "./errors";
@@ -62,6 +63,8 @@ export {
   type MoveRowsCommandParams,
   ReorderRowsCommand,
   type ReorderRowsCommandParams,
+  FilterCommand,
+  type FilterCommandParams,
   InsertColumnsCommand,
   type InsertColumnsCommandParams,
   DeleteColumnsCommand,

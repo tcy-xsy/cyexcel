@@ -35,6 +35,11 @@ export interface CellType<T = unknown> {
    * already right"). A column can override it either way.
    */
   readonly sortable?: boolean;
+  /**
+   * Whether values of this type can be filtered at all. Defaults to `true`,
+   * same shape as `sortable` — a column can override it either way.
+   */
+  readonly filterable?: boolean;
   createEditor?(context: CellFormatContext): CellEditor;
   serialize?(value: T, context: CellFormatContext): string;
   /** Metadata only — does not itself select an editor. See doc/progress.md's editor-pluggability patch. */
@@ -120,6 +125,12 @@ export interface HeaderState {
    * the affordance.
    */
   readonly sortable?: boolean;
+  /**
+   * Whether this column offers filtering at all. Same shape as `sortable`:
+   * `false` removes the header's filter affordance and makes
+   * `defaultHeaderHitTest` refuse that zone. Omitted means filterable.
+   */
+  readonly filterable?: boolean;
 }
 
 /**
@@ -260,6 +271,13 @@ export interface ColumnDefinition<T = unknown> {
    * type's `sortable`, which defaults to `true`.
    */
   readonly sortable?: boolean;
+  /**
+   * Overrides the cell type's own answer to "can this be filtered". Same
+   * shape as `sortable` — set it `false` to drop the header's filter
+   * affordance for this column. Defaults to the type's `filterable`, which
+   * defaults to `true`.
+   */
+  readonly filterable?: boolean;
 }
 
 /**
@@ -274,6 +292,8 @@ export interface RuntimeColumn<T = unknown> extends CellType<T> {
   readonly wrap: boolean;
   /** Resolved from the column, then the cell type, then `true`. */
   readonly sortable: boolean;
+  /** Resolved from the column, then the cell type, then `true`. */
+  readonly filterable: boolean;
   /** Bumped only if columns are ever re-resolved; Step 8 resolves once at construction. */
   readonly version: number;
 }

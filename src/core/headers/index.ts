@@ -8,6 +8,8 @@ export {
   type HeaderCanvasRendererOptions,
   DEFAULT_HEADER_SORT_ZONE_WIDTH,
   DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH,
+  DEFAULT_HEADER_FILTER_ZONE_WIDTH,
+  DEFAULT_HEADER_FILTER_ZONE_MIN_WIDTH,
   defaultHeaderHitTest
 } from "./HeaderCanvasRenderer";
 export { RowHeaderCanvasRenderer, type RowHeaderCanvasRendererOptions } from "./RowHeaderCanvasRenderer";

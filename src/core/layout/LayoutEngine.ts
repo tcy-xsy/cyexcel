@@ -1,4 +1,9 @@
 import { CyExcelError, CyExcelErrorCode } from '../errors';
+import {
+  relocateFilteredRowsForDelete,
+  relocateFilteredRowsForInsert,
+  relocateFilteredRowsForMove,
+} from '../filter/relocateFilteredRows';
 import { ColumnAxisSnapshot } from './ColumnAxisSnapshot';
 import { RowMetrics, type RowMetricsFragment } from './RowMetrics';
 import { assertValidRowOrder } from './rowOrder';
@@ -6,6 +11,8 @@ import {
   validateAxisChange,
   type AxisChangeDescriptor,
 } from './structuralChange';
+
+const EMPTY_FILTERED_ROWS: ReadonlySet<number> = new Set();
 
 /**
  * 没有显式宽度的列有多宽。
@@ -81,6 +88,17 @@ export interface LayoutRoot {
   readonly columnAxis: ColumnAxisSnapshot;
   readonly frozenRowCount: number;
   readonly frozenColumnCount: number;
+  /**
+   * 过滤命中的行下标（ADR 0003 §3.2）——权威集合，`rowMetrics` 永远不读它、
+   * 也永远不因为它而改写。
+   */
+  readonly filteredRows: ReadonlySet<number>;
+  /**
+   * 过滤唯一的写入目标：未过滤时与 `rowMetrics` 是同一个引用（零额外开销），
+   * 过滤命中的行在这里按 0 高度计入。渲染/滚动/命中测试只应该读这个字段，
+   * 不应该读 `rowMetrics`——`SkeletonSnapshot.fromRoot` 是唯一的桥接点。
+   */
+  readonly visibleRowMetrics: RowMetrics;
 }
 
 export type PreparedLayoutRoot = LayoutRoot;
@@ -224,15 +242,18 @@ export class LayoutEngine {
     this.#overscanRows = options.overscanRows ?? 0;
     this.#overscanColumns = options.overscanColumns ?? 0;
     const columnAxis = this.#createColumnAxis(options.columnWidths);
+    const rowMetrics = RowMetrics.create(
+      options.rowCount,
+      options.rowHeight,
+      options.rowHeights ?? new Map(),
+    );
     this.#root = this.#createRoot(
       0,
       options.rowCount,
-      RowMetrics.create(
-        options.rowCount,
-        options.rowHeight,
-        options.rowHeights ?? new Map(),
-      ),
+      rowMetrics,
       columnAxis,
+      EMPTY_FILTERED_ROWS,
+      rowMetrics,
     );
   }
 
@@ -292,6 +313,19 @@ export class LayoutEngine {
   /** Explicit O(rowCount) serialization boundary. Never use inside layout transactions. */
   exportDenseRowHeights(): Float64Array {
     return this.#root.rowMetrics.exportDenseValues();
+  }
+
+  /**
+   * `row`'s current filter visibility — reads `visibleRowMetrics`, not the
+   * authoritative `rowMetrics`, so it is `false` exactly for rows in
+   * `filteredRows` (ADR 0003 §3.2). A real row height is always > 0, so
+   * "height is 0 in the derived tree" and "filtered" coincide exactly.
+   */
+  isRowVisible(row: number): boolean {
+    if (!isNonNegativeInteger(row) || row >= this.#root.rowCount) {
+      return false;
+    }
+    return this.#root.visibleRowMetrics.heightAt(row) > 0;
   }
 
   /** Same y a column-0 getCellRect() would report, without needing a column index — for header/frozen-band code that has no column. `row === rowCount` is a valid "boundary past the last row" query, equal to getTotalHeight(). */
@@ -413,12 +447,20 @@ export class LayoutEngine {
     });
   }
 
+  /**
+   * `LayoutRootSnapshot` doesn't carry `filteredRows`/`visibleRowMetrics`
+   * (same as `frozenRowCount`/`frozenColumnCount`, which `#createRoot`
+   * re-derives rather than the snapshot storing them) — a prepared root from
+   * a snapshot always starts unfiltered.
+   */
   prepareRoot(snapshot: LayoutRootSnapshot): PreparedLayoutRoot {
     return this.#createRoot(
       this.#root.version + 1,
       snapshot.rowCount,
       snapshot.rowMetrics,
       snapshot.columnAxis,
+      EMPTY_FILTERED_ROWS,
+      snapshot.rowMetrics,
     );
   }
 
@@ -458,6 +500,8 @@ export class LayoutEngine {
       base.rowCount,
       base.rowMetrics,
       this.#createColumnAxis(columnWidths),
+      base.filteredRows,
+      base.visibleRowMetrics,
     );
   }
 
@@ -483,6 +527,11 @@ export class LayoutEngine {
   ): PreparedLayoutRoot {
     let changed = false;
     const heights = new Map<number, number>();
+    // Filtered rows are skipped here (not "written as 0") — visibleRowMetrics
+    // keeps whatever it already had for them (0), and their real height still
+    // lands in `heights`/`rowMetrics` below so it's there the moment the row
+    // is un-filtered (see filteredRowGeometry.test.ts's un-filter-shows-new-height case).
+    const visibleHeights = new Map<number, number>();
     for (const [row, height] of updates) {
       if (!isNonNegativeInteger(row) || row >= base.rowCount) {
         throw invalidLayoutOption('row', row);
@@ -492,6 +541,9 @@ export class LayoutEngine {
       }
       heights.set(row, height);
       changed ||= base.rowMetrics.heightAt(row) !== height;
+      if (!base.filteredRows.has(row)) {
+        visibleHeights.set(row, height);
+      }
     }
     if (updates.size === 0) {
       return base;
@@ -502,11 +554,43 @@ export class LayoutEngine {
       return base;
     }
 
+    const visibleRowMetrics = base.filteredRows.size === 0
+      ? rowMetrics
+      : visibleHeights.size === 0
+        ? base.visibleRowMetrics
+        : base.visibleRowMetrics.withHeights(visibleHeights);
+
     return this.#createRoot(
       base.version + 1,
       base.rowCount,
       rowMetrics,
       base.columnAxis,
+      base.filteredRows,
+      visibleRowMetrics,
+    );
+  }
+
+  /**
+   * Replaces the entire `filteredRows` membership (ADR 0003 §3.2/§3.3) —
+   * always a full replacement, never an incremental toggle, so the inverse
+   * is just "write back the previous set" (O(1)). The one place this is an
+   * intentional full `RowMetrics` rebuild (O(rowCount)): every other root
+   * replacement in this file maintains `visibleRowMetrics` incrementally.
+   */
+  prepareSetFilteredRows(
+    filteredRows: ReadonlySet<number>,
+    base: LayoutRoot = this.#root,
+  ): PreparedLayoutRoot {
+    const visibleRowMetrics = filteredRows.size === 0
+      ? base.rowMetrics
+      : base.rowMetrics.withFilteredRows(filteredRows);
+    return this.#createRoot(
+      base.version + 1,
+      base.rowCount,
+      base.rowMetrics,
+      base.columnAxis,
+      filteredRows,
+      visibleRowMetrics,
     );
   }
 
@@ -515,19 +599,43 @@ export class LayoutEngine {
       throw invalidLayoutOption('rowCount', rowCount);
     }
 
-    const rowMetrics = rowCount < this.#root.rowCount
-      ? this.#root.rowMetrics.delete(rowCount, this.#root.rowCount - rowCount).metrics
-      : rowCount > this.#root.rowCount
-        ? this.#root.rowMetrics.insert(
-            this.#root.rowCount,
-            RowMetrics.uniform(rowCount - this.#root.rowCount, this.#rowHeight),
-          )
-        : this.#root.rowMetrics;
+    const base = this.#root;
+    let rowMetrics = base.rowMetrics;
+    let visibleRowMetrics = base.visibleRowMetrics;
+    let filteredRows = base.filteredRows;
+
+    if (rowCount < base.rowCount) {
+      const dropCount = base.rowCount - rowCount;
+      rowMetrics = base.rowMetrics.delete(rowCount, dropCount).metrics;
+      // A dropped row's membership goes with it — same "no remember and
+      // restore on regrow" asymmetry documented on setRowCount() above.
+      if (filteredRows.size > 0) {
+        const kept = [...filteredRows].filter((row) => row < rowCount);
+        if (kept.length !== filteredRows.size) {
+          filteredRows = new Set(kept);
+        }
+      }
+      visibleRowMetrics = filteredRows.size === 0
+        ? rowMetrics
+        : base.visibleRowMetrics.delete(rowCount, dropCount).metrics;
+    } else if (rowCount > base.rowCount) {
+      const addCount = rowCount - base.rowCount;
+      const fragment = RowMetrics.uniform(addCount, this.#rowHeight);
+      rowMetrics = base.rowMetrics.insert(base.rowCount, fragment);
+      // New rows are never filtered, so they carry their real height into
+      // visibleRowMetrics too.
+      visibleRowMetrics = filteredRows.size === 0
+        ? rowMetrics
+        : base.visibleRowMetrics.insert(base.rowCount, fragment);
+    }
+
     return this.#createRoot(
-      this.#root.version + 1,
+      base.version + 1,
       rowCount,
       rowMetrics,
-      this.#root.columnAxis,
+      base.columnAxis,
+      filteredRows,
+      visibleRowMetrics,
     );
   }
 
@@ -573,17 +681,27 @@ export class LayoutEngine {
    * `IndexedTableRegistry` 里的侧表，`applyRowPlan` 会把 `h`/`hp` 一起搬到新位置，
    * 所以这里只需要搬索引。两边搬的是同一个排列，§4.2 的不变量因此在 reorder
    * 之后仍然成立。
+   *
+   * `filteredRows` itself is untouched (reference-stable) — ADR 0003 §3.1
+   * guarantees sort only permutes visible rows, so every filtered row is an
+   * identity mapping in `order` and never needs remapping.
    */
   prepareReorderRows(
     order: Int32Array,
     base: LayoutRoot = this.#root,
   ): PreparedLayoutRoot {
     assertValidRowOrder(order, base.rowCount);
+    const rowMetrics = base.rowMetrics.reorder(order);
+    const visibleRowMetrics = base.filteredRows.size === 0
+      ? rowMetrics
+      : base.visibleRowMetrics.reorder(order);
     return this.#createRoot(
       base.version + 1,
       base.rowCount,
-      base.rowMetrics.reorder(order),
+      rowMetrics,
       base.columnAxis,
+      base.filteredRows,
+      visibleRowMetrics,
     );
   }
 
@@ -632,6 +750,8 @@ export class LayoutEngine {
 
     if (change.axis === 'row') {
       let rowMetrics: RowMetrics;
+      let visibleRowMetrics: RowMetrics;
+      let filteredRows: ReadonlySet<number>;
       if (change.operation === 'insert') {
         const inserted = payload.rowMetricsFragment ?? RowMetrics.create(
           change.count,
@@ -642,10 +762,25 @@ export class LayoutEngine {
           throw invalidLayoutOption('rowMetricsFragment.rowCount', inserted.rowCount);
         }
         rowMetrics = base.rowMetrics.insert(change.start, inserted);
+        filteredRows = relocateFilteredRowsForInsert(base.filteredRows, change.start, change.count);
+        // The inserted fragment is never filtered, so the same fragment
+        // (same real heights) is what visibleRowMetrics gets too.
+        visibleRowMetrics = base.filteredRows.size === 0
+          ? rowMetrics
+          : base.visibleRowMetrics.insert(change.start, inserted);
       } else if (change.operation === 'delete') {
         rowMetrics = base.rowMetrics.delete(change.start, change.count).metrics;
+        filteredRows = relocateFilteredRowsForDelete(base.filteredRows, change.start, change.count);
+        visibleRowMetrics = base.filteredRows.size === 0
+          ? rowMetrics
+          : base.visibleRowMetrics.delete(change.start, change.count).metrics;
       } else {
-        rowMetrics = base.rowMetrics.move(change.start, change.count, change.target as number);
+        const target = change.target as number;
+        rowMetrics = base.rowMetrics.move(change.start, change.count, target);
+        filteredRows = relocateFilteredRowsForMove(base.filteredRows, change.start, change.count, target);
+        visibleRowMetrics = base.filteredRows.size === 0
+          ? rowMetrics
+          : base.visibleRowMetrics.move(change.start, change.count, target);
       }
 
       return this.#createRoot(
@@ -653,6 +788,8 @@ export class LayoutEngine {
         rowMetrics.rowCount,
         rowMetrics,
         base.columnAxis,
+        filteredRows,
+        visibleRowMetrics,
       );
     }
 
@@ -686,6 +823,8 @@ export class LayoutEngine {
       base.rowCount,
       base.rowMetrics,
       this.#createColumnAxis(columnWidths),
+      base.filteredRows,
+      base.visibleRowMetrics,
     );
   }
 
@@ -694,6 +833,8 @@ export class LayoutEngine {
     rowCount: number,
     rowMetrics: RowMetrics,
     columnAxis: ColumnAxisSnapshot,
+    filteredRows: ReadonlySet<number>,
+    visibleRowMetrics: RowMetrics,
   ): LayoutRoot {
     if (!isNonNegativeInteger(version)) {
       throw invalidLayoutOption('version', version);
@@ -703,6 +844,9 @@ export class LayoutEngine {
     }
     if (rowMetrics.rowCount !== rowCount) {
       throw invalidLayoutOption('rowMetrics.rowCount', rowMetrics.rowCount);
+    }
+    if (visibleRowMetrics.rowCount !== rowCount) {
+      throw invalidLayoutOption('visibleRowMetrics.rowCount', visibleRowMetrics.rowCount);
     }
     if (!(columnAxis instanceof ColumnAxisSnapshot)) {
       throw invalidLayoutOption('columnAxis', columnAxis);
@@ -722,6 +866,8 @@ export class LayoutEngine {
       columnAxis,
       frozenRowCount: Math.min(this.#requestedFrozenRows, rowCount),
       frozenColumnCount: columnAxis.frozenColumnCount,
+      filteredRows,
+      visibleRowMetrics,
     });
   }
 

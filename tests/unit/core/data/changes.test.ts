@@ -127,6 +127,21 @@ describe("compileDirtySet", () => {
     });
   });
 
+  it("treats a row-visibility fact like a row-reorder, including the row-header repaint", () => {
+    // A filter apply/clear collapses/restores row heights across the sheet
+    // without changing any row's identity — same shape of consequence as a
+    // reorder (band boundaries move, content/gutter/selection all repaint),
+    // not a structural axis change.
+    const dirty = compileDirtySet([{ type: "row-visibility" }]);
+
+    expect(dirty).toEqual({
+      content: "full",
+      skeleton: "row-axis",
+      selection: true,
+      presentation: { domCells: true, columnHeader: false, rowHeader: true, domHeaders: false }
+    });
+  });
+
   it("marks content and selection dirty for a merge-layout fact, but leaves headers untouched", () => {
     // Narrower than column-layout: merges don't move row/column geometry, so
     // unlike the column-axis facts below, the header bands stay clean.
@@ -200,6 +215,17 @@ describe("summarizeStructuralChanges", () => {
       hasColumnStructure: false,
       hasColumnLayout: false,
       hasRowLayout: false
+    });
+  });
+
+  it("counts a row-visibility fact as row-layout, not row-structure", () => {
+    // No row was inserted/deleted/moved, so #structure.apply() (gated on
+    // hasRowStructure/hasColumnStructure) must not run for a filter change.
+    expect(summarizeStructuralChanges([{ type: "row-visibility" }])).toEqual({
+      hasRowStructure: false,
+      hasColumnStructure: false,
+      hasColumnLayout: false,
+      hasRowLayout: true
     });
   });
 
