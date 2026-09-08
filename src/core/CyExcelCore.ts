@@ -50,7 +50,7 @@ import {
   summarizeStructuralChanges
 } from "./data";
 import { WorkbookModel, type SheetModel, type WorkbookSnapshot } from "./sheet";
-import { findMergeAt } from "./sheet/merges";
+import { expandRangeForMerges, findMergeAt, mergesIntersectingRange } from "./sheet/merges";
 import type { CellEditorFactory } from "./editors";
 import { EditorManager } from "./editors";
 import { EventBus } from "./events";
@@ -894,7 +894,7 @@ export class CyExcelCore {
       painter: createColumnAwarePainter(() => this.#columnManager.getColumns()),
       onError: (error, cell) =>
         this.#events.emit("error", { error, eventName: `finalize:canvas-cell:${cell.row}:${cell.column}` }),
-      findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column),
+      getMergesInRange: (range) => mergesIntersectingRange(this.#sheet.merges(), range),
       ...(options.showGridLines !== undefined ? { showGridLines: options.showGridLines } : {})
     });
     this.#selectionRenderer = new SelectionLayerRenderer({
@@ -903,7 +903,8 @@ export class CyExcelCore {
       getSelection: () => this.#selectionModel.snapshot,
       isVisible: () => !this.#editorManager.isEditing(),
       getFillPreviewRange: () => this.#fillHandleController.previewRange,
-      findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column)
+      findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column),
+      expandForMerges: (range) => expandRangeForMerges(this.#sheet.merges(), range)
     });
     this.#headerCanvasRenderer = new HeaderCanvasRenderer({
       ctx: headerCtx,
@@ -1228,7 +1229,8 @@ export class CyExcelCore {
         void this.#enqueueMutationPromise(() => {
           this.#applyCommandNow(new SetCellCommand(row, column, this.#parseEditedValue(row, column, value)));
         }).catch((error: unknown) => this.#events.emit("error", { error, eventName: "deferred-dom-commit" }));
-      }
+      },
+      getMergesInRange: (range) => mergesIntersectingRange(this.#sheet.merges(), range)
     });
     initialization.defer(() => this.#domCellManager.dispose());
 
@@ -2392,12 +2394,26 @@ export class CyExcelCore {
     });
   };
 
+  /**
+   * Reads a cell's value, redirecting a merge-covered (non-anchor) cell to
+   * its merge's anchor — merge-covered cells are cleared to `null` when the
+   * merge is created (`buildMergeClearGrid`), so a plain `getCell` here
+   * would read that `null` instead of the merge's real value. Used by the
+   * fill handle's source reads (`#autoFillDownNow`/`#commitFillNow`) so
+   * dragging or auto-filling down from a merged cell propagates its actual
+   * value, not the covered cells' blanks.
+   */
+  #getCellThroughMerge(row: number, column: number): unknown {
+    const merge = findMergeAt(this.#sheet.merges(), row, column);
+    return this.#store.getCell(merge ? merge.startRow : row, merge ? merge.startColumn : column);
+  }
+
   /** Double-clicking the fill handle extends the selection down to match the nearest non-empty neighbor column's run — see computeAutoFillDownTargetRow(). */
   #autoFillDownNow(range: CellRange): void {
     const targetRow = computeAutoFillDownTargetRow(
       range,
       { columnCount: this.#columns.length, rowCount: this.#sheet.rowCount() },
-      (row, column) => this.#store.getCell(row, column)
+      (row, column) => this.#getCellThroughMerge(row, column)
     );
     if (targetRow === null) {
       return;
@@ -2408,7 +2424,7 @@ export class CyExcelCore {
   /** Applies a fill-handle result (drag or double-click auto-fill) as one SetRangeCommand, then moves the selection onto what was just filled. The value matrix itself is computed by computeFillPlan(). */
   #commitFillNow(sourceRange: CellRange, targetRange: CellRange): void {
     const values = computeFillPlan(sourceRange, targetRange, {
-      getCell: (row, column) => this.#store.getCell(row, column),
+      getCell: (row, column) => this.#getCellThroughMerge(row, column),
       isPasteBlocked: (column) => this.#columnManager.getColumn(column).clipboard.paste === false
     });
 

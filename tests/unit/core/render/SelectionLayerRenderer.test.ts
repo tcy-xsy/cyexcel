@@ -427,6 +427,47 @@ describe("SelectionLayerRenderer.paintSelection — fill preview", () => {
       { method: "restore", args: [] }
     ]);
   });
+
+  it("expands the preview rect to enclose a merge its edge touches", () => {
+    const ctx = new RecordingCanvasContext();
+    const merge: CellRange = { startRow: 2, startColumn: 0, endRow: 3, endColumn: 0 };
+    const renderer = createSelectionRenderer({
+      ctx,
+      layout: createLayout(),
+      getSelection: () => cellSnapshot(0, 0),
+      // Preview would naturally be rows 0-2, but row 2 is the top of a
+      // merge spanning rows 2-3 — the dashed box must grow to include row 3.
+      getFillPreviewRange: () => ({ startRow: 0, startColumn: 0, endRow: 2, endColumn: 0 }),
+      expandForMerges: (range) =>
+        range.endRow >= merge.startRow && range.startRow <= merge.endRow
+          ? { ...range, endRow: Math.max(range.endRow, merge.endRow) }
+          : range
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 200, height: 200 });
+
+    renderer.paintSelection();
+
+    const strokeRectCalls = ctx.calls.filter((call) => call.method === "strokeRect");
+    // Selection box (row 0) + preview box grown to rows 0-3: height 80, not 60.
+    expect(strokeRectCalls).toHaveLength(2);
+    expect(strokeRectCalls[1]).toEqual({ method: "strokeRect", args: [0, 0, 50, 80] });
+  });
+
+  it("leaves the preview rect untouched when expandForMerges is not provided", () => {
+    const ctx = new RecordingCanvasContext();
+    const renderer = createSelectionRenderer({
+      ctx,
+      layout: createLayout(),
+      getSelection: () => cellSnapshot(0, 0),
+      getFillPreviewRange: () => ({ startRow: 0, startColumn: 0, endRow: 2, endColumn: 0 })
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 200, height: 200 });
+
+    renderer.paintSelection();
+
+    const strokeRectCalls = ctx.calls.filter((call) => call.method === "strokeRect");
+    expect(strokeRectCalls[1]).toEqual({ method: "strokeRect", args: [0, 0, 50, 60] });
+  });
 });
 
 describe("SelectionLayerRenderer.paintSelection — frozen rows/columns", () => {

@@ -57,6 +57,49 @@ export function rangeContains(outer: CellRange, inner: CellRange): boolean {
 }
 
 /**
+ * 返回与 `range` 相交的所有合并区。给渲染/DOM 宿主这类"每帧都要问一遍"的调用方
+ * 用——按范围问一次，比逐格调 `findMergeAt` 便宜得多：合并区为空或都不相交时
+ * 这里直接是一次 `Array.filter` 扫过（成本只随合并区数量而不是格子数量增长），
+ * 不会像逐格点查询那样把"零合并区"也摊成一次 O(可见格子数) 的固定开销。
+ */
+export function mergesIntersectingRange(
+  merges: readonly CellRange[],
+  range: CellRange
+): readonly CellRange[] {
+  return merges.filter((merge) => rangesIntersect(merge, range));
+}
+
+/**
+ * 把 `range` 按它相交到的合并区整体外扩，直到不动点——外扩本身可能新覆盖到另一
+ * 条此前不相交的合并区，所以要收敛到没有合并区再"跨"到 `expanded` 外面为止。
+ * 专供填充柄拖拽预览框使用：预览范围可以是任意 N×M，边缘格子可能恰好落在某个
+ * 合并区上，需要把预览框整体撑大到包住它，不能只处理单格选区（那是
+ * `SelectionLayerRenderer#expandForMerge` 的既定 YAGNI 范围，这里不重复它）。
+ */
+export function expandRangeForMerges(
+  merges: readonly CellRange[],
+  range: CellRange
+): CellRange {
+  let expanded = range;
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const merge of merges) {
+      if (rangesIntersect(merge, expanded) && !rangeContains(expanded, merge)) {
+        expanded = {
+          startRow: Math.min(expanded.startRow, merge.startRow),
+          startColumn: Math.min(expanded.startColumn, merge.startColumn),
+          endRow: Math.max(expanded.endRow, merge.endRow),
+          endColumn: Math.max(expanded.endColumn, merge.endColumn)
+        };
+        grew = true;
+      }
+    }
+  }
+  return expanded;
+}
+
+/**
  * `mergeCells(range)` 重叠校验：只拒绝**部分**相交。完全包含关系（含 `candidate`
  * 与 `existing` 相等）不算违规相交——那种情形要放过，交给 `resolveMergeCells` 去
  * 吸收，不能在这一步就抛错。

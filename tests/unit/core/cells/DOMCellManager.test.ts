@@ -6,6 +6,8 @@ import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "../../../../sr
 import type { ViewportState } from "../../../../src/core/layout";
 import { getDeclaredDomPointerInputTarget } from "../../../../src/core/interaction/domPointerOwnership";
 import { SceneSnapshot } from "../../../../src/core/scene";
+import { mergesIntersectingRange } from "../../../../src/core/sheet/merges";
+import type { CellRange } from "../../../../src/core/types";
 
 interface FakeElement {
   readonly style: Record<string, string>;
@@ -104,6 +106,7 @@ function createManager(options: {
   readonly layout: LayoutEngine;
   readonly columns: readonly RuntimeColumn[];
   readonly commitValue?: (row: number, column: number, value: unknown) => void;
+  readonly merges?: readonly CellRange[];
 }) {
   const container = createFakeElement();
   const hosts: FakeElement[] = [];
@@ -116,7 +119,8 @@ function createManager(options: {
       const host = createFakeElement();
       hosts.push(host);
       return host as unknown as HTMLElement;
-    }
+    },
+    ...(options.merges ? { getMergesInRange: (range: CellRange) => mergesIntersectingRange(options.merges!, range) } : {})
   });
   return { manager, container, hosts };
 }
@@ -355,5 +359,50 @@ describe("DOMCellManager — failed mount cleanup", () => {
       .toThrow("mount failed");
     expect(hosts[0]?.removed).toBe(true);
     expect(calls).toEqual(["mount", "destroy"]);
+  });
+});
+
+describe("DOMCellManager — merged cells", () => {
+  it("does not mount a host for a merge-covered, non-anchor cell in a DOM-rendered column", () => {
+    const { factory, instances } = createRecordingFactory();
+    const layout = new LayoutEngine({ rowCount: 3, columnCount: 1, rowHeight: 20, columnWidths: [50] });
+    const merge: CellRange = { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 };
+    const { manager } = createManager({
+      layout,
+      columns: [domColumn(factory)],
+      merges: [merge]
+    });
+
+    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 50, height: 60 }));
+
+    // Row 2 (uncovered) plus the merge's anchor (row 0) — never row 1.
+    expect(instances).toHaveLength(2);
+    expect(instances.map((instance) => instance.contexts[0]?.row).sort()).toEqual([0, 2]);
+  });
+
+  it("sizes the anchor's host to the whole merge's spanning rect, not just its own cell", () => {
+    const { factory } = createRecordingFactory();
+    const layout = new LayoutEngine({ rowCount: 2, columnCount: 1, rowHeight: 20, columnWidths: [50] });
+    const merge: CellRange = { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 };
+    const { manager, hosts } = createManager({
+      layout,
+      columns: [domColumn(factory)],
+      merges: [merge]
+    });
+
+    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 50, height: 40 }));
+
+    expect(hosts).toHaveLength(1);
+    expect(hosts[0]?.style.height).toBe("40px"); // two rows × 20px, not one
+  });
+
+  it("mounts every cell normally when getMergesInRange is not provided", () => {
+    const { factory, instances } = createRecordingFactory();
+    const layout = new LayoutEngine({ rowCount: 2, columnCount: 1, rowHeight: 20, columnWidths: [50] });
+    const { manager } = createManager({ layout, columns: [domColumn(factory)] });
+
+    manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 50, height: 40 }));
+
+    expect(instances).toHaveLength(2);
   });
 });

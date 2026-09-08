@@ -1,5 +1,6 @@
 import type { SceneCellFragment, SceneSnapshot } from "../scene";
 import { declareDomPointerOwnership } from "../interaction/domPointerOwnership";
+import type { CellRange } from "../types";
 import type { DomCellContext, DomCellRenderer, DomCellRendererFactory, RuntimeColumn } from "./types";
 
 export interface DOMCellManagerOptions {
@@ -10,6 +11,14 @@ export interface DOMCellManagerOptions {
   readonly commitValue: (row: number, column: number, value: unknown) => void;
   /** Injected for Node testability (mirrors RenderScheduler's frameScheduler / EditorManager's editorFactory precedent). Defaults to a real `<div>`. */
   readonly createHost?: () => HTMLElement;
+  /**
+   * Returns every merge intersecting `range`. A merge is rendered as one
+   * unit from its anchor cell (same rule `ContentLayerRenderer`'s canvas
+   * painting follows): a covered, non-anchor cell never gets its own DOM
+   * host regardless of its own column's renderer kind, and an anchor cell
+   * whose column is DOM-rendered gets one host sized to the whole merge.
+   */
+  readonly getMergesInRange?: (range: CellRange) => readonly CellRange[];
 }
 
 interface MountedCell {
@@ -58,6 +67,7 @@ export class DOMCellManager {
   readonly #getCellValue: (row: number, column: number) => unknown;
   readonly #commitValue: (row: number, column: number, value: unknown) => void;
   readonly #createHost: () => HTMLElement;
+  readonly #getMergesInRange: DOMCellManagerOptions["getMergesInRange"];
 
   readonly #mounted = new Map<string, MountedCell>();
   readonly #pool = new Map<DomCellRendererFactory, PooledInstance[]>();
@@ -68,6 +78,7 @@ export class DOMCellManager {
     this.#getCellValue = options.getCellValue;
     this.#commitValue = options.commitValue;
     this.#createHost = options.createHost ?? (() => document.createElement("div"));
+    this.#getMergesInRange = options.getMergesInRange;
   }
 
   /** Recomputes which cells need a mounted DOM renderer and reconciles against what's currently mounted. */
@@ -104,14 +115,60 @@ export class DOMCellManager {
   #neededCells(scene: SceneSnapshot): Map<string, NeededCell> {
     const needed = new Map<string, NeededCell>();
     for (const fragment of scene.getVisibleFragments()) {
-      for (let column = fragment.columns.start; column < fragment.columns.start + fragment.columns.count; column += 1) {
+      const lastRow = fragment.rows.start + fragment.rows.count - 1;
+      const lastColumn = fragment.columns.start + fragment.columns.count - 1;
+      const intersectingMerges =
+        this.#getMergesInRange?.({
+          startRow: fragment.rows.start,
+          endRow: lastRow,
+          startColumn: fragment.columns.start,
+          endColumn: lastColumn
+        }) ?? [];
+
+      // Covered (non-anchor) cells never get their own host, regardless of
+      // their own column's renderer kind — a merge renders as one unit from
+      // its anchor. Anchor -> merge, so an anchor cell mounts a host sized
+      // to the whole merge instead of its own single cell.
+      const coveredCells = new Set<string>();
+      const mergeAtAnchor = new Map<string, CellRange>();
+      for (const merge of intersectingMerges) {
+        for (let row = Math.max(merge.startRow, fragment.rows.start); row <= Math.min(merge.endRow, lastRow); row += 1) {
+          for (
+            let column = Math.max(merge.startColumn, fragment.columns.start);
+            column <= Math.min(merge.endColumn, lastColumn);
+            column += 1
+          ) {
+            if (row === merge.startRow && column === merge.startColumn) {
+              continue;
+            }
+            coveredCells.add(cellKey(row, column));
+          }
+        }
+        mergeAtAnchor.set(cellKey(merge.startRow, merge.startColumn), merge);
+      }
+
+      for (let column = fragment.columns.start; column <= lastColumn; column += 1) {
         if (this.#getColumn(column).renderer?.kind !== "dom") {
           continue;
         }
-        for (let row = fragment.rows.start; row < fragment.rows.start + fragment.rows.count; row += 1) {
+        for (let row = fragment.rows.start; row <= lastRow; row += 1) {
+          const key = cellKey(row, column);
+          if (coveredCells.has(key)) {
+            continue;
+          }
+          const merge = mergeAtAnchor.get(key);
+          if (merge) {
+            const mergeFragment = scene
+              .getFragmentsForRange(merge)
+              .find((candidate) => candidate.pane.id === fragment.pane.id);
+            if (mergeFragment) {
+              needed.set(key, { row, column, fragment: mergeFragment });
+            }
+            continue;
+          }
           const cellFragment = scene.getCellFragments({ row, column })[0];
           if (cellFragment) {
-            needed.set(cellKey(row, column), { row, column, fragment: cellFragment });
+            needed.set(key, { row, column, fragment: cellFragment });
           }
         }
       }

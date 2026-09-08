@@ -4,7 +4,9 @@ import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
 import {
   assertMergesDoNotOverlap,
   buildMergeClearGrid,
+  expandRangeForMerges,
   findMergeAt,
+  mergesIntersectingRange,
   rangeContains,
   rangesIntersect,
   relocateMergesForDelete,
@@ -66,6 +68,55 @@ describe("rangeContains", () => {
 
   it("is false when outer is smaller than inner", () => {
     expect(rangeContains(range(1, 1, 2, 2), range(0, 0, 5, 5))).toBe(false);
+  });
+});
+
+describe("mergesIntersectingRange", () => {
+  it("returns an empty array for an empty merges list", () => {
+    expect(mergesIntersectingRange([], range(0, 0, 5, 5))).toEqual([]);
+  });
+
+  it("returns an empty array when no merge intersects the range", () => {
+    const merges = [range(0, 0, 1, 1), range(10, 10, 11, 11)];
+    expect(mergesIntersectingRange(merges, range(3, 3, 4, 4))).toEqual([]);
+  });
+
+  it("returns only the merges that partially overlap the range", () => {
+    const overlapping = range(1, 1, 2, 2);
+    const disjoint = range(10, 10, 11, 11);
+    expect(mergesIntersectingRange([overlapping, disjoint], range(0, 0, 1, 1))).toEqual([overlapping]);
+  });
+
+  it("returns a merge that fully contains the range", () => {
+    const merge = range(0, 0, 5, 5);
+    expect(mergesIntersectingRange([merge], range(2, 2, 3, 3))).toEqual([merge]);
+  });
+});
+
+describe("expandRangeForMerges", () => {
+  it("returns the range unchanged when no merge intersects it", () => {
+    const original = range(3, 3, 4, 4);
+    expect(expandRangeForMerges([range(0, 0, 1, 1)], original)).toEqual(original);
+  });
+
+  it("grows the range to enclose a single intersecting merge", () => {
+    // range [2,2]-[3,3] touches a merge at [3,3]-[5,5] on its bottom-right corner.
+    const merge = range(3, 3, 5, 5);
+    expect(expandRangeForMerges([merge], range(2, 2, 3, 3))).toEqual(range(2, 2, 5, 5));
+  });
+
+  it("does not shrink or otherwise alter a range that already fully contains the merge", () => {
+    const merge = range(1, 1, 2, 2);
+    const original = range(0, 0, 5, 5);
+    expect(expandRangeForMerges([merge], original)).toEqual(original);
+  });
+
+  it("chains: growing to enclose one merge can newly intersect a second merge, which also gets enclosed", () => {
+    // range [0,0]-[1,1] touches mergeA at [1,1]-[2,2]; growing to [0,0]-[2,2]
+    // then newly touches mergeB at [2,2]-[4,4], which must also get folded in.
+    const mergeA = range(1, 1, 2, 2);
+    const mergeB = range(2, 2, 4, 4);
+    expect(expandRangeForMerges([mergeA, mergeB], range(0, 0, 1, 1))).toEqual(range(0, 0, 4, 4));
   });
 });
 

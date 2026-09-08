@@ -9,6 +9,7 @@ import type { ViewportState } from "../../../../src/core/layout";
 import { ContentLayerRenderer } from "../../../../src/core/render";
 import { SceneSnapshot } from "../../../../src/core/scene";
 import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
+import { mergesIntersectingRange } from "../../../../src/core/sheet/merges";
 import { RecordingCanvasContext } from "../../../helpers/RecordingCanvasContext";
 
 function createLayout(rowCount: number, columnCount: number): LayoutEngine {
@@ -576,10 +577,8 @@ describe("ContentLayerRenderer — frozen row/column separators", () => {
 
 describe("ContentLayerRenderer — merged cells", () => {
   function mergeLookup(merge: { startRow: number; startColumn: number; endRow: number; endColumn: number }) {
-    return (row: number, column: number) =>
-      row >= merge.startRow && row <= merge.endRow && column >= merge.startColumn && column <= merge.endColumn
-        ? merge
-        : undefined;
+    return (range: { startRow: number; startColumn: number; endRow: number; endColumn: number }) =>
+      mergesIntersectingRange([merge], range);
   }
 
   it("paints a merged cell once as a single spanning rect using the anchor's value, skipping covered cells", () => {
@@ -603,7 +602,7 @@ describe("ContentLayerRenderer — merged cells", () => {
         reads.push(key);
         return values[key];
       },
-      findMergeAt: mergeLookup(merge)
+      getMergesInRange: mergeLookup(merge)
     });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 60 });
 
@@ -633,7 +632,7 @@ describe("ContentLayerRenderer — merged cells", () => {
       ctx,
       layout,
       getCellValue: (row, column) => (row === 0 && column === 0 ? "Anchor" : "covered"),
-      findMergeAt: mergeLookup(merge)
+      getMergesInRange: mergeLookup(merge)
     });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 40 });
 
@@ -649,7 +648,7 @@ describe("ContentLayerRenderer — merged cells", () => {
     expect(anchorFillTextCalls).toHaveLength(2);
   });
 
-  it("behaves exactly as before (no merge scan) when findMergeAt is not provided", () => {
+  it("behaves exactly as before (no merge scan) when getMergesInRange is not provided", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(2, 1);
     const renderer = createContentRenderer({
@@ -663,6 +662,29 @@ describe("ContentLayerRenderer — merged cells", () => {
 
     const fillTextCalls = ctx.calls.filter((call) => call.method === "fillText");
     expect(fillTextCalls.map((call) => call.args[0])).toEqual(["row-0", "row-1"]);
+  });
+
+  it("queries getMergesInRange once per fragment, not once per visible cell — regression sentinel for the scroll-stutter fix", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(50, 40); // 2,000 visible cells if this ever regresses to per-cell queries
+    let callCount = 0;
+    const renderer = createContentRenderer({
+      ctx,
+      layout,
+      getCellValue: () => "x",
+      getMergesInRange: () => {
+        callCount += 1;
+        return [];
+      }
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 2000, height: 1000 });
+
+    renderer.paintContent({ kind: "full" });
+
+    // One unfrozen pane ("body") for this layout, so exactly one fragment,
+    // hence exactly one range query — not the 2,000 point-queries a per-cell
+    // scan would have made even with zero merges anywhere on the sheet.
+    expect(callCount).toBe(1);
   });
 });
 

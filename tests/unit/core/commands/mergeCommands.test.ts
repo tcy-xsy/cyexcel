@@ -74,6 +74,19 @@ describe("MergeCellsCommand", () => {
     expect(manager.historySize).toBe(1);
   });
 
+  it("rejects an inverted range (endRow before startRow) with InvalidRange (final-review M1)", () => {
+    const { store } = createStore();
+    const manager = createTableCommandManager(store);
+
+    expect(() => manager.execute(new MergeCellsCommand(range(2, 0, 1, 0)))).toThrow(CyExcelError);
+    try {
+      manager.execute(new MergeCellsCommand(range(2, 0, 1, 0)));
+    } catch (error) {
+      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.InvalidRange);
+    }
+    expect(store.sheet.merges()).toEqual([]);
+  });
+
   it("absorbs an existing merge that the new range fully contains", () => {
     const { store } = createStore();
     const manager = createTableCommandManager(store);
@@ -167,6 +180,22 @@ describe("UnmergeCellsCommand", () => {
 
     expect(store.getCell(0, 0)).toBe("R0C0");
     expect(store.getCell(0, 1)).toBeNull(); // cleared earlier by the merge itself, unmerge doesn't restore it
+  });
+
+  it("rejects an inverted range (endColumn before startColumn) with InvalidRange (final-review M1)", () => {
+    const { store, manager } = createStoreWithTwoMerges();
+
+    expect(() => manager.execute(new UnmergeCellsCommand(range(0, 1, 0, 0)))).toThrow(CyExcelError);
+    try {
+      manager.execute(new UnmergeCellsCommand(range(0, 1, 0, 0)));
+    } catch (error) {
+      expect((error as CyExcelError).code).toBe(CyExcelErrorCode.InvalidRange);
+    }
+    // Both existing merges are untouched by the rejected attempt.
+    expect(store.sheet.merges()).toEqual(
+      expect.arrayContaining([range(0, 0, 1, 1), range(3, 0, 3, 2)])
+    );
+    expect(store.sheet.merges()).toHaveLength(2);
   });
 
   it("undo restores the merge table to include the removed merge again", () => {

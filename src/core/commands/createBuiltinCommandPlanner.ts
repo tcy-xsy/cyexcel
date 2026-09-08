@@ -1,5 +1,6 @@
 import { buildMergeClearGrid, rangesIntersect, resolveMergeCells } from "../sheet/merges";
 import type { CellRange, CommandContext } from "../types";
+import { assertValidRange } from "../validation";
 import type { ClearRangeCommand } from "./ClearRangeCommand";
 import { CommandHandlerRegistry } from "./CommandHandlerRegistry";
 import type { DeleteColumnsCommand } from "./DeleteColumnsCommand";
@@ -86,6 +87,7 @@ export function createBuiltinCommandPlanner(options: BuiltinCommandPlannerOption
   registry.register<MergeCellsCommand>({
     type: "merge-cells",
     plan: ({ range }, context) => {
+      assertValidRange(range);
       // 重叠决策唯一入口是 `resolveMergeCells`：部分相交拒绝、完全包含吸收
       // （设计稿 §0.2/§2），不是自己拼 `[...merges, range]`。
       const merges = resolveMergeCells(context.model.merges(), range);
@@ -96,6 +98,7 @@ export function createBuiltinCommandPlanner(options: BuiltinCommandPlannerOption
   registry.register<UnmergeCellsCommand>({
     type: "unmerge-cells",
     plan: ({ range }, context) => {
+      assertValidRange(range);
       const remaining = context.model.merges().filter((merge) => !rangesIntersect(merge, range));
       context.stage(options.data.createSetMerges(remaining));
     }

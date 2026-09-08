@@ -33,6 +33,13 @@ export interface SelectionLayerRendererOptions {
    */
   readonly getFillPreviewRange?: () => CellRange | null;
   readonly findMergeAt?: (row: number, column: number) => CellRange | undefined;
+  /**
+   * Grows an arbitrary range to enclose every merge it intersects. Used for
+   * the fill-preview rect, which — unlike a selection range — can be any
+   * N×M shape, not just a single cell, so `#expandForMerge`'s single-cell
+   * scope can't cover it.
+   */
+  readonly expandForMerges?: (range: CellRange) => CellRange;
 }
 
 /**
@@ -49,6 +56,7 @@ export class SelectionLayerRenderer {
   readonly #isVisible: () => boolean;
   readonly #getFillPreviewRange: () => CellRange | null;
   readonly #findMergeAt: SelectionLayerRendererOptions["findMergeAt"];
+  readonly #expandForMerges: SelectionLayerRendererOptions["expandForMerges"];
   #width = 0;
   #height = 0;
 
@@ -59,6 +67,7 @@ export class SelectionLayerRenderer {
     this.#isVisible = options.isVisible ?? (() => true);
     this.#getFillPreviewRange = options.getFillPreviewRange ?? (() => null);
     this.#findMergeAt = options.findMergeAt;
+    this.#expandForMerges = options.expandForMerges;
   }
 
   setSize(width: number, height: number): void {
@@ -149,7 +158,8 @@ export class SelectionLayerRenderer {
 
   /** Dashed preview of the range a fill-handle drag would extend into. */
   #paintFillPreview(scene: SceneSnapshot, range: CellRange): void {
-    const fragments = scene.getRangeFragments(range);
+    const expandedRange = this.#expandForMerges?.(range) ?? range;
+    const fragments = scene.getRangeFragments(expandedRange);
     this.#ctx.strokeStyle = SELECTION_STROKE_COLOR;
     this.#ctx.lineWidth = SELECTION_STROKE_WIDTH;
     this.#ctx.setLineDash([4, 3]);

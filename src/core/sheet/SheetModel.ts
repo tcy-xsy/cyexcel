@@ -602,7 +602,10 @@ export class SheetModel {
   /**
    * 整体替换合并区列表——`mergeCells` / `unmergeCells` 等命令层入口写这个，几何
    * 计算（重叠判定、吸收）由 `merges.ts` 的纯函数在调用方那一侧做完，这里只管
-   * 冻结落地，与构造函数/`fromSnapshot` 对 `mergeData` 的冻结口径一致。
+   * 冻结落地。**这一处主动冻结，是 `#mergeData` 目前唯一会冻结的写入路径**——
+   * 构造函数、`fromSnapshot`/`deserializeSheet`、以及六个结构方法（insert/
+   * delete/move 行与列）直接赋值 `#mergeData` 的地方都不冻结，读者不要把这里的
+   * 冻结误当成某种全局约定。
    */
   setMerges(merges: readonly CellRange[]): void {
     this.#mergeData = Object.freeze(merges.map((range) => Object.freeze({ ...range })));

@@ -31,6 +31,10 @@
       //   4 undoTarget — row 0 only, drag-filled then undone.
       //   5 readonly   — clipboard.paste: false, row 0 only; must stay blank in the extended region.
       //   6 normal     — row 0 only, paired with column 5 in the same drag gesture.
+      //   7 mergeFill  — rows 1-2 merged (anchor "MERGED"); dragging a source
+      //     selection spanning rows 0-3 (across the merge) down through row 7
+      //     must read the covered row 2 as "MERGED", not null, or the cyclic
+      //     repeat pattern breaks.
       const fields = [
         "neighbor",
         "dblTarget",
@@ -38,7 +42,8 @@
         "dragSeq",
         "undoTarget",
         "readonly",
-        "normal"
+        "normal",
+        "mergeFill"
       ];
       const columns = [
         { width: 60, header: "N" },
@@ -47,7 +52,8 @@
         { width: 60, header: "S" },
         { width: 60, header: "U" },
         { width: 60, header: "R", clipboard: { paste: false } },
-        { width: 60, header: "M" }
+        { width: 60, header: "M" },
+        { width: 60, header: "MF" }
       ];
 
       const data = Array.from({ length: 30 }, (_unused, row) => ({
@@ -57,7 +63,8 @@
         dragSeq: row === 0 ? 1 : row === 1 ? 2 : row === 2 ? 3 : undefined,
         undoTarget: row === 0 ? "Z" : undefined,
         readonly: row === 0 ? "RO" : undefined,
-        normal: row === 0 ? "OK" : undefined
+        normal: row === 0 ? "OK" : undefined,
+        mergeFill: row === 0 ? "M0" : row === 1 ? "MERGED" : row === 3 ? "M3" : undefined
       }));
 
       const sheet = new CyExcelCore(container, {
@@ -65,6 +72,7 @@
         snapshot: rowsToWorkbookSnapshot(data, fields),
         rowHeight: 20
       });
+      sheet.mergeCells({ startRow: 1, startColumn: 7, endRow: 2, endColumn: 7 });
 
       window.__sheet = sheet;
       window.__cyexcelFillHandleReady = true;

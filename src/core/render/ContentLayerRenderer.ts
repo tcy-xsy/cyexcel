@@ -39,7 +39,13 @@ export interface ContentLayerRendererOptions {
   readonly checkSyncRenderers?: boolean;
   /** Draw a light gridline around every cell after it's painted. Default: true. */
   readonly showGridLines?: boolean;
-  readonly findMergeAt?: (row: number, column: number) => CellRange | undefined;
+  /**
+   * Returns every merge intersecting `range` — a range query, not a per-cell
+   * point query, so a fragment covering no merges (the common case, and the
+   * only case when the sheet has zero merges) costs exactly one call, not
+   * one call per visible cell. See `#paintFragment`.
+   */
+  readonly getMergesInRange?: (range: CellRange) => readonly CellRange[];
 }
 
 function defaultPainter(context: CellPaintContext): void {
@@ -87,7 +93,7 @@ export class ContentLayerRenderer {
     | undefined;
   readonly #checkSyncRenderers: boolean;
   readonly #showGridLines: boolean;
-  readonly #findMergeAt: ContentLayerRendererOptions["findMergeAt"];
+  readonly #getMergesInRange: ContentLayerRendererOptions["getMergesInRange"];
 
   constructor(options: ContentLayerRendererOptions) {
     this.#ctx = options.ctx;
@@ -97,7 +103,7 @@ export class ContentLayerRenderer {
     this.#onError = options.onError;
     this.#checkSyncRenderers = options.checkSyncRenderers ?? true;
     this.#showGridLines = options.showGridLines ?? true;
-    this.#findMergeAt = options.findMergeAt;
+    this.#getMergesInRange = options.getMergesInRange;
   }
 
   paintContent(dirty: DirtyState, scene: SceneSnapshot = this.#getScene()): void {
@@ -182,30 +188,30 @@ export class ContentLayerRenderer {
     // after the first frame would never get re-scanned into it) and could
     // leak entries from one pane's fragment into another's.
     const mergeCoveredCells = new Set<string>();
-    if (this.#findMergeAt) {
-      const paintedMerges = new Set<string>();
-      for (let row = fragment.rows.start; row <= lastRow; row += 1) {
-        for (let column = fragment.columns.start; column <= lastColumn; column += 1) {
-          const merge = this.#findMergeAt(row, column);
-          if (!merge) {
-            continue;
-          }
-          mergeCoveredCells.add(`${row},${column}`);
-
-          const mergeKey = `${merge.startRow},${merge.startColumn}`;
-          if (paintedMerges.has(mergeKey)) {
-            continue;
-          }
-          paintedMerges.add(mergeKey);
-
-          const mergeFragment = scene
-            .getFragmentsForRange(merge)
-            .find((candidate) => candidate.pane.id === fragment.pane.id);
-          if (!mergeFragment) {
-            continue;
-          }
-          this.#paintCellAt(merge.startRow, merge.startColumn, mergeFragment.rect);
+    const intersectingMerges = this.#getMergesInRange?.({
+      startRow: fragment.rows.start,
+      endRow: lastRow,
+      startColumn: fragment.columns.start,
+      endColumn: lastColumn
+    });
+    if (intersectingMerges && intersectingMerges.length > 0) {
+      for (const merge of intersectingMerges) {
+        const mergeFragment = scene
+          .getFragmentsForRange(merge)
+          .find((candidate) => candidate.pane.id === fragment.pane.id);
+        if (!mergeFragment) {
+          continue;
         }
+        for (let row = Math.max(merge.startRow, fragment.rows.start); row <= Math.min(merge.endRow, lastRow); row += 1) {
+          for (
+            let column = Math.max(merge.startColumn, fragment.columns.start);
+            column <= Math.min(merge.endColumn, lastColumn);
+            column += 1
+          ) {
+            mergeCoveredCells.add(`${row},${column}`);
+          }
+        }
+        this.#paintCellAt(merge.startRow, merge.startColumn, mergeFragment.rect);
       }
     }
 

@@ -159,3 +159,25 @@ test("a read-only (clipboard.paste: false) column keeps its values unchanged wit
   expect(await getCell(page, 1, 6)).toBe("OK");
   expect(await getCell(page, 2, 6)).toBe("OK");
 });
+
+test("a fill source spanning a merge reads the merge's anchor value, not the covered cell's blank", async ({
+  page
+}) => {
+  await gotoFixture(page);
+  const box = await getContentCanvasBox(page);
+
+  // Source rows 0-3 span the merge at rows 1-2 (anchor "MERGED"). Known
+  // sequence is ["M0", "MERGED", "MERGED", "M3"] (reading the covered row 2
+  // through its anchor) — non-numeric, so the extension cyclically repeats
+  // it. If row 2 instead read null (the bug), the repeated sequence would
+  // put null at row 6 instead of "MERGED".
+  await dragSelectRange(page, box, { row: 0, column: 7 }, { row: 3, column: 7 });
+  const handle = handleCorner(3, 7);
+  const target = pointInRow(7, 7);
+  await dragFillHandle(page, box, handle, target);
+
+  expect(await getCell(page, 4, 7)).toBe("M0");
+  expect(await getCell(page, 5, 7)).toBe("MERGED");
+  expect(await getCell(page, 6, 7)).toBe("MERGED");
+  expect(await getCell(page, 7, 7)).toBe("M3");
+});
