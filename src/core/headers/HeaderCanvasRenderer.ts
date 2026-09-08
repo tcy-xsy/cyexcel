@@ -159,8 +159,38 @@ function paintSortCarets(ctx: Canvas2DLike, rect: CellRect, state: HeaderState):
     : HEADER_SORT_INDICATOR_COLOR);
 }
 
-function defaultHeaderText(title: string, state: HeaderState): string {
-  return state.filtered ? `${title} ●` : title;
+/** Funnel geometry, in CSS pixels — wide top tapering to a narrow stem, the universal "filter" glyph (same shape Excel/Sheets/Univer all use). */
+const FUNNEL_TOP_WIDTH = 10;
+const FUNNEL_STEM_WIDTH = 2;
+const FUNNEL_BODY_HEIGHT = 6;
+const FUNNEL_STEM_HEIGHT = 4;
+
+/**
+ * Explicit vector geometry, not a "▼"/"●" text glyph, for the same reason
+ * `paintCaret` above isn't one: a glyph's shape and weight are decided by
+ * whichever font resolves, and at icon size that reads as an unlabeled blob
+ * a viewer has to guess at (this replaced exactly that — the title used to
+ * grow a bare "●" suffix when `state.filtered` was true, self-explanatory to
+ * no one). Colour follows the sort-caret convention: muted when merely
+ * available, the active-indicator colour when a filter is actually applied.
+ */
+function paintFilterIcon(ctx: Canvas2DLike, rect: CellRect, sortZoneWidth: number, state: HeaderState): void {
+  const centerX = rect.x + rect.width - sortZoneWidth - DEFAULT_HEADER_FILTER_ZONE_WIDTH / 2;
+  const middle = rect.y + rect.height / 2;
+  const top = middle - (FUNNEL_BODY_HEIGHT + FUNNEL_STEM_HEIGHT) / 2;
+  const bodyBottom = top + FUNNEL_BODY_HEIGHT;
+  const stemBottom = bodyBottom + FUNNEL_STEM_HEIGHT;
+
+  ctx.fillStyle = state.filtered ? HEADER_SORT_INDICATOR_ACTIVE_COLOR : HEADER_SORT_INDICATOR_COLOR;
+  ctx.beginPath();
+  ctx.moveTo(centerX - FUNNEL_TOP_WIDTH / 2, top);
+  ctx.lineTo(centerX + FUNNEL_TOP_WIDTH / 2, top);
+  ctx.lineTo(centerX + FUNNEL_STEM_WIDTH / 2, bodyBottom);
+  ctx.lineTo(centerX + FUNNEL_STEM_WIDTH / 2, stemBottom);
+  ctx.lineTo(centerX - FUNNEL_STEM_WIDTH / 2, stemBottom);
+  ctx.lineTo(centerX - FUNNEL_STEM_WIDTH / 2, bodyBottom);
+  ctx.closePath();
+  ctx.fill();
 }
 
 function defaultHeaderPainter(context: HeaderRenderContext): void {
@@ -183,13 +213,16 @@ function defaultHeaderPainter(context: HeaderRenderContext): void {
   ctx.clip();
   ctx.fillStyle = TEXT_COLOR;
   ctx.textAlign = "left";
-  ctx.fillText(defaultHeaderText(title, state), rect.x + DEFAULT_PADDING, rect.y + rect.height / 2);
+  ctx.fillText(title, rect.x + DEFAULT_PADDING, rect.y + rect.height / 2);
   ctx.restore();
 
   if (sortable) {
     // Inside the same trailing strip `defaultHeaderHitTest` claims, so what
     // you click and what you see are the same place.
     paintSortCarets(ctx, rect, state);
+  }
+  if (filterable) {
+    paintFilterIcon(ctx, rect, sortable ? DEFAULT_HEADER_SORT_ZONE_WIDTH : 0, state);
   }
 }
 

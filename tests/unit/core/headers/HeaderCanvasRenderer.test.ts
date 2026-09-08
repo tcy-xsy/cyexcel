@@ -116,7 +116,25 @@ describe("HeaderCanvasRenderer — leaf headers (先写测试 #1: title/sort/fil
     expect(ctx.calls.some((call) => call.method === "fill")).toBe(true);
   });
 
-  it("reflects filtered state in the default painter's output", () => {
+  /**
+   * Explicit vector geometry, not a "●" appended to the title text (the
+   * title stays exactly "A" in every case below) — same reasoning as the
+   * sort carets: a bare glyph at icon size doesn't say what it means.
+   */
+  function filledColors(ctx: RecordingCanvasContext): string[] {
+    const colors: string[] = [];
+    let pending: string | undefined;
+    for (const call of ctx.calls) {
+      if (call.method === "set:fillStyle") {
+        pending = String(call.args[0]);
+      } else if (call.method === "fill" && pending !== undefined) {
+        colors.push(pending);
+      }
+    }
+    return colors;
+  }
+
+  it("draws the filter funnel in the active indicator color when filtered", () => {
     const ctx = new RecordingCanvasContext();
     const headerManager = new HeaderManager({ columns: [{ header: "A" }] });
     const renderer = createRenderer({
@@ -124,16 +142,51 @@ describe("HeaderCanvasRenderer — leaf headers (先写测试 #1: title/sort/fil
       layout: createLayout(1),
       headerManager,
       columnHeaderHeight: 24,
-      getHeaderState: () => ({ filtered: true })
+      getHeaderState: () => ({ filtered: true, filterable: true, sortable: false })
     });
     renderer.setViewport(VIEWPORT);
 
     renderer.paint();
 
     const titles = ctx.calls.filter((call) => call.method === "fillText").map((call) => call.args[0]);
-    expect(titles.some((title) => typeof title === "string" && title !== "A" && title.includes("A"))).toBe(
-      true
-    );
+    expect(titles).toEqual(["A"]);
+    expect(filledColors(ctx)).toContain(HEADER_SORT_INDICATOR_ACTIVE_COLOR);
+  });
+
+  it("draws the filter funnel muted when filterable but not currently filtered", () => {
+    const ctx = new RecordingCanvasContext();
+    const headerManager = new HeaderManager({ columns: [{ header: "A" }] });
+    const renderer = createRenderer({
+      ctx,
+      layout: createLayout(1),
+      headerManager,
+      columnHeaderHeight: 24,
+      getHeaderState: () => ({ filterable: true, sortable: false })
+    });
+    renderer.setViewport(VIEWPORT);
+
+    renderer.paint();
+
+    const colors = filledColors(ctx);
+    expect(colors).toContain(HEADER_SORT_INDICATOR_COLOR);
+    expect(colors).not.toContain(HEADER_SORT_INDICATOR_ACTIVE_COLOR);
+  });
+
+  it("draws no filter icon at all when filterable is false", () => {
+    const ctx = new RecordingCanvasContext();
+    const headerManager = new HeaderManager({ columns: [{ header: "A" }] });
+    const renderer = createRenderer({
+      ctx,
+      layout: createLayout(1),
+      headerManager,
+      columnHeaderHeight: 24,
+      getHeaderState: () => ({ filterable: false, sortable: false })
+    });
+    renderer.setViewport(VIEWPORT);
+
+    renderer.paint();
+
+    expect(ctx.calls.some((call) => call.method === "fill")).toBe(false);
   });
 
   it("delegates to a custom CanvasHeaderRenderer instead of the default painter", () => {

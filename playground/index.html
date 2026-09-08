@@ -68,7 +68,12 @@
 
       <div class="workspace">
         <section class="sheet-region" aria-label="表格区域">
-          <div class="sheet-mount" id="sheetMount"></div>
+          <div class="sheet-mount-wrap">
+            <div class="sheet-mount" id="sheetMount"></div>
+            <p class="empty-filter-state" id="emptyFilterState" hidden>
+              当前过滤条件没有匹配到任何行——表格是空的，不是加载失败。清除过滤即可恢复
+            </p>
+          </div>
           <footer class="status-bar" id="statusBar">尚未构建实例</footer>
         </section>
 

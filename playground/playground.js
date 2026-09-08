@@ -332,6 +332,11 @@ function rebuild() {
     statusBarErrorTimeoutId = null;
   }
   statusBar.classList.remove("status-bar--error");
+  // A fresh instance starts unfiltered — a stale "0 rows matched" overlay
+  // left over from the previous instance would be actively wrong, not just
+  // out of date (unlike sortHint's text, which is merely stale until the
+  // next sort).
+  emptyFilterState.hidden = true;
 
   const rows = buildRows(config.rowCount);
   // Pass every real ColumnDefinition field through as-is — only "label" is
@@ -579,10 +584,16 @@ function sortBy(direction) {
 sortAscButton.addEventListener("click", () => sortBy("asc"));
 sortDescButton.addEventListener("click", () => sortBy("desc"));
 
+const emptyFilterState = document.getElementById("emptyFilterState");
+
 /**
  * Step 22 Part B：sheet.filterByColumn()/clearFilter() 演示——预测值是这里
  * 手写的精确字符串匹配（`String(value) === 输入框的值`），不是核心提供的默认
  * 值列表 UI（那一层特意留给宿主，见 filterHint 的说明）。
+ *
+ * 匹配行数不额外扫描一遍——core 本来就会对每一行调用一次谓词，这里在同一个
+ * 谓词闭包里顺手计数，比"先自己扫一遍数、再调 filterByColumn 让它再扫一遍"
+ * 省一半开销，10 万行规模下这个差别是看得见的。
  */
 function filterBy(kind) {
   if (!core) {
@@ -591,15 +602,29 @@ function filterBy(kind) {
   if (kind === "clear") {
     core.clearFilter();
     filterHint.textContent = "上次动作：已清除过滤，所有行的高度逐像素复原";
+    emptyFilterState.hidden = true;
     return;
   }
   const columnIndex = Number(filterColumn.value);
   const column = COLUMNS[columnIndex];
   const target = filterValue.value;
-  core.filterByColumn(columnIndex, (value) => String(value ?? "") === target);
-  filterHint.textContent =
-    `上次动作：只看「${column.label}」等于「${target}」的行` +
-    `（共 ${currentRowCount.toLocaleString("zh-CN")} 行；过滤不进撤销栈，清除过滤即可复原）`;
+  let matched = 0;
+  const started = performance.now();
+  core.filterByColumn(columnIndex, (value) => {
+    const hit = String(value ?? "") === target;
+    if (hit) {
+      matched += 1;
+    }
+    return hit;
+  });
+  const elapsed = Math.round(performance.now() - started);
+  filterHint.textContent = matched === 0
+    ? `上次动作：按「${column.label}」等于「${target}」过滤，没有任何行匹配（用时 ${elapsed}ms）——` +
+      "表格看起来是空的，这是预期行为，不是加载失败，清除过滤即可恢复"
+    : `上次动作：只看「${column.label}」等于「${target}」的行，共匹配 ` +
+      `${matched.toLocaleString("zh-CN")} / ${currentRowCount.toLocaleString("zh-CN")} 行，` +
+      `用时 ${elapsed}ms（过滤不进撤销栈，清除过滤即可复原）`;
+  emptyFilterState.hidden = matched !== 0;
 }
 
 applyFilterButton.addEventListener("click", () => filterBy("apply"));

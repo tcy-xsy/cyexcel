@@ -178,8 +178,9 @@ code {
 
 .toolbar {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px 24px;
   padding: 8px 16px;
   border-bottom: 1px solid var(--line);
   background: var(--surface);
@@ -187,13 +188,30 @@ code {
 
 .toolbar-group {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  max-width: 100%;
 }
 
 .hint-inline {
   color: var(--ink-faint);
   font-size: 11px;
+}
+
+/**
+ * The trailing explanatory `<span>` (as opposed to the compact `<label>`
+ * uses of `.hint-inline`, which stay inline with their control) always
+ * breaks onto its own full-width line below the row's controls —
+ * `flex-basis: 100%` in a wrapping flex container forces the line break.
+ * Without this, a long hint squeezed for space by four toolbar groups
+ * wraps its *text* instead, making the whole row balloon in height with
+ * every control fighting `align-items: center` for a place in that mess
+ * (a real bug this fixes, not a hypothetical — see the filter group's hint,
+ * which is long enough to have made it obvious).
+ */
+.toolbar-group > span.hint-inline {
+  flex-basis: 100%;
 }
 
 .workspace {
@@ -211,16 +229,53 @@ code {
   background: var(--surface-raised);
 }
 
-.sheet-mount {
+.sheet-mount-wrap {
   flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.sheet-mount {
+  position: absolute;
+  inset: 0;
   /* CyExcelCore's internal scroller is height: 100% of this element. Flex
      items default to min-height: auto, which lets them grow to fit their
      content instead of being capped by the flex layout — with a
      million-row spacer inside, that means "content" is millions of
      pixels tall, so this element (and the scroller after it) would
-     silently expand to match and nothing would ever actually scroll. */
-  min-height: 0;
+     silently expand to match and nothing would ever actually scroll.
+     absolute + inset:0 sidesteps that the same way flex:1/min-height:0
+     did, now that the wrap (not this element) is the flex item. */
   background: #ffffff;
+}
+
+/**
+ * Shown when a filter matches zero rows — a blank canvas with no explanation
+ * reads as "broken", not "filtered". Purely a playground/host concern: core
+ * has no opinion on empty-state UI (ADR 0003 keeps filter predicate + UI on
+ * the host side).
+ */
+.empty-filter-state {
+  position: absolute;
+  /* Centered on both axes via transform, not `inset` from all four sides:
+     the sheet body sits to the right of CyExcelCore's own row-header gutter
+     (an internal canvas this wrap has no DOM handle on, so there's no
+     selector to offset against), and a fixed left/right inset from the
+     *whole* wrap looked visibly off-center against the actual grid columns.
+     True centering sidesteps that instead of guessing the gutter's width. */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(480px, calc(100% - 48px));
+  margin: 0;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line);
+  color: var(--ink-muted);
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
 }
 
 .status-bar {
