@@ -209,4 +209,23 @@ describe("SheetModel", () => {
       expect(model.getCell(3, 0)).toBe("a");
     });
   });
+
+  describe("occupiedCells", () => {
+    it("yields every occupied cell with its row, column and value", () => {
+      const model = SheetModel.createEmpty({ blankRows: 5, blankColumns: 5 });
+      model.setCell(2, 1, "b");
+      model.setCell(0, 3, "a");
+
+      const seen = [...model.occupiedCells()].sort((left, right) => left.row - right.row);
+      expect(seen).toEqual([
+        { row: 0, column: 3, value: "a" },
+        { row: 2, column: 1, value: "b" }
+      ]);
+    });
+
+    it("yields nothing for an empty sheet", () => {
+      const model = SheetModel.createEmpty({ blankRows: 5, blankColumns: 5 });
+      expect([...model.occupiedCells()]).toEqual([]);
+    });
+  });
 });

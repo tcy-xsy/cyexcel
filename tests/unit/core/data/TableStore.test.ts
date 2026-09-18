@@ -372,3 +372,22 @@ describe("TableStore mutation ownership", () => {
     expect(other.store.getCell(0, 0)).toBe("A");
   });
 });
+
+describe("TableStore.occupiedCells", () => {
+  it("delegates to the sheet's occupied-cell walk", () => {
+    const { store } = createStore();
+
+    const seen = [...store.occupiedCells()].sort((left, right) => left.row - right.row || left.column - right.column);
+    expect(seen).toEqual([
+      { row: 0, column: 0, value: "A" },
+      { row: 0, column: 1, value: 1 },
+      { row: 0, column: 2, value: ["x"] },
+      { row: 1, column: 0, value: "B" },
+      { row: 1, column: 1, value: 2 },
+      { row: 1, column: 2, value: ["y"] },
+      { row: 2, column: 0, value: "C" },
+      { row: 2, column: 1, value: 3 },
+      { row: 2, column: 2, value: ["z"] }
+    ]);
+  });
+});

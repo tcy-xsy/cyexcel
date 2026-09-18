@@ -266,6 +266,17 @@ const filterValue = document.getElementById("filterValue");
 const applyFilterButton = document.getElementById("applyFilterButton");
 const clearFilterButton = document.getElementById("clearFilterButton");
 const filterHint = document.getElementById("filterHint");
+const searchQuery = document.getElementById("searchQuery");
+const searchMatchCase = document.getElementById("searchMatchCase");
+const searchUseRegex = document.getElementById("searchUseRegex");
+const searchFindButton = document.getElementById("searchFindButton");
+const searchPrevButton = document.getElementById("searchPrevButton");
+const searchNextButton = document.getElementById("searchNextButton");
+const searchReplaceValue = document.getElementById("searchReplaceValue");
+const searchReplaceButton = document.getElementById("searchReplaceButton");
+const searchReplaceAllButton = document.getElementById("searchReplaceAllButton");
+const searchClearButton = document.getElementById("searchClearButton");
+const searchHint = document.getElementById("searchHint");
 const metricConstruct = document.getElementById("metricConstruct");
 const metricFps = document.getElementById("metricFps");
 
@@ -337,6 +348,10 @@ function rebuild() {
   // out of date (unlike sortHint's text, which is merely stale until the
   // next sort).
   emptyFilterState.hidden = true;
+  // Same reasoning: a fresh instance has no search state either, and
+  // currentMatch would otherwise point at coordinates in the previous
+  // instance's now-disposed sheet.
+  currentMatch = null;
 
   const rows = buildRows(config.rowCount);
   // Pass every real ColumnDefinition field through as-is — only "label" is
@@ -629,6 +644,100 @@ function filterBy(kind) {
 
 applyFilterButton.addEventListener("click", () => filterBy("apply"));
 clearFilterButton.addEventListener("click", () => filterBy("clear"));
+
+/**
+ * Step 23：sheet.find()/findNext()/findPrevious()/replace()/replaceAll()
+ * 演示——匹配数量与"第几个"直接读 core 返回的结果，这里不重复统计。
+ * `currentMatch` 只是宿主自己记的"上一次 findNext/findPrevious 停在哪"，
+ * core 本身不暴露这个 getter（它已经体现在选区上了），「替换当前」要用
+ * 具体坐标调 replace()，所以这里记一份。
+ */
+let currentMatch = null;
+
+async function runSearchFind() {
+  if (!core) {
+    return;
+  }
+  const query = searchQuery.value;
+  if (query === "") {
+    searchHint.textContent = "查找框是空的——请先输入要找的文本";
+    return;
+  }
+  currentMatch = null;
+  const started = performance.now();
+  const matches = await core.find(query, {
+    matchCase: searchMatchCase.checked,
+    useRegex: searchUseRegex.checked
+  });
+  const elapsed = Math.round(performance.now() - started);
+  if (matches === null) {
+    searchHint.textContent = "上次动作：查找已取消";
+    return;
+  }
+  searchHint.textContent = matches.length === 0
+    ? `上次动作：查找「${query}」，没有匹配（用时 ${elapsed}ms）`
+    : `上次动作：查找「${query}」，共 ${matches.length.toLocaleString("zh-CN")} 个匹配，` +
+      `用时 ${elapsed}ms——点「下一个」/「上一个」在匹配间跳转`;
+}
+
+function runSearchStep(direction) {
+  if (!core) {
+    return;
+  }
+  const match = direction === "next" ? core.findNext() : core.findPrevious();
+  currentMatch = match;
+  searchHint.textContent = match === null
+    ? "上次动作：没有可跳转的匹配——请先点「查找」"
+    : `上次动作：跳到第 ${match.row} 行第 ${match.column} 列的匹配`;
+}
+
+function runSearchReplaceCurrent() {
+  if (!core || !currentMatch) {
+    searchHint.textContent = "上次动作：还没有当前匹配——先点「查找」再点「下一个」定位一个";
+    return;
+  }
+  const replaced = currentMatch;
+  core.replace(replaced, searchReplaceValue.value);
+  searchHint.textContent =
+    `上次动作：把第 ${replaced.row} 行第 ${replaced.column} 列替换为「${searchReplaceValue.value}」（可撤销）`;
+  currentMatch = null;
+}
+
+searchFindButton.addEventListener("click", () => {
+  runSearchFind();
+});
+searchNextButton.addEventListener("click", () => runSearchStep("next"));
+searchPrevButton.addEventListener("click", () => runSearchStep("previous"));
+searchReplaceButton.addEventListener("click", runSearchReplaceCurrent);
+searchClearButton.addEventListener("click", () => {
+  if (!core) {
+    return;
+  }
+  core.clearSearch();
+  currentMatch = null;
+  searchHint.textContent = "上次动作：已清除查找结果";
+});
+searchReplaceAllButton.addEventListener("click", async () => {
+  if (!core) {
+    return;
+  }
+  const query = searchQuery.value;
+  if (query === "") {
+    searchHint.textContent = "查找框是空的——请先输入要找的文本";
+    return;
+  }
+  const started = performance.now();
+  const count = await core.replaceAll(query, searchReplaceValue.value, {
+    matchCase: searchMatchCase.checked,
+    useRegex: searchUseRegex.checked
+  });
+  const elapsed = Math.round(performance.now() - started);
+  currentMatch = null;
+  searchHint.textContent = count === null
+    ? "上次动作：全部替换已取消"
+    : `上次动作：全部替换「${query}」→「${searchReplaceValue.value}」，共 ` +
+      `${count.toLocaleString("zh-CN")} 个格子，用时 ${elapsed}ms（一次撤销即可复原）`;
+});
 
 rebuildButton.addEventListener("click", rebuild);
 

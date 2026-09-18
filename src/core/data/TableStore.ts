@@ -165,6 +165,10 @@ export class TableStore {
     return this.#sheet.getCell(row, column);
   }
 
+  occupiedCells(): Generator<{ row: number; column: number; value: unknown }> {
+    return this.#sheet.occupiedCells();
+  }
+
   /**
    * 只带值的一条变更**整条替换**记录，不与该格已有的 `t`/`s`/`f`/`si` 合并。
    *

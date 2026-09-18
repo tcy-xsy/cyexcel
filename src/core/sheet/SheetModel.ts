@@ -201,6 +201,20 @@ export class SheetModel {
     return this.#matrix.get(row, column);
   }
 
+  /**
+   * Iterates every occupied cell with its bare value — the "cells that
+   * actually have something in them" walk Step 23's search scanner needs,
+   * as opposed to scanning the full (possibly million-row) coordinate space.
+   */
+  *occupiedCells(): Generator<{ row: number; column: number; value: unknown }> {
+    for (const [row, bucket] of this.#matrix.rows()) {
+      for (const key of Object.keys(bucket)) {
+        const column = Number(key);
+        yield { row, column, value: (bucket[column] as CellRecord).v };
+      }
+    }
+  }
+
   /** 只改值，保留该格已有的 `t`/`s`/`f`/`si`。 */
   setCell(row: number, column: number, value: unknown): void {
     const existing = this.#matrix.get(row, column);

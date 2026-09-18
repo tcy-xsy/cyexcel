@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>cyexcel search fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+      }
+      #app {
+        width: 400px;
+        height: 250px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore, rowsToWorkbookSnapshot } from "/src/core/index.ts";
+
+      const container = document.getElementById("app");
+
+      const columns = [{ width: 120, header: "Name" }, { width: 100, header: "Category" }, { width: 80, header: "Score", type: "number" }];
+      const fields = ["name", "category", "score"];
+      const rows = [
+        { name: "apple", category: "fruit", score: 3 },
+        { name: "banana", category: "fruit", score: 1 },
+        { name: "carrot", category: "veg", score: 2 },
+        { name: "daikon", category: "veg", score: 5 }
+      ];
+
+      const sheet = new CyExcelCore(container, {
+        columns,
+        snapshot: rowsToWorkbookSnapshot(rows, fields),
+        rowHeight: 20,
+        headerHeight: 20,
+        rowHeaderWidth: 40
+      });
+
+      let commitCount = 0;
+      sheet.events.on("change", () => {
+        commitCount += 1;
+      });
+
+      window.__search = {
+        sheet,
+        getCommitCount: () => commitCount
+      };
+      window.__searchFixtureReady = true;
+    </script>
+  </body>
+</html>

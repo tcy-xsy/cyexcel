@@ -58,6 +58,26 @@
           </span>
         </div>
         <div class="toolbar-group">
+          <label class="hint-inline">查找 <input id="searchQuery" type="text" placeholder="要查找的文本" aria-label="查找" /></label>
+          <label class="hint-inline"><input id="searchMatchCase" type="checkbox" /> 区分大小写</label>
+          <label class="hint-inline"><input id="searchUseRegex" type="checkbox" /> 正则</label>
+          <button class="button" id="searchFindButton" type="button">查找</button>
+          <button class="button" id="searchPrevButton" type="button">上一个</button>
+          <button class="button" id="searchNextButton" type="button">下一个</button>
+          <label class="hint-inline">替换为 <input id="searchReplaceValue" type="text" placeholder="替换值" aria-label="替换值" /></label>
+          <button class="button" id="searchReplaceButton" type="button">替换当前</button>
+          <button class="button" id="searchReplaceAllButton" type="button">全部替换</button>
+          <button class="button" id="searchClearButton" type="button">清除查找</button>
+          <span class="hint-inline" id="searchHint">
+            调用 <code>sheet.find(query, options)</code>——只扫描实际有值的格子（分片让出主线程，
+            规模再大也不会卡成一个长任务），只返回匹配坐标，不在表格上画额外高亮（同 Excel：
+            工作表上看不到"全部匹配"，只有当前项用普通选区框标出）。
+            <code>sheet.findNext()</code>/<code>findPrevious()</code> 在匹配之间循环，把选区
+            移到那一格并把视口滚过去；<code>replace()</code> 走普通可撤销的单格写入，
+            <code>replaceAll()</code> 对所有匹配一次事务、一次撤销记录
+          </span>
+        </div>
+        <div class="toolbar-group">
           <button class="button" id="exportButton" type="button">导出选区为 TSV</button>
           <span class="hint-inline" id="shortcutHint">
             调用 <code>sheet.copy({ download: true })</code>；Ctrl/Cmd+S 是同一个动作的快捷键

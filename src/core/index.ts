@@ -12,7 +12,9 @@ export {
   type CyExcelCoreOptions,
   type CyExcelHeaderActionEvent,
   type SortState,
-  type FilterState
+  type FilterState,
+  type SearchMatch,
+  type SearchOptions
 } from "./CyExcelCore";
 
 export { CyExcelError, CyExcelErrorCode } from "./errors";

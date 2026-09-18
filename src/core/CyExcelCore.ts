@@ -50,6 +50,7 @@ import {
   type SemanticChange,
   summarizeStructuralChanges
 } from "./data";
+import { computeMatches, SearchState, type SearchMatch, type SearchOptions } from "./search";
 import { WorkbookModel, type SheetModel, type WorkbookSnapshot } from "./sheet";
 import { expandRangeForMerges, findMergeAt, mergesIntersectingRange } from "./sheet/merges";
 import type { CellEditorFactory } from "./editors";
@@ -146,6 +147,7 @@ import {
 export type CyExcelColumnConfig = ColumnDefinition;
 
 export type { SortState, FilterState };
+export type { SearchMatch, SearchOptions };
 
 /** Emitted after a custom canvas header hitTest returns an action. */
 export interface CyExcelHeaderActionEvent {
@@ -591,6 +593,8 @@ export class CyExcelCore {
    * structural row commands.
    */
   #filterState: FilterState | null = null;
+  /** Current search matches and which one findNext()/findPrevious() last landed on (Step 23). Pure bookkeeping — see SearchState. */
+  readonly #searchState = new SearchState();
   readonly #columnHeaderHeight: number;
   readonly #rowHeaderWidth: number;
   /**
@@ -1603,6 +1607,107 @@ export class CyExcelCore {
     const changes = this.#commandManager.execute(new FilterCommand(filteredRows), { history: "skip" });
     this.#filterState = nextState;
     this.#publishCommitReceipt(changes);
+  }
+
+  /**
+   * Scans every occupied cell's displayed text (the same string
+   * `column.format()` would paint, not the raw stored value) for `query`,
+   * caches the result and clears which match is "active" — `findNext()`/
+   * `findPrevious()` move that pointer, this call never moves the viewport
+   * by itself, matching `sortByColumn()`/`filterByColumn()`'s convention of
+   * never having a side effect the caller didn't ask for.
+   *
+   * Returns `null` when `options.signal` aborts before the scan finishes —
+   * same "cancelled = null, nothing written" convention as
+   * `computeSortOrder()`. A cancelled search leaves the previous match set
+   * (if any) untouched.
+   */
+  async find(query: string, options: SearchOptions = {}): Promise<readonly SearchMatch[] | null> {
+    const matches = await computeMatches({
+      occupiedCells: this.#store.occupiedCells(),
+      getDisplayText: (row, column, value) => this.#getCellDisplayText(row, column, value),
+      query,
+      ...options
+    });
+    if (matches === null) {
+      return null;
+    }
+    this.#searchState.setMatches(matches);
+    this.#renderScheduler.invalidateSelection();
+    return matches;
+  }
+
+  /** Moves to the next match (wrapping past the last), selects it and scrolls it into view. `null` if find() has found nothing. */
+  findNext(): SearchMatch | null {
+    return this.#focusMatch(this.#searchState.next());
+  }
+
+  /** Same as findNext(), walking backward. */
+  findPrevious(): SearchMatch | null {
+    return this.#focusMatch(this.#searchState.previous());
+  }
+
+  /** Clears the match set and its highlight. Leaves the current selection untouched. */
+  clearSearch(): void {
+    this.#searchState.clear();
+    this.#renderScheduler.invalidateSelection();
+  }
+
+  /** Writes `value` into one previously found match. A normal undoable SetCellCommand — nothing search-specific about the write itself. */
+  replace(match: SearchMatch, value: unknown): void {
+    this.#enqueueOrRunMutation(() => {
+      this.#applyCommandNow(new SetCellCommand(match.row, match.column, value));
+    });
+  }
+
+  /**
+   * Re-scans for `query` and writes `value` into every match in one
+   * transaction — one History entry for the whole operation, same pattern
+   * `CommandManager.transaction()`'s own tests use for "many commands, one
+   * undo step". Does not touch `find()`'s cached match set (those matches
+   * would be stale the instant the first replacement lands). Returns the
+   * number of cells replaced, or `null` if cancelled before the scan
+   * finished — no writes happen in that case.
+   */
+  async replaceAll(query: string, value: unknown, options: SearchOptions = {}): Promise<number | null> {
+    const matches = await computeMatches({
+      occupiedCells: this.#store.occupiedCells(),
+      getDisplayText: (row, column, cellValue) => this.#getCellDisplayText(row, column, cellValue),
+      query,
+      ...options
+    });
+    if (matches === null) {
+      return null;
+    }
+    if (matches.length === 0) {
+      return 0;
+    }
+    this.#enqueueOrRunMutation(() => {
+      this.#cancelActiveEdit();
+      const receipts = this.#commandManager.transaction(() => {
+        for (const match of matches) {
+          this.#commandManager.execute(new SetCellCommand(match.row, match.column, value));
+        }
+      });
+      this.#publishCommitReceipt(receipts);
+    });
+    return matches.length;
+  }
+
+  /** The same text `column.format()` would paint for this cell — search matches what the user sees, not the raw stored value. */
+  #getCellDisplayText(row: number, column: number, value: unknown): string {
+    const runtimeColumn = this.#columnManager.getColumn(column);
+    return runtimeColumn.format(value, { row, column: runtimeColumn });
+  }
+
+  #focusMatch(match: SearchMatch | null): SearchMatch | null {
+    if (!match) {
+      return null;
+    }
+    this.#selectionModel.selectCell(match.row, match.column);
+    this.#renderScheduler.invalidateSelection();
+    this.#scrollActiveIntoView();
+    return match;
   }
 
   /**
