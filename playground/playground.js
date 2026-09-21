@@ -769,5 +769,104 @@ function tick(now) {
 }
 requestAnimationFrame(tick);
 
+/**
+ * Step 24：样式面板。
+ *
+ * 这一组按钮是本步**主要的验证路径**——渲染效果（字体、颜色、边框画出来对不对）
+ * 只能靠眼睛，这个环境里没有 Chromium 跑浏览器测试。所以面板要能单独验证每一个
+ * 样式键，外加一块显示 intern 状态的调试信息。
+ */
+const styleBold = document.getElementById("styleBold");
+const styleItalic = document.getElementById("styleItalic");
+const styleUnderline = document.getElementById("styleUnderline");
+const styleStrike = document.getElementById("styleStrike");
+const styleFontSize = document.getElementById("styleFontSize");
+const styleColor = document.getElementById("styleColor");
+const styleBackground = document.getElementById("styleBackground");
+const styleAlign = document.getElementById("styleAlign");
+const styleBorder = document.getElementById("styleBorder");
+const styleNumFmt = document.getElementById("styleNumFmt");
+const styleApplyNumFmt = document.getElementById("styleApplyNumFmt");
+const styleClear = document.getElementById("styleClear");
+const styleHint = document.getElementById("styleHint");
+const styleDebug = document.getElementById("styleDebug");
+
+function applyStyle(patch, label) {
+  if (!core) {
+    return;
+  }
+  const range = core.selection.range;
+  try {
+    core.setRangeStyle(range, patch);
+    styleHint.textContent =
+      `上次动作：${label}，作用于 R${range.startRow}C${range.startColumn}` +
+      `–R${range.endRow}C${range.endColumn}（一次撤销即可全部回退）`;
+  } catch (error) {
+    // 非法 numFmt 走这里——错误在设置时抛出，一格都没写进去
+    styleHint.textContent = `上次动作失败：${error instanceof Error ? error.message : String(error)}`;
+  }
+  updateStyleDebug();
+}
+
+/**
+ * toggle 语义：当前格已经是粗体就取消，否则加上。这正是"合并语义 + null 清键"
+ * 存在的理由——工具栏按钮只能表达"改这一个键"，不能整体替换样式。
+ */
+function toggleStyle(key, label) {
+  if (!core) {
+    return;
+  }
+  const { startRow, startColumn } = core.selection.range;
+  const current = core.getCellStyle(startRow, startColumn);
+  applyStyle({ [key]: current?.[key] === true ? null : true }, label);
+}
+
+function updateStyleDebug() {
+  if (!core || !styleDebug) {
+    return;
+  }
+  const { startRow, startColumn } = core.selection.range;
+  const style = core.getCellStyle(startRow, startColumn);
+  const summary = style === undefined ? "无样式" : JSON.stringify(style);
+  styleDebug.textContent = `当前格 R${startRow}C${startColumn}：${summary}`;
+}
+
+styleBold?.addEventListener("click", () => toggleStyle("bold", "切换加粗"));
+styleItalic?.addEventListener("click", () => toggleStyle("italic", "切换斜体"));
+styleUnderline?.addEventListener("click", () => toggleStyle("underline", "切换下划线"));
+styleStrike?.addEventListener("click", () => toggleStyle("strike", "切换删除线"));
+styleFontSize?.addEventListener("change", () => {
+  const size = Number(styleFontSize.value);
+  applyStyle({ fontSize: Number.isFinite(size) && size > 0 ? size : null }, `字号 ${size}`);
+});
+styleColor?.addEventListener("change", () => applyStyle({ color: styleColor.value }, `字色 ${styleColor.value}`));
+styleBackground?.addEventListener("change", () =>
+  applyStyle({ background: styleBackground.value }, `底色 ${styleBackground.value}`)
+);
+styleAlign?.addEventListener("change", () =>
+  applyStyle({ align: styleAlign.value === "" ? null : styleAlign.value }, `对齐 ${styleAlign.value || "默认"}`)
+);
+styleBorder?.addEventListener("click", () => {
+  const side = { color: "#3b82f6", width: 1 };
+  applyStyle({ border: { top: side, right: side, bottom: side, left: side } }, "加四边框");
+});
+styleApplyNumFmt?.addEventListener("click", () =>
+  applyStyle({ numFmt: styleNumFmt.value === "" ? null : styleNumFmt.value }, `数字格式 ${styleNumFmt.value || "清除"}`)
+);
+styleClear?.addEventListener("click", () => {
+  if (!core) {
+    return;
+  }
+  core.clearRangeStyle(core.selection.range);
+  styleHint.textContent = "上次动作：清除选区全部样式";
+  updateStyleDebug();
+});
+
+// core 没有 selection-change 事件（只有 change/layout-change/ready 等），所以这块
+// 调试信息由宿主在交互之后自己刷新——点选、键盘移动选区都会走到这两个事件。
+sheetMount.addEventListener("click", () => updateStyleDebug());
+sheetMount.addEventListener("keyup", () => updateStyleDebug());
+
 populateCellColumnSelect();
 rebuild();
+updateStyleDebug();

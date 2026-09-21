@@ -53,6 +53,7 @@ import {
 } from "./data";
 import { computeMatches, SearchState, type SearchMatch, type SearchOptions } from "./search";
 import { formatCellText } from "./style/formatCellText";
+import { buildCopyHtml, CopyStyleCache, styleAt, type CopiedStyles } from "./clipboard/styleClipboard";
 import { assertValidCoordinate, assertValidRange } from "./validation";
 import type { CellStylePatch } from "./style/styleKey";
 import { STYLE_KEYS, type CellStyle } from "./style/types";
@@ -600,6 +601,8 @@ export class CyExcelCore {
   #filterState: FilterState | null = null;
   /** Current search matches and which one findNext()/findPrevious() last landed on (Step 23). Pure bookkeeping — see SearchState. */
   readonly #searchState = new SearchState();
+  /** 最近几次复制的样式，按 copyId 索引（上限 10 条，见 CopyStyleCache）。 */
+  readonly #copyStyles = new CopyStyleCache();
   readonly #columnHeaderHeight: number;
   readonly #rowHeaderWidth: number;
   /**
@@ -1268,8 +1271,8 @@ export class CyExcelCore {
       parseValue: (row, column, text) => this.#parseEditedValue(row, column, text),
       getSelectionRange: () => this.#selectionModel.snapshot.range,
       getStoreVersion: () => this.#store.version,
-      applyRangeCommand: (range, values) =>
-        this.#enqueueMutationPromise(() => this.#applyCommandNow(new SetRangeCommand(range, values))),
+      applyRangeCommand: (range, values, styles) =>
+        this.#enqueueMutationPromise(() => this.#applyPastedRange(range, values, styles)),
       io: createBrowserClipboardIO(),
       // `Worker`'s real `onmessage`/`onerror` setters are typed against
       // `MessageEvent`, narrower than the structural `SerializeWorkerLike`
@@ -2774,8 +2777,84 @@ export class CyExcelCore {
       findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column)
     });
     event.clipboardData?.setData("text/plain", encodeTsv(grid));
+    // 同时写一份 HTML：它主要是 copyId 的载体（同应用内粘贴靠它认领到内存里那份
+    // 完整样式），内联样式顺带让 Excel/Sheets 粘过去也有格式。见 styleClipboard。
+    const copied = this.#collectStyles(range);
+    const copyId = this.#copyStyles.set(copied);
+    event.clipboardData?.setData("text/html", buildCopyHtml(grid, copied, copyId));
     event.preventDefault();
   };
+
+  /** 把一片区域的样式收集成"子表 + 引用矩阵"（见 CopiedStyles 为什么不是每格一个对象）。 */
+  #collectStyles(range: CellRange): CopiedStyles {
+    const styles: Record<string, CellStyle> = {};
+    const ids: (string | undefined)[][] = [];
+    for (let row = range.startRow; row <= range.endRow; row += 1) {
+      const line: (string | undefined)[] = [];
+      for (let column = range.startColumn; column <= range.endColumn; column += 1) {
+        const style = this.getCellStyle(row, column);
+        if (style === undefined) {
+          line.push(undefined);
+          continue;
+        }
+        // 这里的 key 只在这一份 payload 内部有效，不是源表的 id——源表 id 是随机串，
+        // 对目标表没有意义（目标表会重新 intern）。
+        const key = `k${Object.keys(styles).length}`;
+        const existing = Object.entries(styles).find(([, value]) => value === style)?.[0];
+        if (existing !== undefined) {
+          line.push(existing);
+        } else {
+          styles[key] = style;
+          line.push(key);
+        }
+      }
+      ids.push(line);
+    }
+    return {
+      rows: range.endRow - range.startRow + 1,
+      columns: range.endColumn - range.startColumn + 1,
+      styles,
+      ids
+    };
+  }
+
+  /**
+   * 粘贴的落地：值和样式在**同一个事务**里，所以撤销一次就全回去了。
+   *
+   * 样式只在认领成功时才有（同应用内复制），跨应用粘贴走的是纯文本路径，
+   * 这个参数是 undefined，行为与 Step 24 之前一模一样。
+   */
+  #applyPastedRange(
+    range: CellRange,
+    values: readonly (readonly unknown[])[],
+    styles: CopiedStyles | undefined
+  ): void {
+    if (styles === undefined) {
+      this.#applyCommandNow(new SetRangeCommand(range, values));
+      return;
+    }
+    const receipts = this.#commandManager.transaction(() => {
+      this.#commandManager.execute(new SetRangeCommand(range, values));
+      for (let row = range.startRow; row <= range.endRow; row += 1) {
+        for (let column = range.startColumn; column <= range.endColumn; column += 1) {
+          if (this.#columnManager.getColumn(column).clipboard.paste === false) {
+            continue; // 这一列不让粘，值和样式都不粘
+          }
+          const style = styleAt(styles, row - range.startRow, column - range.startColumn);
+          if (style === undefined) {
+            continue;
+          }
+          this.#commandManager.execute(
+            new SetStyleCommand(
+              { startRow: row, startColumn: column, endRow: row, endColumn: column },
+              style
+            )
+          );
+        }
+      }
+    });
+    this.#publishCommitReceipt(receipts);
+  }
 
   /** Real Ctrl+V — the pasted text is already synchronously available on the event, so this skips ClipboardService's async io.readText() entirely. */
   #handlePasteEvent = (event: ClipboardEvent): void => {
@@ -2787,7 +2866,10 @@ export class CyExcelCore {
       return;
     }
     event.preventDefault();
-    void this.#clipboardService.paste({ text });
+    // 认领：剪贴板里这份 HTML 带的 copyId 如果还在缓存里，说明就是本应用刚拷出去的，
+    // 样式照搬；认不出来（来自 Excel、别的标签页、或者已经被 LRU 挤掉）就只粘文本。
+    const claimed = this.#copyStyles.claim(event.clipboardData?.getData("text/html"));
+    void this.#clipboardService.paste({ text, ...(claimed !== undefined ? { styles: claimed } : {}) });
   };
 
   #handleKeyDown = (event: KeyboardEvent): void => {

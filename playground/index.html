@@ -78,6 +78,38 @@
           </span>
         </div>
         <div class="toolbar-group">
+          <button class="button" id="styleBold" type="button"><b>B</b></button>
+          <button class="button" id="styleItalic" type="button"><i>I</i></button>
+          <button class="button" id="styleUnderline" type="button"><u>U</u></button>
+          <button class="button" id="styleStrike" type="button"><s>S</s></button>
+          <label class="hint-inline">字号 <input id="styleFontSize" type="number" min="8" max="72" step="1" style="width:4em" /></label>
+          <label class="hint-inline">字色 <input id="styleColor" type="color" value="#111827" /></label>
+          <label class="hint-inline">底色 <input id="styleBackground" type="color" value="#fff7c2" /></label>
+          <select id="styleAlign">
+            <option value="">对齐（默认左）</option>
+            <option value="left">左</option>
+            <option value="center">居中</option>
+            <option value="right">右</option>
+          </select>
+          <button class="button" id="styleBorder" type="button">加四边框</button>
+          <label class="hint-inline">数字格式 <input id="styleNumFmt" type="text" placeholder="#,##0.00" style="width:8em" /></label>
+          <button class="button" id="styleApplyNumFmt" type="button">套用格式</button>
+          <button class="button" id="styleClear" type="button">清除样式</button>
+          <span class="hint-inline" id="styleHint">
+            调用 <code>sheet.setRangeStyle(range, patch)</code>——**合并语义**：只改传进去的那个键，
+            其余保留，传 <code>null</code> 清掉某一个键。整片选区是一次事务、一次撤销记录。
+            数字格式交给 numfmt（Excel pattern），非法 pattern 在设置时就抛
+            <code>invalid-number-format</code>，不会等到那一格滚进视口
+          </span>
+        </div>
+        <div class="toolbar-group">
+          <span class="hint-inline" id="styleDebug">样式表：0 条</span>
+          <span class="hint-inline">
+            这行显示当前格的样式 id 与 <code>styles</code> 表的条目数——把同一个样式刷到很多格上，
+            条目数**不会**跟着涨（intern 去重）；这是肉眼验证稀疏存储的唯一直观方式
+          </span>
+        </div>
+        <div class="toolbar-group">
           <button class="button" id="exportButton" type="button">导出选区为 TSV</button>
           <span class="hint-inline" id="shortcutHint">
             调用 <code>sheet.copy({ download: true })</code>；Ctrl/Cmd+S 是同一个动作的快捷键

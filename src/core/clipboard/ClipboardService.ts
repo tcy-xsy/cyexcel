@@ -3,6 +3,7 @@ import type { CellRange } from "../types";
 import { ClipboardWorkerClient, type SerializeWorkerLike } from "./ClipboardWorkerClient";
 import { CopyPlanner } from "./CopyPlanner";
 import { buildCellGrid } from "./serializers";
+import type { CopiedStyles } from "./styleClipboard";
 import { decodeTsv } from "./tsv";
 import type { ClipboardCopyOptions, ClipboardCopyResult, ClipboardOptions, ClipboardPasteOptions, CopyPlan } from "./types";
 
@@ -24,7 +25,12 @@ export interface ClipboardServiceOptions {
   readonly getSelectionRange: () => CellRange;
   readonly getStoreVersion: () => number;
   /** Expected to be a single Command execution (e.g. one SetRangeCommand), so one paste = one transaction = one History entry. */
-  readonly applyRangeCommand: (range: CellRange, values: readonly (readonly unknown[])[]) => void | Promise<void>;
+  readonly applyRangeCommand: (
+    range: CellRange,
+    values: readonly (readonly unknown[])[],
+    /** 认领成功时带上的样式——值与样式必须落在同一个事务里，否则撤销要按两次。 */
+    styles?: CopiedStyles
+  ) => void | Promise<void>;
   readonly io: ClipboardIO;
   readonly createWorker?: () => SerializeWorkerLike;
   readonly options?: ClipboardOptions;
@@ -166,7 +172,8 @@ export class ClipboardService {
 
     await this.#options.applyRangeCommand(
       { startRow: anchor.startRow, startColumn: anchor.startColumn, endRow, endColumn },
-      values
+      values,
+      opts.styles
     );
   }
 

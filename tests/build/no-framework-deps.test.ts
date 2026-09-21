@@ -2,13 +2,10 @@ import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-describe("package.json has no runtime framework dependencies", () => {
-  it("has no \"dependencies\" field at all", async () => {
-    const raw = await readFile(new URL("../../package.json", import.meta.url), "utf-8");
-    const pkg = JSON.parse(raw) as Record<string, unknown>;
-    expect(pkg.dependencies).toBeUndefined();
-  });
-});
+// Step 24 之前这里还有一条"不得有任何 dependencies"的断言。numfmt（Excel 数字格式
+// 解析，Univer 用的也是它）作为本项目第一个运行时依赖接入后，那条断言按设计删除——
+// 见 doc/step24-style-plan.md §3.1。下面这条（产物里不得出现框架代码）留着：它在
+// Step 22 Part B 刚抓到过一次误报，代码注释里写的 "react" 也会被打进产物。
 
 describe("dist/ output contains no bundled framework code", () => {
   it("no dist/*.js or *.cjs file mentions react/vue/jquery", async () => {

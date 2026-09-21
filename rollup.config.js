@@ -1,4 +1,5 @@
 import typescript from "@rollup/plugin-typescript";
+import nodeResolve from "@rollup/plugin-node-resolve";
 
 const typescriptPlugin = () =>
   typescript({
@@ -38,6 +39,9 @@ export default [
       name: "CyExcel",
       sourcemap: true
     },
-    plugins: [typescriptPlugin()]
+    // UMD 必须把运行时依赖（numfmt）打进产物：external 在 UMD 里意味着"使用者得
+    // 先在全局挂一个 numfmt"，一个 <script> 标签就能用的产物不该有这种前置条件。
+    // ESM 那一路相反，保持 external 交给使用者的打包器去解析（见上面那个配置项）。
+    plugins: [nodeResolve(), typescriptPlugin()]
   }
 ];

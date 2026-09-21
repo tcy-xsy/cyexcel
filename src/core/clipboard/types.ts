@@ -1,5 +1,6 @@
 import type { ColumnClipboardPolicy } from "../cells";
 import type { CellRange } from "../types";
+import type { CopiedStyles } from "./styleClipboard";
 
 export type { ColumnClipboardPolicy };
 
@@ -44,6 +45,11 @@ export interface ClipboardCopyOptions {
 }
 
 export interface ClipboardPasteOptions {
+  /**
+   * 这次粘贴认领到的样式（`CopyStyleCache.claim()` 的结果）。只有"剪贴板里这份
+   * 就是本应用刚拷出去的那份"时才会有——跨应用粘贴永远没有，那时只粘文本。
+   */
+  readonly styles?: CopiedStyles;
   readonly range?: CellRange;
   /** Pasted text to use instead of reading the system clipboard — mainly for tests and programmatic paste. */
   readonly text?: string;
