@@ -49,32 +49,28 @@ export function changesForSheetMutation(
     // 关心哪一条，比在这里替它们挑一条更诚实。
     case "set-cell": {
       const { row, column } = mutation;
-      switch (mutation.changed ?? "value") {
-        case "value":
-          return [{ type: "cell-value", row, column }];
-        case "style":
-          return [{ type: "cell-style", row, column }];
-        case "both":
-          return [
-            { type: "cell-value", row, column },
-            { type: "cell-style", row, column }
-          ];
+      const kind = mutation.changed ?? "value";
+      const patches: Patch[] = [];
+      if (kind !== "style") {
+        patches.push({ type: "cell-value", row, column });
       }
+      if (kind !== "value") {
+        patches.push({ type: "cell-style", row, column });
+      }
+      return patches;
     }
 
     case "set-range": {
       const { range } = mutation;
-      switch (mutation.changed ?? "value") {
-        case "value":
-          return [{ type: "range-value", range }];
-        case "style":
-          return [{ type: "range-style", range }];
-        case "both":
-          return [
-            { type: "range-value", range },
-            { type: "range-style", range }
-          ];
+      const kind = mutation.changed ?? "value";
+      const patches: Patch[] = [];
+      if (kind !== "style") {
+        patches.push({ type: "range-value", range });
       }
+      if (kind !== "value") {
+        patches.push({ type: "range-style", range });
+      }
+      return patches;
     }
 
     case "insert-rows":

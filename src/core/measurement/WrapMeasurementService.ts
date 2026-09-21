@@ -276,10 +276,10 @@ export class WrapMeasurementService {
   invalidateFor(changes: readonly SemanticChange[]): void {
     for (const change of changes) {
       switch (change.type) {
+        // `cell-style` 也在这里：改字号会改变文字占的高度，不失效的话 wrap 列的
+        // 行高会停在旧字号上。这不是"每格换行策略"（那要把自动行高的输入从列配置
+        // 改成每格样式，是另一个量级的改动），只是让已有的、按列 wrap 触发的测量重跑。
         case "cell-value":
-        // 样式也要让测量失效：改字号会改变文字占的高度，不失效的话 wrap 列的行高
-        // 会停在旧字号上。这不是"每格换行策略"（那要把自动行高的输入从列配置改成
-        // 每格样式，是另一个量级的改动），只是让已有的、按列 wrap 触发的测量重跑。
         case "cell-style":
           this.forgetRow(change.row);
           break;

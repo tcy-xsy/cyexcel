@@ -7,7 +7,6 @@ import { createTableCommandManager } from "../../../../src/core/integration";
 import { StyleRegistry } from "../../../../src/core/style/StyleRegistry";
 import type { CellRange } from "../../../../src/core/types";
 import { createSheetFromRows } from "../../../helpers/createSheetModel";
-import { MutationCoordinator } from "../../../../src/core/mutations";
 
 function range(startRow: number, startColumn: number, endRow: number, endColumn: number): CellRange {
   return { startRow, startColumn, endRow, endColumn };
@@ -25,7 +24,7 @@ function createStore(): { store: TableStore; styles: StyleRegistry } {
     Object.fromEntries(["c0", "c1"].map((field, c) => [field, `R${r}C${c}`]))
   );
   const styles = new StyleRegistry();
-  const store = new TableStore(createSheetFromRows(rows, fields), new MutationCoordinator(), styles);
+  const store = new TableStore(createSheetFromRows(rows, fields), { styles });
   return { store, styles };
 }
 

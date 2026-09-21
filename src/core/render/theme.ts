@@ -9,7 +9,14 @@
 export const GRID_LINE_COLOR = "#e2e5ea";
 export const TEXT_COLOR = "#111827";
 export const CELL_PADDING = 4;
-export const CELL_FONT = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+/**
+ * 字号与字体分开导出，是为了让每格样式能覆盖其中一半（Step 24）。
+ * `CELL_FONT` 由这两个常量拼出来，所以**没有样式的格子拼出的串与从前逐字相同**
+ * ——Step 0-15 那些断言字体串的既有测试因此一个字都不用改。
+ */
+export const DEFAULT_FONT_SIZE = 13;
+export const DEFAULT_FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+export const CELL_FONT = `${DEFAULT_FONT_SIZE}px ${DEFAULT_FONT_FAMILY}`;
 /** Vertical space one wrapped line occupies — used only by wrap-enabled columns' multi-line paint/measurement; a single-line cell still centers on its own rect.height and never reads this. */
 // 16px line box + 4px top/bottom padding exactly matches the default 24px
 // row height, so opting a column into wrap does not make ordinary one-line

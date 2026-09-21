@@ -125,20 +125,22 @@ function unionSpace(before: SheetAxisSpace, after: SheetAxisSpace): SheetAxisSpa
 }
 
 /** Mutable table model whose writes are finalized by one shared coordinator. */
+export interface TableStoreOptions {
+  readonly coordinator?: MutationCoordinator;
+  /** workbook 级样式表。省略时自建一张空表——只测数据层的用例不必关心样式。 */
+  readonly styles?: StyleRegistry;
+}
+
 export class TableStore {
   readonly #sheet: SheetModel;
   readonly #coordinator: MutationCoordinator;
   readonly #styles: StyleRegistry;
   #nextDirectTransactionId = 1;
 
-  constructor(
-    sheet: SheetModel,
-    coordinator = new MutationCoordinator(),
-    styles: StyleRegistry = new StyleRegistry()
-  ) {
+  constructor(sheet: SheetModel, options: TableStoreOptions = {}) {
     this.#sheet = sheet;
-    this.#coordinator = coordinator;
-    this.#styles = styles;
+    this.#coordinator = options.coordinator ?? new MutationCoordinator();
+    this.#styles = options.styles ?? new StyleRegistry();
   }
 
   /**

@@ -1,4 +1,4 @@
-export { TableStore, type TableStoreCommitResult } from "./TableStore";
+export { TableStore, type TableStoreCommitResult, type TableStoreOptions } from "./TableStore";
 export { mergePatches } from "./patch";
 export {
   createChangeSet,

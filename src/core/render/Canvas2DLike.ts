@@ -24,6 +24,8 @@ export interface Canvas2DLike {
   lineTo(x: number, y: number): void;
   closePath(): void;
   fill(): void;
+  /** 描边当前路径。单元格边框用它画直线（`strokeRect` 画不了单独一条边）。 */
+  stroke(): void;
   scale(x: number, y: number): void;
   setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;
   setLineDash(segments: readonly number[]): void;

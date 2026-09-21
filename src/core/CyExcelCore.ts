@@ -25,6 +25,7 @@ import {
 import {
   SetCellCommand,
   SetRangeCommand,
+  SetStyleCommand,
   MergeCellsCommand,
   UnmergeCellsCommand,
   InsertRowsCommand,
@@ -51,6 +52,10 @@ import {
   summarizeStructuralChanges
 } from "./data";
 import { computeMatches, SearchState, type SearchMatch, type SearchOptions } from "./search";
+import { formatCellText } from "./style/formatCellText";
+import { assertValidCoordinate, assertValidRange } from "./validation";
+import type { CellStylePatch } from "./style/styleKey";
+import { STYLE_KEYS, type CellStyle } from "./style/types";
 import { WorkbookModel, type SheetModel, type WorkbookSnapshot } from "./sheet";
 import { expandRangeForMerges, findMergeAt, mergesIntersectingRange } from "./sheet/merges";
 import type { CellEditorFactory } from "./editors";
@@ -603,6 +608,7 @@ export class CyExcelCore {
    * 资源用，等 T7 的 `snapshot?` 入口落地时再把它一起持有。
    */
   readonly #sheet: SheetModel;
+  readonly #workbook: WorkbookModel;
   readonly #store: TableStore;
   readonly #commandManager: CommandManager;
   readonly #layout: LayoutEngine;
@@ -712,7 +718,11 @@ export class CyExcelCore {
     this.#columnHeaderHeight = options.headerHeight ?? 0;
     this.#rowHeaderWidth = options.rowHeaderWidth ?? 0;
 
-    const sheet = buildWorkbook(options, this.#columns).sheet();
+    // workbook 要留住：样式表（ADR 0004 §3.4 的 workbook 级 `styles`）挂在它身上，
+    // 之前这里只取 sheet、把 workbook 丢了。
+    const workbook = buildWorkbook(options, this.#columns);
+    this.#workbook = workbook;
+    const sheet = workbook.sheet();
     const initialDimensions = {
       rowCount: sheet.rowCount(),
       columnCount: sheet.columnCount()
@@ -876,7 +886,7 @@ export class CyExcelCore {
       hooks: this.#hooks
     });
 
-    this.#store = new TableStore(this.#sheet);
+    this.#store = new TableStore(this.#sheet, { styles: this.#workbook.styles() });
     initialization.defer(() => this.#store.coordinator.dispose());
 
     this.#updateSpacerSize();
@@ -906,6 +916,7 @@ export class CyExcelCore {
       ctx: contentCtx,
       getScene: () => this.#scene,
       getCellValue: (row, column) => this.#store.getCell(row, column),
+      getCellStyle: (row, column) => this.getCellStyle(row, column),
       painter: createColumnAwarePainter(() => this.#columnManager.getColumns()),
       onError: (error, cell) =>
         this.#events.emit("error", { error, eventName: `finalize:canvas-cell:${cell.row}:${cell.column}` }),
@@ -1697,7 +1708,59 @@ export class CyExcelCore {
   /** The same text `column.format()` would paint for this cell — search matches what the user sees, not the raw stored value. */
   #getCellDisplayText(row: number, column: number, value: unknown): string {
     const runtimeColumn = this.#columnManager.getColumn(column);
-    return runtimeColumn.format(value, { row, column: runtimeColumn });
+    // 样式的 numFmt 优先于列的 CellType.format（Step 24）。搜索走的是同一个函数，
+    // 所以"屏幕上是 1,234.00、搜 1,234 搜不到"这种事不会发生。
+    return formatCellText(value, this.getCellStyle(row, column), () =>
+      runtimeColumn.format(value, { row, column: runtimeColumn })
+    );
+  }
+
+  /**
+   * 这一格最终生效的样式：列默认样式（`ColumnMeta.s`）在下，格样式在上，**逐键
+   * 覆盖**。两者都没有时是 `undefined`。
+   *
+   * 返回的是解析后的对象，不是 id——调用方（渲染、工具栏）关心的是"这一格到底
+   * 粗不粗"，不是它指向表里哪一条。
+   */
+  getCellStyle(row: number, column: number): CellStyle | undefined {
+    const styles = this.#workbook.styles();
+    const columnStyleId = this.#sheet.getColumnMeta(column)?.s;
+    const cellStyleId = this.#sheet.getRecord(row, column)?.s;
+    const columnStyle = columnStyleId === undefined ? undefined : styles.get(columnStyleId);
+    const cellStyle = cellStyleId === undefined ? undefined : styles.get(cellStyleId);
+    if (columnStyle === undefined) {
+      return cellStyle;
+    }
+    return cellStyle === undefined ? columnStyle : { ...columnStyle, ...cellStyle };
+  }
+
+  /**
+   * 改一片区域的样式。**合并语义**：`{bold:true}` 只改 bold，`{bold:null}` 清掉
+   * bold，其余键原样保留——这是工具栏 toggle 按钮唯一能用的语义。
+   *
+   * 整片区域是一次事务、一次撤销记录。非法的 `numFmt` 在这里就抛
+   * （`invalid-number-format`），不会写进任何一格。
+   */
+  setRangeStyle(range: CellRange, patch: CellStylePatch): void {
+    assertValidRange(range);
+    this.#enqueueOrRunMutation(() => {
+      this.#applyCommandNow(new SetStyleCommand(range, patch));
+    });
+  }
+
+  /** 单格版的 `setRangeStyle`。 */
+  setCellStyle(row: number, column: number, patch: CellStylePatch): void {
+    assertValidCoordinate(row, column);
+    this.setRangeStyle({ startRow: row, startColumn: column, endRow: row, endColumn: column }, patch);
+  }
+
+  /**
+   * 清掉一片区域的全部样式。等价于把每个已设的键都置 `null`，但不需要调用方先去
+   * 问"这里现在有哪些键"。
+   */
+  clearRangeStyle(range: CellRange): void {
+    const patch = Object.fromEntries(STYLE_KEYS.map((key) => [key, null])) as CellStylePatch;
+    this.setRangeStyle(range, patch);
   }
 
   #focusMatch(match: SearchMatch | null): SearchMatch | null {

@@ -3,6 +3,7 @@ import type { CellRect } from "../layout";
 import type { SceneCellFragment, SceneSnapshot } from "../scene";
 import type { CellRange } from "../types";
 import type { Canvas2DLike } from "./Canvas2DLike";
+import type { BorderSide, CellStyle } from "../style/types";
 import type { DirtyState } from "./RenderScheduler";
 import {
   CELL_FONT,
@@ -19,6 +20,12 @@ export interface CellPaintContext {
   readonly row: number;
   readonly column: number;
   readonly value: unknown;
+  /**
+   * 这一格生效的样式（列默认 + 格样式合并后的结果），没有则 `undefined`。
+   * 自定义 renderer 拿得到它，但**要不要用是 renderer 自己的事**——核心不会替一个
+   * 接管了绘制的 renderer 去套字体或底色。
+   */
+  readonly style?: CellStyle;
 }
 
 /**
@@ -33,6 +40,8 @@ export interface ContentLayerRendererOptions {
   readonly ctx: Canvas2DLike;
   readonly getScene: () => SceneSnapshot;
   readonly getCellValue: (row: number, column: number) => unknown;
+  /** 与 getCellValue 对称：渲染层继续不认识 SheetModel，样式也从回调进来。 */
+  readonly getCellStyle?: (row: number, column: number) => CellStyle | undefined;
   readonly painter?: CellPainter;
   readonly onError?: (error: unknown, cell: { row: number; column: number }) => void;
   /** Throw immediately if a painter returns a thenable. Default: true. */
@@ -87,6 +96,7 @@ export class ContentLayerRenderer {
   readonly #ctx: Canvas2DLike;
   readonly #getScene: () => SceneSnapshot;
   readonly #getCellValue: (row: number, column: number) => unknown;
+  readonly #getCellStyle: ((row: number, column: number) => CellStyle | undefined) | undefined;
   readonly #painter: CellPainter;
   readonly #onError:
     | ((error: unknown, cell: { row: number; column: number }) => void)
@@ -99,6 +109,7 @@ export class ContentLayerRenderer {
     this.#ctx = options.ctx;
     this.#getScene = options.getScene;
     this.#getCellValue = options.getCellValue;
+    this.#getCellStyle = options.getCellStyle;
     this.#painter = options.painter ?? defaultPainter;
     this.#onError = options.onError;
     this.#checkSyncRenderers = options.checkSyncRenderers ?? true;
@@ -239,7 +250,21 @@ export class ContentLayerRenderer {
     this.#ctx.clearRect(rect.x, rect.y, rect.width, rect.height);
 
     const value = this.#getCellValue(row, column);
-    const context: CellPaintContext = { ctx: this.#ctx, rect, row, column, value };
+    const style = this.#getCellStyle?.(row, column);
+    // 背景在文字之前：Canvas 是后画的盖先画的，顺序反了底色会把字糊掉。
+    // 放在 painter 之外，所以自定义 renderer 不必自己记得画底色。
+    if (style?.background !== undefined) {
+      this.#ctx.fillStyle = style.background;
+      this.#ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
+    }
+    const context: CellPaintContext = {
+      ctx: this.#ctx,
+      rect,
+      row,
+      column,
+      value,
+      ...(style !== undefined ? { style } : {})
+    };
 
     // Isolated in its own save/restore so a painter (built-in default or a
     // custom CanvasCellRenderer) that changes ctx state — font, fillStyle,
@@ -259,6 +284,7 @@ export class ContentLayerRenderer {
       defaultPainter(context);
       this.#ctx.restore();
       this.#paintGridLine(rect);
+      this.#paintBorder(rect, style);
       return;
     }
     this.#ctx.restore();
@@ -271,6 +297,39 @@ export class ContentLayerRenderer {
     }
 
     this.#paintGridLine(rect);
+    this.#paintBorder(rect, style);
+  }
+
+  /**
+   * 边框画在网格线**之后**，所以盖得住网格线。
+   *
+   * 相邻两格共一条像素线（A1 的右边框与 B1 的左边框是同一条），规则是**后画的胜**
+   * ——绘制按行列顺序推进，于是右边/下边那一格说了算。Excel 的真实规则是"最后一次
+   * 设置的胜"，那要记录每条边的设置时序，不追。
+   */
+  #paintBorder(rect: CellRect, style: CellStyle | undefined): void {
+    const border = style?.border;
+    if (border === undefined) {
+      return;
+    }
+    const ctx = this.#ctx;
+    const line = (side: BorderSide | undefined, x1: number, y1: number, x2: number, y2: number): void => {
+      if (side === undefined) {
+        return;
+      }
+      ctx.strokeStyle = side.color;
+      ctx.lineWidth = side.width ?? 1;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    };
+    const right = rect.x + rect.width;
+    const bottom = rect.y + rect.height;
+    line(border.top, rect.x, rect.y, right, rect.y);
+    line(border.right, right, rect.y, right, bottom);
+    line(border.bottom, rect.x, bottom, right, bottom);
+    line(border.left, rect.x, rect.y, rect.x, bottom);
   }
 
   #paintGridLine(rect: CellRect): void {

@@ -85,6 +85,10 @@ export class RecordingCanvasContext implements Canvas2DLike {
     this.calls.push({ method: "fill", args: [] });
   }
 
+  stroke(): void {
+    this.calls.push({ method: "stroke", args: [] });
+  }
+
   scale(x: number, y: number): void {
     this.calls.push({ method: "scale", args: [x, y] });
   }
