@@ -1,6 +1,7 @@
 import type { BorderSide } from "../style/types";
 import type { ToolbarContext } from "./types";
 import * as styles from "./styles";
+import { el } from "./dom";
 
 /**
  * 四个弹出面板，都是纯 DOM。
@@ -12,21 +13,6 @@ import * as styles from "./styles";
  * 这一层在 node 里测不了（没有 DOM，项目不引 jsdom——见 step25-toolbar-plan.md §5），
  * 所以刻意写得薄：没有分支逻辑，所有判断都在 `state.ts` 那边。
  */
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className?: string,
-  text?: string
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className !== undefined) {
-    node.className = className;
-  }
-  if (text !== undefined) {
-    node.textContent = text;
-  }
-  return node;
-}
 
 /** 十个常用色 + 一个"无"。不做取色器——那是宿主的活，`setRangeStyle` 接受任意 CSS 颜色串。 */
 const SWATCHES = [
@@ -172,62 +158,3 @@ export function filterPanel(host: HTMLElement, ctx: ToolbarContext): () => void 
   };
 }
 
-export function findPanel(host: HTMLElement, ctx: ToolbarContext): () => void {
-  const form = el("div", "cyx-toolbar-panel-list");
-
-  const query = el("input", "cyx-toolbar-panel-input");
-  styles.apply(query, styles.panelInput);
-  query.type = "text";
-  query.placeholder = "查找…";
-  query.setAttribute("aria-label", "查找内容");
-
-  const replacement = el("input", "cyx-toolbar-panel-input");
-  styles.apply(replacement, styles.panelInput);
-  replacement.type = "text";
-  replacement.placeholder = "替换为…";
-  replacement.setAttribute("aria-label", "替换为");
-
-  const status = el("div", "cyx-toolbar-panel-status", "");
-  styles.apply(status, styles.panelStatus);
-
-  const find = el("button", "cyx-toolbar-panel-action", "查找全部");
-  find.type = "button";
-  styles.apply(find, styles.panelAction);
-  find.addEventListener("click", () => {
-    void ctx.sheet.find(query.value).then((matches) => {
-      status.textContent =
-        matches === null ? "已取消" : `${matches.length} 个匹配`;
-    });
-  });
-
-  const next = el("button", "cyx-toolbar-panel-action", "下一个");
-  next.type = "button";
-  styles.apply(next, styles.panelAction);
-  next.addEventListener("click", () => {
-    const match = ctx.sheet.findNext();
-    status.textContent = match === null ? "没有匹配" : `第 ${match.row} 行第 ${match.column} 列`;
-  });
-
-  const previous = el("button", "cyx-toolbar-panel-action", "上一个");
-  previous.type = "button";
-  styles.apply(previous, styles.panelAction);
-  previous.addEventListener("click", () => {
-    const match = ctx.sheet.findPrevious();
-    status.textContent = match === null ? "没有匹配" : `第 ${match.row} 行第 ${match.column} 列`;
-  });
-
-  const replaceAll = el("button", "cyx-toolbar-panel-action", "全部替换");
-  replaceAll.type = "button";
-  styles.apply(replaceAll, styles.panelAction);
-  replaceAll.addEventListener("click", () => {
-    void ctx.sheet.replaceAll(query.value, replacement.value).then((count) => {
-      status.textContent = count === null ? "已取消" : `替换了 ${count} 处`;
-    });
-  });
-
-  form.append(query, replacement, find, previous, next, replaceAll, status);
-  host.append(form);
-  return () => {
-    host.replaceChildren();
-  };
-}

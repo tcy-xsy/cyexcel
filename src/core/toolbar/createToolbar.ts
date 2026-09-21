@@ -4,22 +4,13 @@ import { resolveItemState } from "./state";
 import * as icons from "./icons";
 import { TOOLBAR_GROUPS, type ToolbarContext, type ToolbarItem, type ToolbarOptions } from "./types";
 import * as styles from "./styles";
+import { el } from "./dom";
+import { createDialog, type DialogHandle } from "./createDialog";
 
 export interface ToolbarHandle {
   /** 立刻重算一遍所有项的状态。事件驱动之外的手动出口，宿主一般用不到。 */
   refresh(): void;
   dispose(): void;
-}
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  className?: string
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className !== undefined) {
-    node.className = className;
-  }
-  return node;
 }
 
 function sortItems(items: readonly ToolbarItem[]): readonly ToolbarItem[] {
@@ -84,6 +75,13 @@ export function createToolbar(
    * Univer 的颜色/边框按钮都是这个行为（Univer 的边框图标甚至会变成上次那一种）。
    */
   const remembered = new Map<string, string>();
+
+  /**
+   * 开着的对话框，按项 id 记。同一项只允许一个——再点按钮是把焦点送回去而不是开第二个
+   * （同 Excel：查找替换框已经开着时再按 Ctrl+H 只是激活它）。dispose 时要全关掉，
+   * 它们挂在 `document.body` 上，不会随工具栏 root 一起消失。
+   */
+  const openDialogs = new Map<string, DialogHandle>();
 
   const rendered: {
     item: ToolbarItem;
@@ -194,6 +192,35 @@ export function createToolbar(
         void item.apply?.(context(), select.value);
       });
       return select;
+    }
+
+    // 对话框项：渲染成普通按钮，点击开一个非模态、可拖动的框（见 createDialog）。
+    if (item.dialog !== undefined) {
+      const openDialog = item.dialog;
+      const trigger = makeButton(item, item.label, item.icon);
+      trigger.addEventListener("click", () => {
+        // 面板与对话框不共存：面板是点外面就关的浮层，开着框时留一个在那儿很怪。
+        closeLayer();
+        const existing = openDialogs.get(item.id);
+        if (existing !== undefined) {
+          existing.focus();
+          return;
+        }
+        const handle = createDialog({
+          title: item.label,
+          anchorRect: trigger.getBoundingClientRect(),
+          fill: (body, close) => openDialog(context(), body, close),
+          onClosed: () => openDialogs.delete(item.id)
+        });
+        openDialogs.set(item.id, handle);
+        handle.focus();
+      });
+      stateDisposers.push(
+        styles.attachButtonStates(trigger, () => openDialogs.has(item.id)),
+        styles.attachFocusStyle(trigger),
+        styles.attachTooltip(trigger, item.tooltip ?? item.label)
+      );
+      return trigger;
     }
 
     // 分段按钮：同时有 panel 和 apply 的项（颜色、边框）。左边图标直接套用上次选过的
@@ -477,6 +504,11 @@ export function createToolbar(
     refresh,
     dispose: () => {
       closeLayer();
+      // 快照再关：close() 会回调 onClosed 去删这张表，边迭代边删不安全。
+      for (const handle of [...openDialogs.values()]) {
+        handle.close();
+      }
+      openDialogs.clear();
       if (frame !== 0) {
         cancelAnimationFrame(frame);
         frame = 0;

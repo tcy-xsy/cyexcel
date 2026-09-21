@@ -4,7 +4,8 @@ import { commonValue, everyCellHas } from "./state";
 import { DEFAULT_FONT_SIZE } from "../render/theme";
 import type { ToolbarItem, ToolbarSchema } from "./types";
 import * as icons from "./icons";
-import { applyBorderPreset, borderPanel, colorPanel, filterPanel, findPanel } from "./panels";
+import { applyBorderPreset, borderPanel, colorPanel, filterPanel } from "./panels";
+import { findReplaceDialog } from "./dialogs";
 
 /**
  * toggle 一个布尔样式键：整片选区已经全是真就清掉，否则全部设上。
@@ -342,11 +343,13 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     id: "find",
     group: "data",
     order: 40,
-    type: "panel",
+    // 对话框而不是面板：两个输入框 + 两个选项 + 五个按钮塞不进 160px 的小浮层，
+    // 而且「下一个」要求开着框还能看见表格跳到哪一格（同 Excel 的 Ctrl+H）。
+    type: "dialog",
     icon: icons.find,
-    label: "查找替换",
-    tooltip: "查找与替换",
-    panel: (ctx, host) => findPanel(host, ctx)
+    label: "查找和替换",
+    tooltip: "查找和替换",
+    dialog: (ctx, body, close) => findReplaceDialog(body, close, ctx)
   },
 
   // ---- structure ----

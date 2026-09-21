@@ -167,6 +167,129 @@ export const panel: Style = {
   gap: "4px"
 };
 
+/**
+ * 非模态对话框（查找替换那一类）。
+ *
+ * **非模态**：没有遮罩、不抢焦点、开着时表格照常能点能编辑——Excel 的查找替换框就是
+ * 这样，"查找下一个"要能看见它跳到哪一格。`fixed` + 挂 body 的理由同 `panel`。
+ *
+ * `zIndex` 夹在 panel(9990) 与 tooltip(9999) 之间：对话框要盖住工具栏的下拉面板，
+ * 但自己的按钮 tooltip 仍要浮在它上面。
+ */
+export const dialog: Style = {
+  position: "fixed",
+  zIndex: "9995",
+  minWidth: "320px",
+  background: COLORS.surface,
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: "6px",
+  boxShadow: COLORS.panelShadow,
+  display: "flex",
+  flexDirection: "column",
+  fontSize: "13px",
+  color: COLORS.text
+};
+
+/** 标题栏。整条都是拖动把手，所以 `cursor: move`；文字不可选，免得拖动变成选中。 */
+export const dialogHeader: Style = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "8px",
+  padding: "8px 10px",
+  borderBottom: `1px solid ${COLORS.border}`,
+  cursor: "move",
+  userSelect: "none",
+  fontWeight: "600"
+};
+
+export const dialogClose: Style = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: "22px",
+  height: "22px",
+  border: "1px solid transparent",
+  borderRadius: "4px",
+  background: "transparent",
+  color: COLORS.text,
+  cursor: "pointer"
+};
+
+export const dialogBody: Style = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "8px",
+  padding: "10px"
+};
+
+/** 一行「标签 + 控件」。标签固定宽，几行下来输入框左边缘对齐。 */
+export const dialogField: Style = {
+  display: "flex",
+  alignItems: "center",
+  gap: "8px"
+};
+
+export const dialogLabel: Style = {
+  flex: "0 0 auto",
+  width: "64px",
+  textAlign: "right",
+  color: COLORS.text
+};
+
+export const dialogInput: Style = {
+  flex: "1 1 auto",
+  minWidth: "0",
+  boxSizing: "border-box",
+  height: "28px",
+  padding: "0 8px",
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: "4px",
+  fontSize: "13px"
+};
+
+/** 选项行（复选框）与按钮行都横排，按钮靠右——同 Excel 的查找替换框。 */
+export const dialogOptions: Style = {
+  display: "flex",
+  flexWrap: "wrap",
+  alignItems: "center",
+  gap: "12px",
+  paddingLeft: "72px"
+};
+
+export const dialogCheckbox: Style = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "4px",
+  cursor: "pointer"
+};
+
+export const dialogButtons: Style = {
+  display: "flex",
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+  gap: "6px",
+  paddingTop: "2px"
+};
+
+export const dialogButton: Style = {
+  minWidth: "72px",
+  height: "28px",
+  padding: "0 12px",
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: "4px",
+  background: COLORS.surface,
+  color: COLORS.text,
+  fontSize: "13px",
+  cursor: "pointer"
+};
+
+export const dialogStatus: Style = {
+  minHeight: "16px",
+  fontSize: "12px",
+  color: "#6b7280"
+};
+
 export const panelAction: Style = {
   display: "block",
   width: "100%",

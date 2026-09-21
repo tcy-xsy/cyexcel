@@ -25,7 +25,7 @@ export interface ToolbarContext {
   styleOf(row: number, column: number): CellStyle | undefined;
 }
 
-export type ToolbarItemType = "button" | "toggle" | "select" | "color" | "panel";
+export type ToolbarItemType = "button" | "toggle" | "select" | "color" | "panel" | "dialog";
 
 export interface ToolbarSelectOption {
   readonly value: string | number;
@@ -56,6 +56,14 @@ export interface ToolbarItem {
   apply?(ctx: ToolbarContext, value: string | number): void | Promise<void>;
   /** panel 自绘，返回 disposer。`onChosen` 把选中的值回报给分段按钮记住。 */
   panel?(ctx: ToolbarContext, host: HTMLElement, onChosen?: (value: string) => void): () => void;
+  /**
+   * 对话框自绘，返回 disposer。有这个字段的项渲染成普通按钮，点击打开一个**非模态、
+   * 可拖动**的对话框（见 `createDialog`）——给查找替换这类"装不进小面板、而且开着时
+   * 还得能操作表格"的功能用。`close` 交给内容，让它能自己收起。
+   *
+   * 同一项只会有一个对话框：已经开着时再点按钮是把焦点送回去，不是开第二个。
+   */
+  dialog?(ctx: ToolbarContext, body: HTMLElement, close: () => void): () => void;
   /**
    * 分段按钮的初始值。同时有 `panel` 和 `apply` 的项渲染成"图标 + 箭头"：点图标套用
    * 上次选过的值，点箭头展开面板（同 Excel 与 Univer 的 BUTTON_SELECTOR）。
