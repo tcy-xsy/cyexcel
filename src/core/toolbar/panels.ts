@@ -55,7 +55,6 @@ export function colorPanel(
   const clear = el("button", "cyx-toolbar-panel-action", "无颜色");
   clear.type = "button";
   styles.apply(clear, styles.panelAction);
-  styles.apply(clear, styles.panelAction);
   clear.addEventListener("click", () => options.onPick(null));
 
   host.append(grid, clear);
@@ -127,6 +126,7 @@ export function filterPanel(host: HTMLElement, ctx: ToolbarContext): () => void 
 
   const clear = el("button", "cyx-toolbar-panel-action", "清除过滤");
   clear.type = "button";
+  styles.apply(clear, styles.panelAction);
   clear.addEventListener("click", () => ctx.sheet.clearFilter());
 
   form.append(input, apply, nonEmpty, clear);

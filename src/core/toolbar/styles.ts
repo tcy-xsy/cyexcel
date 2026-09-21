@@ -114,6 +114,16 @@ export const panelInput: Style = {
   fontSize: "13px"
 };
 
+/** 溢出菜单里"标签 + 下拉"的一行。 */
+export const panelRow: Style = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: "8px",
+  padding: "2px 8px",
+  fontSize: "13px"
+};
+
 export const panelStatus: Style = { padding: "2px 8px", fontSize: "12px", color: "#6b7280" };
 
 export const swatchGrid: Style = {

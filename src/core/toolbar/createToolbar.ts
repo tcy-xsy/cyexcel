@@ -81,26 +81,39 @@ export function createToolbar(
   }[] = [];
   const stateDisposers: (() => void)[] = [];
 
-  function openPanel(item: ToolbarItem, anchor: HTMLElement): void {
+  /**
+   * 开一个弹层（面板或溢出菜单）。
+   *
+   * 定位、外部点击关闭、Esc 关闭对两者是同一件事，所以收在这里，面板自己只管内容。
+   *
+   * **`anchorRect` 是传进来的、不是现场量的**：从溢出菜单里打开一个面板时，作为锚点
+   * 的那一行按钮会随着溢出菜单一起被移除，等到这时再 `getBoundingClientRect()` 只能
+   * 得到一个全零的矩形，面板会飞到左上角去。所以调用方在关掉旧层之前先量好。
+   */
+  function openLayer(options: {
+    anchorRect: DOMRect;
+    /** Esc 关闭后把焦点还给谁。锚点可能已经不在文档里了，所以单独给。 */
+    focusTarget: HTMLElement;
+    fill: (layer: HTMLElement) => () => void;
+  }): void {
     closeLayer();
     const layer = el("div", "cyx-toolbar-panel");
     styles.apply(layer, styles.panel);
-    const rect = anchor.getBoundingClientRect();
     const rootRect = root.getBoundingClientRect();
-    layer.style.left = `${rect.left - rootRect.left}px`;
-    layer.style.top = `${rect.bottom - rootRect.top}px`;
-    const disposePanel = item.panel?.(context(), layer) ?? (() => {});
+    layer.style.left = `${options.anchorRect.left - rootRect.left}px`;
+    layer.style.top = `${options.anchorRect.bottom - rootRect.top}px`;
+    const disposeContent = options.fill(layer);
     root.append(layer);
 
     const onPointerDown = (event: MouseEvent): void => {
-      if (!layer.contains(event.target as Node) && !anchor.contains(event.target as Node)) {
+      if (!layer.contains(event.target as Node)) {
         closeLayer();
       }
     };
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
         closeLayer();
-        anchor.focus();
+        options.focusTarget.focus();
       }
     };
     // 捕获阶段监听：面板里的按钮自己也会 stopPropagation，冒泡阶段可能收不到。
@@ -110,9 +123,22 @@ export function createToolbar(
     closeOpenLayer = () => {
       document.removeEventListener("mousedown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown, true);
-      disposePanel();
+      disposeContent();
       layer.remove();
     };
+  }
+
+  function openPanel(item: ToolbarItem, anchor: HTMLElement): void {
+    // 先量后关：见 openLayer 的 anchorRect 说明。
+    const anchorRect = anchor.getBoundingClientRect();
+    // 锚点若本身在某个弹层里（从溢出菜单点进来的），它马上就会随那个层消失，
+    // 焦点得还给"更多"按钮，否则 Esc 之后焦点掉到 body 上。
+    const focusTarget = anchor.closest(".cyx-toolbar-panel") === null ? anchor : moreButton;
+    openLayer({
+      anchorRect,
+      focusTarget,
+      fill: (layer) => item.panel?.(context(), layer) ?? (() => {})
+    });
   }
 
   function buildControl(item: ToolbarItem): HTMLElement {
@@ -234,30 +260,89 @@ export function createToolbar(
     sheet.events.on("layout-change", scheduleRefresh)
   ];
 
+  /**
+   * 溢出菜单：被收起来的项在这里仍然**完整可用**。
+   *
+   * 早先这里只把每一项克隆成一个按钮、点了调 `run`，于是面板类（颜色、边框、过滤、
+   * 查找替换）和下拉类（字体、字号、数字格式）一旦被收起来就点不开了——窄屏下正好
+   * 是最需要它们的时候。现在按项的类型分三种渲染：
+   *
+   * - `select`：直接在菜单里放一个真的下拉，改完就生效，菜单不关（可以连着改字体和字号）；
+   * - 有 `panel` 的：点击把菜单换成那个面板，锚点用这一行自己的位置；
+   * - 其余：点击执行 `run` 并关闭菜单。
+   *
+   * 禁用状态照样生效——否则单格选区下"合并"在菜单里还是可点的，点了会抛。
+   */
   moreButton.addEventListener("click", () => {
-    closeLayer();
-    const layer = el("div", "cyx-toolbar-panel");
-    styles.apply(layer, styles.panel);
-    layer.style.right = "0px";
-    layer.style.top = `${moreButton.offsetHeight}px`;
-    for (const entry of rendered) {
-      if (!entry.node.hasAttribute("hidden")) {
-        continue;
+    const anchorRect = moreButton.getBoundingClientRect();
+    openLayer({
+      anchorRect,
+      focusTarget: moreButton,
+      fill: (layer) => {
+        const ctx = context();
+        const disposers: (() => void)[] = [];
+        for (const entry of rendered) {
+          if (!entry.node.hasAttribute("hidden")) {
+            continue;
+          }
+          const item = entry.item;
+          const state = resolveItemState(item, ctx);
+
+          if (item.type === "select") {
+            const row = el("label", "cyx-toolbar-panel-row");
+            styles.apply(row, styles.panelRow);
+            row.append(document.createTextNode(item.label));
+            const select = el("select", "cyx-toolbar-select");
+            styles.apply(select, styles.select);
+            select.setAttribute("aria-label", item.label);
+            for (const option of item.options ?? []) {
+              const node = document.createElement("option");
+              node.value = String(option.value);
+              node.textContent = option.label;
+              select.append(node);
+            }
+            select.value = state.value === undefined ? "" : String(state.value);
+            select.disabled = state.disabled;
+            const onChange = (): void => {
+              void item.apply?.(context(), select.value);
+            };
+            select.addEventListener("change", onChange);
+            disposers.push(() => select.removeEventListener("change", onChange));
+            row.append(select);
+            layer.append(row);
+            continue;
+          }
+
+          const button = el("button", "cyx-toolbar-panel-action");
+          button.type = "button";
+          styles.apply(button, styles.panelAction);
+          button.textContent = item.label;
+          button.disabled = state.disabled;
+          if (state.disabled) {
+            button.style.opacity = "0.4";
+            button.style.cursor = "default";
+          }
+          if (state.activated) {
+            button.style.color = styles.COLORS.activeText;
+          }
+          button.addEventListener("click", () => {
+            if (item.panel !== undefined) {
+              // 先量后关：这一行马上就要随菜单一起消失了。
+              openPanel(item, button);
+              return;
+            }
+            closeLayer();
+            void item.run?.(context());
+          });
+          layer.append(button);
+        }
+        return () => {
+          for (const dispose of disposers) {
+            dispose();
+          }
+        };
       }
-      const clone = el("button", "cyx-toolbar-panel-action");
-      clone.type = "button";
-      styles.apply(clone, styles.panelAction);
-      clone.textContent = entry.item.label;
-      clone.addEventListener("click", () => {
-        closeLayer();
-        void entry.item.run?.(context());
-      });
-      layer.append(clone);
-    }
-    root.append(layer);
-    closeOpenLayer = () => {
-      layer.remove();
-    };
+    });
   });
 
   const resizeObserver =
