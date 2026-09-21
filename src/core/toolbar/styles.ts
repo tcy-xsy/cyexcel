@@ -253,6 +253,19 @@ export const swatchGrid: Style = {
   padding: "2px"
 };
 
+/** 调色板里「选区当前就是这个颜色」的标记。内联写，见 colorPanel 里的说明。 */
+export const swatchCurrent: Style = {
+  outline: `2px solid ${COLORS.activeText}`,
+  outlineOffset: "1px"
+};
+
+/** 同上，用在「无颜色」那一行上（它是文字按钮，不是色块）。 */
+export const panelActionCurrent: Style = {
+  background: COLORS.activeBackground,
+  color: COLORS.activeText,
+  fontWeight: "600"
+};
+
 export const swatch: Style = {
   width: "20px",
   height: "20px",

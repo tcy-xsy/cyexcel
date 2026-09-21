@@ -242,7 +242,9 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     label: "数字格式",
     tooltip: "数字格式",
     options: NUMBER_FORMATS,
-    value: (ctx) => commonValue(ctx, "numFmt") ?? "",
+    // 同字体：fallback "" 表示"没设 = 常规"，而选区内格式不一致时仍然返回
+    // undefined、下拉框显示空白，不会误报成"常规"。
+    value: (ctx) => commonValue(ctx, "numFmt", ""),
     apply: (ctx, value) => {
       ctx.sheet.setRangeStyle(ctx.range, { numFmt: value === "" ? null : String(value) });
     }

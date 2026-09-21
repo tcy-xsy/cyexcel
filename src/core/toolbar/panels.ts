@@ -53,6 +53,10 @@ export function colorPanel(
     button.setAttribute("aria-label", color);
     if (options.current === color) {
       button.dataset.current = "true";
+      // 必须连内联样式一起写：这个模块没有 stylesheet（见 styles.ts 顶部），
+      // `[data-current]` 选不中任何东西，只设 dataset 的话高亮根本不出现——
+      // "当前这片选区是什么颜色"于是永远看不见。dataset 留着给宿主换皮肤用。
+      styles.apply(button, styles.swatchCurrent);
     }
     button.addEventListener("click", () => {
       options.onChosen?.(color);
@@ -63,6 +67,12 @@ export function colorPanel(
   const clear = el("button", "cyx-toolbar-panel-action", "无颜色");
   clear.type = "button";
   styles.apply(clear, styles.panelAction);
+  // "没设颜色"也是一种当前状态，同样要标出来，否则整片选区没有颜色时调色板上
+  // 一个标记都没有，看起来像是坏了。
+  if (options.current === undefined) {
+    clear.dataset.current = "true";
+    styles.apply(clear, styles.panelActionCurrent);
+  }
   clear.addEventListener("click", () => options.onPick(null));
 
   host.append(grid, clear);
