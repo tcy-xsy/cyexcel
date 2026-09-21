@@ -1,6 +1,7 @@
 import { STYLE_KEYS, type CellStyle } from "../style/types";
 import { addDecimal, subtractDecimal } from "../style/numFmtDecimals";
 import { commonValue, everyCellHas } from "./state";
+import { DEFAULT_FONT_SIZE } from "../render/theme";
 import type { ToolbarItem, ToolbarSchema } from "./types";
 import * as icons from "./icons";
 import { applyBorderPreset, borderPanel, colorPanel, filterPanel, findPanel } from "./panels";
@@ -154,7 +155,9 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     type: "select",
     label: "字体",
     options: FONT_FAMILIES,
-    value: (ctx) => commonValue(ctx, "fontFamily") ?? "",
+    // fallback ""：没设字体 = 默认字体，两者不该报成"不一致"。不一致时仍然
+    // 返回 undefined，下拉框显示空白。
+    value: (ctx) => commonValue(ctx, "fontFamily", ""),
     apply: (ctx, value) => {
       ctx.sheet.setRangeStyle(ctx.range, { fontFamily: value === "" ? null : String(value) });
     }
@@ -166,7 +169,9 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     type: "select",
     label: "字号",
     options: FONT_SIZES,
-    value: (ctx) => commonValue(ctx, "fontSize") ?? "",
+    // 显示**实际生效**的字号而不是空白（同 Excel：点任何格子字号框都有数字）。
+    // DEFAULT_FONT_SIZE 正是 resolveDrawStyle 对缺省 fontSize 取的值，也在 FONT_SIZES 里。
+    value: (ctx) => commonValue(ctx, "fontSize", DEFAULT_FONT_SIZE),
     apply: (ctx, value) => {
       ctx.sheet.setRangeStyle(ctx.range, { fontSize: Number(value) });
     }

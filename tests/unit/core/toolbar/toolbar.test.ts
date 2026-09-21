@@ -138,6 +138,33 @@ describe("commonValue", () => {
   it("都没设时是 undefined", () => {
     expect(commonValue(contextOf({}), "fontSize")).toBeUndefined();
   });
+
+  it("给了 fallback 之后，都没设就返回 fallback 而不是 undefined", () => {
+    // 字号框据此显示实际生效的 13，而不是空白——`""` 在 FONT_SIZES 里匹配不到
+    // 任何 option，浏览器会把 selectedIndex 置 -1，框里就什么都不显示。
+    expect(commonValue(contextOf({}), "fontSize", 13)).toBe(13);
+  });
+
+  it("没设的格子与显式设成 fallback 的格子算一致", () => {
+    // 两者画出来一模一样（resolveDrawStyle 对缺省 fontSize 取的就是这个值），
+    // 报成"不一致"没有道理。
+    const ctx = contextOf({ "0,0": { fontSize: 13 }, "1,1": undefined });
+    expect(commonValue(ctx, "fontSize", 13)).toBe(13);
+  });
+
+  it("fallback 不会把真正的不一致掩盖成默认值", () => {
+    // 这一条是前一条的边界：归一只发生在"没设"上，设了别的值仍然是不一致。
+    const ctx = contextOf({ "0,0": { fontSize: 16 }, "1,1": undefined });
+    expect(commonValue(ctx, "fontSize", 13)).toBeUndefined();
+  });
+
+  it("字体的 fallback 是空串——没设字体与默认字体是同一件事", () => {
+    const ctx = contextOf({ "0,0": { fontFamily: "" }, "1,1": undefined });
+    expect(commonValue(ctx, "fontFamily", "")).toBe("");
+
+    const mixed = contextOf({ "0,0": { fontFamily: "SimSun" }, "1,1": undefined });
+    expect(commonValue(mixed, "fontFamily", "")).toBeUndefined();
+  });
 });
 
 describe("resolveItemState", () => {
