@@ -1,10 +1,6 @@
 import {
   CyExcelError,
   createBasicContextMenuPlugin,
-  createBooleanCellEditor,
-  createDateCellEditor,
-  createSelectCellEditor,
-  createTextAreaCellEditor,
   rowsToWorkbookSnapshot
 } from "/src/core/index.ts";
 // 开箱即用的入口：createSheet 默认装上工具栏与编辑栏，高度布局由 core 负责。
@@ -26,113 +22,40 @@ const REGIONS = ["华东", "华南", "华北", "西南", "东北"];
 const STATUSES = ["待处理", "已完成", "已取消"];
 const TAG_POOL = ["爆款", "新品", "促销", "预售", "清仓"];
 
-// A custom CanvasCellRenderer (Step 8) — display is independent from the
-// column's CellType ("boolean"'s own format() stays the plain "true"/
-// "false" it always was; this only changes how *this one column* draws,
-// not the built-in type). Only touches non-edit-mode painting — the
-// checkbox editor (wired below) is unaffected.
-const inStockRenderer = {
-  kind: "canvas",
-  paint({ ctx, rect, value }) {
-    ctx.font = "16px -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif";
-    ctx.textBaseline = "middle";
-    ctx.textAlign = "center";
-    ctx.fillStyle = value ? "#16a34a" : "#9ca3af";
-    ctx.fillText(value ? "✓" : "✗", rect.x + rect.width / 2, rect.y + rect.height / 2);
-  }
-};
-
-// `type` is a real CyExcelCore ColumnDefinition field (Step 8) — it picks a
-// registered CellType, which drives how the column is *drawn* (via
-// format()). Every built-in CellType (src/core/cells/builtins.ts) plus the
-// custom "money" type (extends "number", see CUSTOM_COLUMN_TYPES below) is
-// represented here so the playground actually shows what's implemented.
-// Step 19（Univer 参考）：columnLetterFallback 打开后，没配 header 的列显示
-// 电子表格字母（B/D/E/...），配了 header 的列照常显示自定义标题——同一行，
-// 字母和自定义标题二选一，不是两行堆叠。这里故意只给一半列配 header，让
-// playground 里同时看到两种效果。
+// Step 19（Univer 参考）：columnLetterFallback 打开后，没配 header 的列显示电子
+// 表格字母。这一版一个 header 都不配，于是列头整排是 A/B/C/D——就是 Excel 的样子。
+// （那个"配了 header 的列显示自定义标题"的分支机制还在，只是这里不演示了。）
+//
+// **这一版按 Excel 的模式走：不给列配 type。** 每个格子都是独立的，值是什么类型就
+// 是什么类型，显示成什么样由数字格式（numFmt）决定——这正是 Excel 的分工，也是
+// 导出 xlsx 时唯一需要的信息。列类型那套（整列统一的解析/编辑器/比较）留给将来的
+// table 版兄弟组件，core 里机制还在，这里只是不用它。
+//
+// 同理，列头上也不放排序/筛选入口（Excel 的列标没有那两个箭头）——这个是在下面
+// 组装 columnConfigs 时统一关掉的，不在这张表里逐列写。
+//
+// 于是列配置只剩下真正属于"列"的东西：宽度、标题、换行。
+// 列配置只剩宽度和换行——列没有名字，就像 Excel 的列没有名字。
+// （原先每列还挂着一个 playground 自用的 `label`，唯一的读者是表头排序/筛选的状态
+// 栏提示；那两个入口去掉之后它就没有消费者了，一并删掉。）
 const COLUMNS = [
-  // sortable:false on the column itself — demonstrates the per-column override.
-  // The "标签" (array) column is unsortable too, but by its *type*'s own
-  // declaration rather than here, which is the other half of the mechanism.
-  { width: 140, type: "text", label: "SKU", header: "SKU", sortable: false },
-  { width: 200, type: "text", label: "产品名称", wrap: true },
-  { width: 110, type: "money", label: "单价", header: "单价" },
-  { width: 90, type: "number", label: "数量" },
-  { width: 110, type: "text", label: "地区" },
-  // 数据类型（boolean/date/select…）和编辑控件是两个独立维度，不会被自动绑定——
-  // 这三列显式通过 createEditor 接上对应控件，是业务方要自己做的事，不是"boolean
-  // 类型天生等于 checkbox"。不接的类型（下面的 tags/meta）仍然用默认文本编辑器，
-  // 靠 CellType.parse()/serialize() 保证往返正确。
-  {
-    width: 90,
-    type: "boolean",
-    label: "有库存",
-    header: "有库存",
-    renderer: inStockRenderer,
-    createEditor: () => createBooleanCellEditor()
-  },
-  {
-    width: 130,
-    type: "date",
-    label: "入库日期",
-    createEditor: () => createDateCellEditor()
-  },
-  {
-    width: 110,
-    type: "select",
-    label: "状态",
-    header: "状态",
-    options: STATUSES.map((value) => ({ value })),
-    createEditor: (context) => createSelectCellEditor(context.column.options ?? [])
-  },
-  {
-    width: 220,
-    type: "array",
-    label: "标签",
-    createEditor: () =>
-      createTextAreaCellEditor({
-        validate: (text) => {
-          try {
-            const parsed = JSON.parse(text);
-            return Array.isArray(parsed) ? { valid: true } : { valid: false, message: "需要 JSON 数组，例如 [\"a\",\"b\"]" };
-          } catch {
-            return { valid: false, message: "不是合法 JSON" };
-          }
-        }
-      })
-  },
-  {
-    width: 240,
-    type: "json",
-    label: "元数据",
-    createEditor: () =>
-      createTextAreaCellEditor({
-        validate: (text) => {
-          try {
-            JSON.parse(text);
-            return { valid: true };
-          } catch {
-            return { valid: false, message: "不是合法 JSON" };
-          }
-        }
-      })
-  }
+  { width: 140 },
+  { width: 200, wrap: true },
+  { width: 110 },
+  { width: 90 },
+  { width: 110 },
+  { width: 90 },
+  { width: 130 },
+  { width: 110 },
+  { width: 220 },
+  { width: 240 }
 ];
 
-// A custom ColumnType extending the built-in "number" — the "price" column
-// above references it by name. Demonstrates Step 8's registerColumnType-
-// style extends chain: format() overridden, everything else ("parse"/
-// "compare") inherited from "number".
-const CUSTOM_COLUMN_TYPES = {
-  money: {
-    extends: "number",
-    format: (value) =>
-      typeof value === "number" && Number.isFinite(value)
-        ? `¥${value.toFixed(2)}`
-        : ""
-  }
-};
+/** `yyyy-mm-dd`，按墙上时钟算，不绕 `Date`（那会按 UTC 解析再按本地读，差一天）。 */
+function isoDate(year, month, dayOfYear) {
+  const date = new Date(Date.UTC(year, month - 1, dayOfYear));
+  return date.toISOString().slice(0, 10);
+}
 
 function buildRow(index) {
   const quantity = ((index * 7) % 24) + 1;
@@ -149,10 +72,15 @@ function buildRow(index) {
     quantity,
     region: REGIONS[index % REGIONS.length],
     inStock: index % 4 !== 0,
-    restockedAt: new Date(Date.UTC(2026, 0, 1 + (index % 365))),
+    // 格子里只能放 string | number | boolean（对齐 Excel/xlsx 的 CellValue），
+    // 所以这三列不再塞 Date / 数组 / 对象：日期给 ISO 串，标签和元数据先摊平成
+    // 文本。要让日期列变成"序列号 + 日期 numFmt"（真正的 Excel 表示），得给这
+    // 一列刷一个 numFmt——那是按格写样式，一百万行的 demo 里代价太大，留待列级
+    // 样式有了之后再接。
+    restockedAt: isoDate(2026, 1, 1 + (index % 365)),
     status: STATUSES[index % STATUSES.length],
-    tags,
-    meta: { sku: `CY-${index + 1}`, warehouse: `W${(index % 5) + 1}` }
+    tags: tags.join("、"),
+    meta: `CY-${index + 1} / W${(index % 5) + 1}`
   };
 }
 
@@ -186,53 +114,31 @@ function clampNumber(value, min, max, fallback) {
 
 /** Renders a cell value back into the "读取" text field, per column type. */
 function displayValue(value) {
-  if (value === undefined || value === null) {
-    return "";
-  }
-  if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
-  }
-  if (typeof value === "object") {
-    return JSON.stringify(value);
-  }
-  return String(value);
+  // 只剩 string | number | boolean 和"空"这四种形态——Date / 数组 / 对象那三个
+  // 分支随 CellValue 的收紧一起没了。
+  return value === undefined || value === null ? "" : String(value);
 }
 
 /**
- * Parses the "写入" text field into the value shape each CellType expects —
- * mirrors what a real CellType.parse()/editor would do (only "number" has a
- * built-in parse(); the rest are playground-local since there's no other
- * editor wired to these types yet).
+ * 按**值本身**推断类型，这是 Excel 的做法：没有列类型可问，敲进来的是什么就存什么。
+ *
+ * `"123"` → 数字，`"true"` → 布尔，其余留作字符串。Excel 还会识别日期串并转成
+ * 序列号，那一步要等日期改存序列号之后再补。
  */
-function parseInputForType(type, raw) {
-  switch (type) {
-    case "number":
-    case "money": {
-      const parsed = Number(raw);
-      return Number.isNaN(parsed) ? { error: "需要数字" } : { value: parsed };
-    }
-    case "boolean":
-      return { value: raw === "true" || raw === "1" };
-    case "date": {
-      const date = new Date(raw);
-      return Number.isNaN(date.getTime()) ? { error: "需要合法日期，例如 2026-08-05" } : { value: date };
-    }
-    case "array":
-      return {
-        value: raw
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
-      };
-    case "json":
-      try {
-        return { value: JSON.parse(raw) };
-      } catch {
-        return { error: "不是合法 JSON" };
-      }
-    default:
-      return { value: raw };
+function parseLikeExcel(raw) {
+  const trimmed = raw.trim();
+  if (trimmed === "") {
+    return { value: "" };
   }
+  if (trimmed === "true" || trimmed === "false") {
+    return { value: trimmed === "true" };
+  }
+  // 前导零要保留（"00123" 不是 123），与 Excel 的文本格式一致。
+  const numeric = Number(trimmed);
+  if (!Number.isNaN(numeric) && String(numeric) === trimmed) {
+    return { value: numeric };
+  }
+  return { value: raw };
 }
 
 const sheetMount = document.getElementById("sheetMount");
@@ -315,14 +221,20 @@ function rebuild() {
   emptyFilterState.hidden = true;
 
   const rows = buildRows(config.rowCount);
-  // Pass every real ColumnDefinition field through as-is — only "label" is
-  // playground-local metadata (used by the read/write form below), so strip
-  // just that one instead of hand-picking fields (which previously silently
-  // dropped "options"/"createEditor" and made the typed-editor columns fall
-  // back to the plain text editor).
-  const columnConfigs = COLUMNS.map((column) =>
-    Object.fromEntries(Object.entries(column).filter(([key]) => key !== "label"))
-  );
+  // COLUMNS 里已经只剩真正的 ColumnDefinition 字段了（`label` 那个 playground 自用
+  // 的元数据连同表头排序/筛选一起删了），所以整个原样传过去，不再逐字段挑——早先
+  // 挑字段的写法静默漏掉过 options/createEditor，让配了编辑器的列退回纯文本编辑。
+  const columnConfigs = COLUMNS.map((column) => ({
+    ...column,
+    // 照 Excel：列头上不放排序/筛选的入口。Excel 的列标就是 A/B/C，点它是选整列，
+    // 排序和筛选走功能区——工具栏里 sort-asc / sort-desc / filter 三个按钮就是那
+    // 个入口，所以关掉这两个不会让功能失去入口，只是把入口收归一处。
+    //
+    // 关掉之后列头那条"尾部热区"也一并让出来了（见 ColumnDefinition.sortable 的
+    // 注释），整列宽度都是点击选列区，不会点到边上就变成排序。
+    sortable: false,
+    filterable: false
+  }));
 
   const start = performance.now();
   core = createSheet(sheetMount, {
@@ -333,16 +245,14 @@ function rebuild() {
     rowHeight: config.rowHeight,
     overscanRows: config.overscanRows,
     overscanColumns: config.overscanColumns,
-    columnTypes: CUSTOM_COLUMN_TYPES,
     headerHeight: 28,
     rowHeaderWidth: 48,
     // Step 18：点行号选中整行后，把鼠标移到选区的上/下边缘（会出现一条插入
     // 指示线）按住拖动即可重新排列行顺序——插入式移动，不会覆盖/丢失目标位置
     // 原有数据；边缘之外的拖拽仍然是原有的多选。
     rowReorder: true,
-    // Univer 参考实现：没配 header 的列显示电子表格字母（B/D/E/...），配了
-    // header 的列（sku/price/inStock/status）照常显示自定义标题——同一行
-    // 二选一，不是字母行 + 标题行两行堆叠。
+    // Univer 参考实现：没配 header 的列显示电子表格字母。这一版一列都没配，
+    // 于是整排是 A/B/C/D。字母与自定义标题是同一行二选一，不是两行堆叠。
     columnLetterFallback: true,
     plugins: [createBasicContextMenuPlugin()]
   });
@@ -375,37 +285,11 @@ function rebuild() {
     }, 5000);
   });
 
-  // Step 22 Part A：表头右侧窄条也能直接触发排序（HeaderCanvasRenderer 的
-  // defaultHeaderHitTest），不只是工具栏上的升序/降序按钮。排序状态本身由 core
-  // 持有（core.sortState），两条路径共用，所以这里只把它显示到状态栏。
-  core.events.on("header-action", (event) => {
-    if (event.action.type !== "toggle-sort") {
-      return;
-    }
-    const state = core.sortState;
-    if (!state) {
-      return;
-    }
-    setStatus(
-      `点击表头「${COLUMNS[state.column].label}」排序为` +
-        `${state.direction === "asc" ? "升序" : "降序"}` +
-        "（再点一次在升/降序间切换，撤销可一步还原顺序和行高）"
-    );
-  });
-
-  // Step 22 Part B：表头点击 toggle-filter 是**纯通知**——core 不知道该用什么谓词。
-  // 工具栏的过滤面板是同一件事的另一个入口，两边都由宿主决定条件；这里选择最朴素的
-  // 一条："只看这一列非空的行"，并把它说清楚，免得用户以为点了没反应。
-  core.events.on("header-action", (event) => {
-    if (event.action.type !== "toggle-filter") {
-      return;
-    }
-    core.filterByColumn(event.column, (value) => value !== null && value !== undefined && value !== "");
-    setStatus(
-      `点击表头过滤：只看第 ${event.column} 列非空的行` +
-        "（工具栏的过滤面板里有更多条件，清除过滤也在那里）"
-    );
-  });
+  // 表头上没有排序/筛选入口了（照 Excel：列标就是 A/B/C，点它是选整列），所以
+  // 原先那两个 `header-action` 监听器一并删掉——列配成 sortable:false /
+  // filterable:false 之后 defaultHeaderHitTest 会拒绝那两条热区，事件根本不再发出，
+  // 留着就是永远跑不到的代码。排序和筛选的入口在工具栏（sort-asc / sort-desc /
+  // filter 三个按钮），core 里 header-action 这套机制本身没动。
 
   const maxRow = Math.max(0, currentRowCount - 1);
   if (Number(cellRow.value) > maxRow) {
@@ -472,7 +356,7 @@ writeCellButton.addEventListener("click", () => {
   const column = COLUMNS[columnIndex];
   const raw = cellValue.value;
 
-  const result = parseInputForType(column.type, raw);
+  const result = parseLikeExcel(raw);
   if (result.error) {
     cellFormResult.textContent = `写入失败：${column.label} ${result.error}`;
     return;
@@ -551,24 +435,6 @@ function updateStyleDebug() {
   const style = core.getCellStyle(startRow, startColumn);
   styleDebug.textContent =
     `当前格 R${startRow}C${startColumn}：${style === undefined ? "无样式" : JSON.stringify(style)}`;
-}
-
-/**
- * 把一句话顶到状态栏上，几秒后退回默认文案。
- *
- * 工具栏自己不解释它做了什么（那是产品级组件该有的克制），但 playground 作为演示
- * 场需要让人看见"刚才那一下发生了什么"——尤其是表头点击这类没有按钮反馈的路径。
- */
-let statusResetTimeoutId = null;
-function setStatus(text) {
-  statusBar.textContent = text;
-  if (statusResetTimeoutId !== null) {
-    clearTimeout(statusResetTimeoutId);
-  }
-  statusResetTimeoutId = setTimeout(() => {
-    statusBar.textContent = statusBarDefaultText;
-    statusResetTimeoutId = null;
-  }, 6000);
 }
 
 rebuildButton.addEventListener("click", rebuild);
