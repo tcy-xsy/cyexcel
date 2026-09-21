@@ -26,6 +26,7 @@ import {
   SetCellCommand,
   SetRangeCommand,
   SetStyleCommand,
+  SetCellTypeCommand,
   MergeCellsCommand,
   UnmergeCellsCommand,
   InsertRowsCommand,
@@ -964,7 +965,10 @@ export class CyExcelCore {
       getScene: () => this.#scene,
       getCellValue: (row, column) => this.#store.getCell(row, column),
       getCellStyle: (row, column) => this.getCellStyle(row, column),
-      painter: createColumnAwarePainter(() => this.#columnManager.getColumns()),
+      painter: createColumnAwarePainter(
+        () => this.#columnManager.getColumns(),
+        (row, column) => this.#resolveCell(row, column)
+      ),
       onError: (error, cell) =>
         this.#events.emit("error", { error, eventName: `finalize:canvas-cell:${cell.row}:${cell.column}` }),
       getMergesInRange: (range) => mergesIntersectingRange(this.#sheet.merges(), range),
@@ -1267,11 +1271,11 @@ export class CyExcelCore {
       // createEditor()/serialize() just falls back to EditorManager's own
       // defaults (see doc/progress.md's editor-pluggability patch).
       resolveEditor: (row, column) => {
-        const runtimeColumn = this.#columnManager.getColumn(column);
+        const runtimeColumn = this.#resolveCell(row, column);
         return runtimeColumn.createEditor?.({ row, column: runtimeColumn });
       },
       serializeCellValue: (row, column, value) => {
-        const runtimeColumn = this.#columnManager.getColumn(column);
+        const runtimeColumn = this.#resolveCell(row, column);
         return runtimeColumn.serialize
           ? runtimeColumn.serialize(value, { row, column: runtimeColumn })
           : String(value ?? "");
@@ -1783,7 +1787,7 @@ export class CyExcelCore {
 
   /** The same text `column.format()` would paint for this cell — search matches what the user sees, not the raw stored value. */
   #getCellDisplayText(row: number, column: number, value: unknown): string {
-    const runtimeColumn = this.#columnManager.getColumn(column);
+    const runtimeColumn = this.#resolveCell(row, column);
     // 样式的 numFmt 优先于列的 CellType.format（Step 24）。搜索走的是同一个函数，
     // 所以"屏幕上是 1,234.00、搜 1,234 搜不到"这种事不会发生。
     return formatCellText(value, this.getCellStyle(row, column), () =>
@@ -2141,8 +2145,51 @@ export class CyExcelCore {
     if (typeof value !== "string") {
       return value;
     }
-    const runtimeColumn = this.#columnManager.getColumn(column);
+    const runtimeColumn = this.#resolveCell(row, column);
     return runtimeColumn.parse ? runtimeColumn.parse(value, { row, column: runtimeColumn }) : value;
+  }
+
+  /**
+   * 这一格实际生效的类型：格级 `t` 优先，没有就是列的。
+   *
+   * 格级类型只换行为方法（format/parse/createEditor/compare），列的其余配置
+   * （宽度、renderer、剪贴板策略）照旧——那些是列的属性，与"这一格是什么"无关。
+   */
+  #resolveCell(row: number, column: number): RuntimeColumn {
+    const runtimeColumn = this.#columnManager.getColumn(column);
+    const typeName = this.#sheet.getRecord(row, column)?.t;
+    if (typeName === undefined || typeName === runtimeColumn.typeName) {
+      return runtimeColumn;
+    }
+    try {
+      return { ...runtimeColumn, ...this.#cellTypeRegistry.resolve(typeName), typeName };
+    } catch {
+      // 快照可能来自别处，带着我们没注册的类型名——退回列类型，不让一格毁掉整张表。
+      return runtimeColumn;
+    }
+  }
+
+  /** 这一格生效的类型名（格级覆盖优先）。 */
+  getCellType(row: number, column: number): string {
+    assertValidCoordinate(row, column);
+    return this.#resolveCell(row, column).typeName;
+  }
+
+  /**
+   * 给一片区域设格级类型，`null` 回到列默认。
+   *
+   * **不会**因为设了日期数字格式就自动改类型（也不会反过来）：格式管显示、类型管
+   * 行为，两件事分开，改哪个都要明说。
+   */
+  setCellType(range: CellRange, typeName: string | null): void {
+    assertValidRange(range);
+    if (typeName !== null) {
+      // 先解析一次，未注册的类型名从调用点就抛，而不是等到画那一格时才发现。
+      this.#cellTypeRegistry.resolve(typeName);
+    }
+    this.#enqueueOrRunMutation(() => {
+      this.#applyCommandNow(new SetCellTypeCommand(range, typeName));
+    });
   }
 
   /**

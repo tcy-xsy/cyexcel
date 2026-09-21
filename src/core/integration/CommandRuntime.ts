@@ -78,6 +78,10 @@ export class TableDataCommandMutationFactory implements DataCommandMutationFacto
     return this.#store.createSetStyleMutation(range, patch);
   }
 
+  createSetCellType(range: CellRange, typeName: string | null): Mutation {
+    return this.#store.createSetCellTypeMutation(range, typeName);
+  }
+
   createSetMerges(merges: readonly CellRange[]): Mutation {
     return this.#store.createSetMergesMutation(merges);
   }

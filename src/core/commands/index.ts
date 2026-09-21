@@ -2,6 +2,7 @@ export { SetCellCommand, type SetCellCommandParams } from "./SetCellCommand";
 export { dispatchCellAction, type CellActionDispatch } from "./dispatchCellAction";
 export { SetRangeCommand, type SetRangeCommandParams } from "./SetRangeCommand";
 export { SetStyleCommand, type SetStyleCommandParams } from "./SetStyleCommand";
+export { SetCellTypeCommand, type SetCellTypeCommandParams } from "./SetCellTypeCommand";
 export { MergeCellsCommand, type MergeCellsCommandParams } from "./MergeCellsCommand";
 export { UnmergeCellsCommand, type UnmergeCellsCommandParams } from "./UnmergeCellsCommand";
 export { ClearRangeCommand, type ClearRangeCommandParams } from "./ClearRangeCommand";

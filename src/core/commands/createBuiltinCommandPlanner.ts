@@ -18,6 +18,7 @@ import type { ResizeRowCommand } from "./ResizeRowCommand";
 import type { SetCellCommand } from "./SetCellCommand";
 import type { SetRangeCommand } from "./SetRangeCommand";
 import type { SetStyleCommand } from "./SetStyleCommand";
+import type { SetCellTypeCommand } from "./SetCellTypeCommand";
 import type { SetRowHeightsCommand } from "./SetRowHeightsCommand";
 import type { ShowColumnCommand } from "./ShowColumnCommand";
 import type { UnmergeCellsCommand } from "./UnmergeCellsCommand";
@@ -105,6 +106,13 @@ export function createBuiltinCommandPlanner(options: BuiltinCommandPlannerOption
     plan: ({ range, patch }, context) => {
       assertValidRange(range);
       context.stage(options.data.createSetStyle(range, patch));
+    }
+  });
+  registry.register<SetCellTypeCommand>({
+    type: "set-cell-type",
+    plan: ({ range, typeName }, context) => {
+      assertValidRange(range);
+      context.stage(options.data.createSetCellType(range, typeName));
     }
   });
   registry.register<MergeCellsCommand>({

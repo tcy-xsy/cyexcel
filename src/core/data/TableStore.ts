@@ -16,6 +16,7 @@ import type { SheetModel } from "../sheet/SheetModel";
 import { createSheetPlanningResources } from "../sheet/planning";
 import type { CellRange, Patch } from "../types";
 import { CellStyleMutation } from "../mutations/CellStyleMutation";
+import { CellTypeMutation } from "../mutations/CellTypeMutation";
 import { StyleRegistry } from "../style/StyleRegistry";
 import type { CellStylePatch } from "../style/styleKey";
 import { assertValidCoordinate, assertValidRange } from "../validation";
@@ -158,6 +159,12 @@ export class TableStore {
   createSetStyleMutation(range: CellRange, patch: CellStylePatch): Mutation {
     assertValidRange(range);
     return new CellStyleMutation(this.#sheet, this.#styles, range, patch);
+  }
+
+  /** 格级语义类型（`CellRecord.t`）。`null` 回到列默认。 */
+  createSetCellTypeMutation(range: CellRange, typeName: string | null): Mutation {
+    assertValidRange(range);
+    return new CellTypeMutation(this.#sheet, range, typeName);
   }
 
   get version(): number {

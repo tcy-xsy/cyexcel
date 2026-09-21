@@ -13,6 +13,8 @@ export interface DataCommandMutationFactory {
   createSetRange(range: CellRange, values: readonly (readonly unknown[])[]): Mutation;
   /** 一片区域改样式（合并语义）。Step 24。 */
   createSetStyle(range: CellRange, patch: CellStylePatch): Mutation;
+  /** 格级语义类型。Step 25 之后。 */
+  createSetCellType(range: CellRange, typeName: string | null): Mutation;
   createSetMerges(merges: readonly CellRange[]): Mutation;
   createInsertRows(start: number, rows: readonly (readonly unknown[])[]): Mutation;
   createDeleteRows(start: number, count: number): Mutation;

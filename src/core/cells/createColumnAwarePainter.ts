@@ -118,13 +118,18 @@ function drawFormattedText(context: CellPaintContext, column: RuntimeColumn): vo
  * Takes a getter, not a snapshot array: structural mutation commits replace
  * the manager's cached root, and every later paint must observe that root.
  */
-export function createColumnAwarePainter(getColumns: () => readonly RuntimeColumn[]): CellPainter {
+export function createColumnAwarePainter(
+  getColumns: () => readonly RuntimeColumn[],
+  /** 按格解析类型（格级 `t` 覆盖列默认）。省略时一律用列的类型。 */
+  resolveCell?: (row: number, column: number) => RuntimeColumn
+): CellPainter {
   return (context: CellPaintContext) => {
     const columns = getColumns();
-    const column = columns[context.column];
-    if (!column) {
+    const fallback = columns[context.column];
+    if (!fallback) {
       return;
     }
+    const column = resolveCell?.(context.row, context.column) ?? fallback;
 
     const renderer = column.renderer;
     if (renderer?.kind === "dom") {
