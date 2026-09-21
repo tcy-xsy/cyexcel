@@ -8,6 +8,9 @@ import {
   createTextAreaCellEditor,
   rowsToWorkbookSnapshot
 } from "/src/core/index.ts";
+// 工具栏是**独立入口**的可选模块：从 /src/core/toolbar/ 引，而不是从 core 的桶文件
+// ——这正是"不 import 就不进产物"在源码层面的样子（Step 25）。
+import { createToolbar } from "/src/core/toolbar/index.ts";
 
 const PRODUCTS = [
   "工业温度传感器",
@@ -237,8 +240,6 @@ function parseInputForType(type, raw) {
 const sheetMount = document.getElementById("sheetMount");
 const statusBar = document.getElementById("statusBar");
 const themeButton = document.getElementById("themeButton");
-const undoButton = document.getElementById("undoButton");
-const redoButton = document.getElementById("redoButton");
 const rowCountSelect = document.getElementById("rowCountSelect");
 const rowHeightInput = document.getElementById("rowHeightInput");
 const overscanRowsInput = document.getElementById("overscanRowsInput");
@@ -257,26 +258,6 @@ const mergeEndColumn = document.getElementById("mergeEndColumn");
 const mergeCellsButton = document.getElementById("mergeCellsButton");
 const unmergeCellsButton = document.getElementById("unmergeCellsButton");
 const mergeFormResult = document.getElementById("mergeFormResult");
-const sortColumn = document.getElementById("sortColumn");
-const sortAscButton = document.getElementById("sortAscButton");
-const sortDescButton = document.getElementById("sortDescButton");
-const sortHint = document.getElementById("sortHint");
-const filterColumn = document.getElementById("filterColumn");
-const filterValue = document.getElementById("filterValue");
-const applyFilterButton = document.getElementById("applyFilterButton");
-const clearFilterButton = document.getElementById("clearFilterButton");
-const filterHint = document.getElementById("filterHint");
-const searchQuery = document.getElementById("searchQuery");
-const searchMatchCase = document.getElementById("searchMatchCase");
-const searchUseRegex = document.getElementById("searchUseRegex");
-const searchFindButton = document.getElementById("searchFindButton");
-const searchPrevButton = document.getElementById("searchPrevButton");
-const searchNextButton = document.getElementById("searchNextButton");
-const searchReplaceValue = document.getElementById("searchReplaceValue");
-const searchReplaceButton = document.getElementById("searchReplaceButton");
-const searchReplaceAllButton = document.getElementById("searchReplaceAllButton");
-const searchClearButton = document.getElementById("searchClearButton");
-const searchHint = document.getElementById("searchHint");
 const metricConstruct = document.getElementById("metricConstruct");
 const metricFps = document.getElementById("metricFps");
 
@@ -304,20 +285,6 @@ function populateCellColumnSelect() {
   populateColumnSelect(cellColumn);
 }
 
-/**
- * A host building its own sort UI asks the sheet rather than re-deriving the
- * rule: `sortable` can come from the column *or* from its cell type (`array`
- * and `json` declare themselves unsortable), and only the resolved
- * RuntimeColumn knows which one won.
- */
-function populateSortColumnSelect() {
-  populateColumnSelect(sortColumn, (index) => core.getColumn(index).sortable);
-}
-
-/** Same reasoning as populateSortColumnSelect(): filterable can come from the column or its cell type. */
-function populateFilterColumnSelect() {
-  populateColumnSelect(filterColumn, (index) => core.getColumn(index).filterable);
-}
 
 function readConfigFromForm() {
   return {
@@ -415,9 +382,8 @@ function rebuild() {
   });
 
   // Step 22 Part A：表头右侧窄条也能直接触发排序（HeaderCanvasRenderer 的
-  // defaultHeaderHitTest），不只是上面的升序/降序按钮。header-action 事件在
-  // 那条路径下触发，这里同步 sortHint 和排序列下拉框，让两种触发方式在界面
-  // 上看起来是同一件事——core.sortState 是两条路径共用的同一份状态。
+  // defaultHeaderHitTest），不只是工具栏上的升序/降序按钮。排序状态本身由 core
+  // 持有（core.sortState），两条路径共用，所以这里只把它显示到状态栏。
   core.events.on("header-action", (event) => {
     if (event.action.type !== "toggle-sort") {
       return;
@@ -426,24 +392,25 @@ function rebuild() {
     if (!state) {
       return;
     }
-    const column = COLUMNS[state.column];
-    sortColumn.value = String(state.column);
-    sortHint.textContent =
-      `上次动作：点击表头「${column.label}」排序为` +
-      `${state.direction === "asc" ? "升序" : "降序"}（共 ` +
-      `${currentRowCount.toLocaleString("zh-CN")} 行，撤销可一步还原顺序和行高）。` +
-      "再点一次表头在升/降序间切换，不会回到原始顺序";
+    setStatus(
+      `点击表头「${COLUMNS[state.column].label}」排序为` +
+        `${state.direction === "asc" ? "升序" : "降序"}` +
+        "（再点一次在升/降序间切换，撤销可一步还原顺序和行高）"
+    );
   });
 
-  // Step 22 Part B：表头点击 toggle-filter 是纯通知——core 不知道该用什么谓词，
-  // 这里（宿主）拿"过滤值"输入框当前的值对被点的那一列应用过滤，让表头点击和
-  // 下面的按钮看起来是同一件事。
+  // Step 22 Part B：表头点击 toggle-filter 是**纯通知**——core 不知道该用什么谓词。
+  // 工具栏的过滤面板是同一件事的另一个入口，两边都由宿主决定条件；这里选择最朴素的
+  // 一条："只看这一列非空的行"，并把它说清楚，免得用户以为点了没反应。
   core.events.on("header-action", (event) => {
     if (event.action.type !== "toggle-filter") {
       return;
     }
-    filterColumn.value = String(event.column);
-    filterBy("apply");
+    core.filterByColumn(event.column, (value) => value !== null && value !== undefined && value !== "");
+    setStatus(
+      `点击表头过滤：只看第 ${event.column} 列非空的行` +
+        "（工具栏的过滤面板里有更多条件，清除过滤也在那里）"
+    );
   });
 
   const maxRow = Math.max(0, currentRowCount - 1);
@@ -451,10 +418,12 @@ function rebuild() {
     cellRow.value = String(maxRow);
   }
   cellRow.max = String(maxRow);
-  // Only now: the answer comes off the resolved RuntimeColumn, which does not
-  // exist until this rebuild has constructed the sheet.
-  populateSortColumnSelect();
-  populateFilterColumnSelect();
+  // 工具栏要在 core 建好之后挂：它构造时就会读一次选区与样式来算按钮状态。
+  mountToolbar();
+  // Step 25 之前这块调试信息是靠 sheetMount 的 click/keyup 猜"选区可能变了"，
+  // 现在 core 有 selection-change 事件了（工具栏的按钮高亮也走它），订阅即可。
+  core.events.on("selection-change", () => updateStyleDebug());
+  updateStyleDebug();
 }
 
 const shortcutHint = document.getElementById("shortcutHint");
@@ -577,167 +546,55 @@ unmergeCellsButton.addEventListener("click", () => {
   }
 });
 
-/**
- * Step 22：sheet.sortByColumn() 演示——物理重排整根行轴。数据顺序和行高在同一个
- * transaction 里提交，所以给某一行设过的行高会跟着那一行走，一次撤销两者一起回退。
- */
-function sortBy(direction) {
-  if (!core) {
-    return;
-  }
-  const columnIndex = Number(sortColumn.value);
-  const column = COLUMNS[columnIndex];
-  const started = performance.now();
-  const applied = core.sortByColumn(columnIndex, direction);
-  const elapsed = Math.round(performance.now() - started);
-  sortHint.textContent = applied
-    ? `上次动作：按「${column.label}」${direction === "asc" ? "升序" : "降序"}排序 ` +
-      `${currentRowCount.toLocaleString("zh-CN")} 行，用时 ${elapsed}ms（撤销可一步还原顺序和行高）`
-    : "上次动作：排序被取消，什么都没写入";
-}
-
-sortAscButton.addEventListener("click", () => sortBy("asc"));
-sortDescButton.addEventListener("click", () => sortBy("desc"));
-
 const emptyFilterState = document.getElementById("emptyFilterState");
 
+// Step 22 Part A/B 与 Step 23 的排序、过滤、查找替换控件，以及 Step 24 的样式面板，
+// 全部撤掉了——它们现在是工具栏（Step 25）data / format / align 三组里的项。
+// 少了一层"同一个功能两个入口、改一处忘一处"，也让 playground 成为工具栏本身的
+// 验证场：这一步没有浏览器测试，工具栏的渲染、点击、面板、dispose 全靠在这里点。
+//
+// 没有收进工具栏、仍然留在页面上的只有两类：读写单元格与合并区那两个表单（它们
+// 演示的是**带参数的 API 调用**，不是工具栏那种"作用于当前选区"的动作），以及
+// 下面这块调试信息。
+const styleDebug = document.getElementById("styleDebug");
+
+/** 当前格的样式与 styles 表条目数——肉眼验证 intern 去重的唯一直观方式。 */
+function updateStyleDebug() {
+  if (!core || !styleDebug) {
+    return;
+  }
+  const { startRow, startColumn } = core.selection.range;
+  const style = core.getCellStyle(startRow, startColumn);
+  styleDebug.textContent =
+    `当前格 R${startRow}C${startColumn}：${style === undefined ? "无样式" : JSON.stringify(style)}`;
+}
+
 /**
- * Step 22 Part B：sheet.filterByColumn()/clearFilter() 演示——预测值是这里
- * 手写的精确字符串匹配（`String(value) === 输入框的值`），不是核心提供的默认
- * 值列表 UI（那一层特意留给宿主，见 filterHint 的说明）。
+ * 把一句话顶到状态栏上，几秒后退回默认文案。
  *
- * 匹配行数不额外扫描一遍——core 本来就会对每一行调用一次谓词，这里在同一个
- * 谓词闭包里顺手计数，比"先自己扫一遍数、再调 filterByColumn 让它再扫一遍"
- * 省一半开销，10 万行规模下这个差别是看得见的。
+ * 工具栏自己不解释它做了什么（那是产品级组件该有的克制），但 playground 作为演示
+ * 场需要让人看见"刚才那一下发生了什么"——尤其是表头点击这类没有按钮反馈的路径。
  */
-function filterBy(kind) {
-  if (!core) {
-    return;
+let statusResetTimeoutId = null;
+function setStatus(text) {
+  statusBar.textContent = text;
+  if (statusResetTimeoutId !== null) {
+    clearTimeout(statusResetTimeoutId);
   }
-  if (kind === "clear") {
-    core.clearFilter();
-    filterHint.textContent = "上次动作：已清除过滤，所有行的高度逐像素复原";
-    emptyFilterState.hidden = true;
-    return;
-  }
-  const columnIndex = Number(filterColumn.value);
-  const column = COLUMNS[columnIndex];
-  const target = filterValue.value;
-  let matched = 0;
-  const started = performance.now();
-  core.filterByColumn(columnIndex, (value) => {
-    const hit = String(value ?? "") === target;
-    if (hit) {
-      matched += 1;
-    }
-    return hit;
-  });
-  const elapsed = Math.round(performance.now() - started);
-  filterHint.textContent = matched === 0
-    ? `上次动作：按「${column.label}」等于「${target}」过滤，没有任何行匹配（用时 ${elapsed}ms）——` +
-      "表格看起来是空的，这是预期行为，不是加载失败，清除过滤即可恢复"
-    : `上次动作：只看「${column.label}」等于「${target}」的行，共匹配 ` +
-      `${matched.toLocaleString("zh-CN")} / ${currentRowCount.toLocaleString("zh-CN")} 行，` +
-      `用时 ${elapsed}ms（过滤不进撤销栈，清除过滤即可复原）`;
-  emptyFilterState.hidden = matched !== 0;
+  statusResetTimeoutId = setTimeout(() => {
+    statusBar.textContent = statusBarDefaultText;
+    statusResetTimeoutId = null;
+  }, 6000);
 }
 
-applyFilterButton.addEventListener("click", () => filterBy("apply"));
-clearFilterButton.addEventListener("click", () => filterBy("clear"));
+const toolbarMount = document.getElementById("toolbarMount");
+/** 上一条工具栏的清理函数——重建实例时必须先 dispose，否则监听器会越积越多。 */
+let toolbarHandle = null;
 
-/**
- * Step 23：sheet.find()/findNext()/findPrevious()/replace()/replaceAll()
- * 演示——匹配数量与"第几个"直接读 core 返回的结果，这里不重复统计。
- * `currentMatch` 只是宿主自己记的"上一次 findNext/findPrevious 停在哪"，
- * core 本身不暴露这个 getter（它已经体现在选区上了），「替换当前」要用
- * 具体坐标调 replace()，所以这里记一份。
- */
-let currentMatch = null;
-
-async function runSearchFind() {
-  if (!core) {
-    return;
-  }
-  const query = searchQuery.value;
-  if (query === "") {
-    searchHint.textContent = "查找框是空的——请先输入要找的文本";
-    return;
-  }
-  currentMatch = null;
-  const started = performance.now();
-  const matches = await core.find(query, {
-    matchCase: searchMatchCase.checked,
-    useRegex: searchUseRegex.checked
-  });
-  const elapsed = Math.round(performance.now() - started);
-  if (matches === null) {
-    searchHint.textContent = "上次动作：查找已取消";
-    return;
-  }
-  searchHint.textContent = matches.length === 0
-    ? `上次动作：查找「${query}」，没有匹配（用时 ${elapsed}ms）`
-    : `上次动作：查找「${query}」，共 ${matches.length.toLocaleString("zh-CN")} 个匹配，` +
-      `用时 ${elapsed}ms——点「下一个」/「上一个」在匹配间跳转`;
+function mountToolbar() {
+  toolbarHandle?.dispose();
+  toolbarHandle = core === null ? null : createToolbar(core, toolbarMount);
 }
-
-function runSearchStep(direction) {
-  if (!core) {
-    return;
-  }
-  const match = direction === "next" ? core.findNext() : core.findPrevious();
-  currentMatch = match;
-  searchHint.textContent = match === null
-    ? "上次动作：没有可跳转的匹配——请先点「查找」"
-    : `上次动作：跳到第 ${match.row} 行第 ${match.column} 列的匹配`;
-}
-
-function runSearchReplaceCurrent() {
-  if (!core || !currentMatch) {
-    searchHint.textContent = "上次动作：还没有当前匹配——先点「查找」再点「下一个」定位一个";
-    return;
-  }
-  const replaced = currentMatch;
-  core.replace(replaced, searchReplaceValue.value);
-  searchHint.textContent =
-    `上次动作：把第 ${replaced.row} 行第 ${replaced.column} 列替换为「${searchReplaceValue.value}」（可撤销）`;
-  currentMatch = null;
-}
-
-searchFindButton.addEventListener("click", () => {
-  runSearchFind();
-});
-searchNextButton.addEventListener("click", () => runSearchStep("next"));
-searchPrevButton.addEventListener("click", () => runSearchStep("previous"));
-searchReplaceButton.addEventListener("click", runSearchReplaceCurrent);
-searchClearButton.addEventListener("click", () => {
-  if (!core) {
-    return;
-  }
-  core.clearSearch();
-  currentMatch = null;
-  searchHint.textContent = "上次动作：已清除查找结果";
-});
-searchReplaceAllButton.addEventListener("click", async () => {
-  if (!core) {
-    return;
-  }
-  const query = searchQuery.value;
-  if (query === "") {
-    searchHint.textContent = "查找框是空的——请先输入要找的文本";
-    return;
-  }
-  const started = performance.now();
-  const count = await core.replaceAll(query, searchReplaceValue.value, {
-    matchCase: searchMatchCase.checked,
-    useRegex: searchUseRegex.checked
-  });
-  const elapsed = Math.round(performance.now() - started);
-  currentMatch = null;
-  searchHint.textContent = count === null
-    ? "上次动作：全部替换已取消"
-    : `上次动作：全部替换「${query}」→「${searchReplaceValue.value}」，共 ` +
-      `${count.toLocaleString("zh-CN")} 个格子，用时 ${elapsed}ms（一次撤销即可复原）`;
-});
 
 rebuildButton.addEventListener("click", rebuild);
 
@@ -768,104 +625,6 @@ function tick(now) {
   requestAnimationFrame(tick);
 }
 requestAnimationFrame(tick);
-
-/**
- * Step 24：样式面板。
- *
- * 这一组按钮是本步**主要的验证路径**——渲染效果（字体、颜色、边框画出来对不对）
- * 只能靠眼睛，这个环境里没有 Chromium 跑浏览器测试。所以面板要能单独验证每一个
- * 样式键，外加一块显示 intern 状态的调试信息。
- */
-const styleBold = document.getElementById("styleBold");
-const styleItalic = document.getElementById("styleItalic");
-const styleUnderline = document.getElementById("styleUnderline");
-const styleStrike = document.getElementById("styleStrike");
-const styleFontSize = document.getElementById("styleFontSize");
-const styleColor = document.getElementById("styleColor");
-const styleBackground = document.getElementById("styleBackground");
-const styleAlign = document.getElementById("styleAlign");
-const styleBorder = document.getElementById("styleBorder");
-const styleNumFmt = document.getElementById("styleNumFmt");
-const styleApplyNumFmt = document.getElementById("styleApplyNumFmt");
-const styleClear = document.getElementById("styleClear");
-const styleHint = document.getElementById("styleHint");
-const styleDebug = document.getElementById("styleDebug");
-
-function applyStyle(patch, label) {
-  if (!core) {
-    return;
-  }
-  const range = core.selection.range;
-  try {
-    core.setRangeStyle(range, patch);
-    styleHint.textContent =
-      `上次动作：${label}，作用于 R${range.startRow}C${range.startColumn}` +
-      `–R${range.endRow}C${range.endColumn}（一次撤销即可全部回退）`;
-  } catch (error) {
-    // 非法 numFmt 走这里——错误在设置时抛出，一格都没写进去
-    styleHint.textContent = `上次动作失败：${error instanceof Error ? error.message : String(error)}`;
-  }
-  updateStyleDebug();
-}
-
-/**
- * toggle 语义：当前格已经是粗体就取消，否则加上。这正是"合并语义 + null 清键"
- * 存在的理由——工具栏按钮只能表达"改这一个键"，不能整体替换样式。
- */
-function toggleStyle(key, label) {
-  if (!core) {
-    return;
-  }
-  const { startRow, startColumn } = core.selection.range;
-  const current = core.getCellStyle(startRow, startColumn);
-  applyStyle({ [key]: current?.[key] === true ? null : true }, label);
-}
-
-function updateStyleDebug() {
-  if (!core || !styleDebug) {
-    return;
-  }
-  const { startRow, startColumn } = core.selection.range;
-  const style = core.getCellStyle(startRow, startColumn);
-  const summary = style === undefined ? "无样式" : JSON.stringify(style);
-  styleDebug.textContent = `当前格 R${startRow}C${startColumn}：${summary}`;
-}
-
-styleBold?.addEventListener("click", () => toggleStyle("bold", "切换加粗"));
-styleItalic?.addEventListener("click", () => toggleStyle("italic", "切换斜体"));
-styleUnderline?.addEventListener("click", () => toggleStyle("underline", "切换下划线"));
-styleStrike?.addEventListener("click", () => toggleStyle("strike", "切换删除线"));
-styleFontSize?.addEventListener("change", () => {
-  const size = Number(styleFontSize.value);
-  applyStyle({ fontSize: Number.isFinite(size) && size > 0 ? size : null }, `字号 ${size}`);
-});
-styleColor?.addEventListener("change", () => applyStyle({ color: styleColor.value }, `字色 ${styleColor.value}`));
-styleBackground?.addEventListener("change", () =>
-  applyStyle({ background: styleBackground.value }, `底色 ${styleBackground.value}`)
-);
-styleAlign?.addEventListener("change", () =>
-  applyStyle({ align: styleAlign.value === "" ? null : styleAlign.value }, `对齐 ${styleAlign.value || "默认"}`)
-);
-styleBorder?.addEventListener("click", () => {
-  const side = { color: "#3b82f6", width: 1 };
-  applyStyle({ border: { top: side, right: side, bottom: side, left: side } }, "加四边框");
-});
-styleApplyNumFmt?.addEventListener("click", () =>
-  applyStyle({ numFmt: styleNumFmt.value === "" ? null : styleNumFmt.value }, `数字格式 ${styleNumFmt.value || "清除"}`)
-);
-styleClear?.addEventListener("click", () => {
-  if (!core) {
-    return;
-  }
-  core.clearRangeStyle(core.selection.range);
-  styleHint.textContent = "上次动作：清除选区全部样式";
-  updateStyleDebug();
-});
-
-// core 没有 selection-change 事件（只有 change/layout-change/ready 等），所以这块
-// 调试信息由宿主在交互之后自己刷新——点选、键盘移动选区都会走到这两个事件。
-sheetMount.addEventListener("click", () => updateStyleDebug());
-sheetMount.addEventListener("keyup", () => updateStyleDebug());
 
 populateCellColumnSelect();
 rebuild();

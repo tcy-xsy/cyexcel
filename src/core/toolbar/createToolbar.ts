@@ -4,6 +4,7 @@ import { defaultToolbarSchema } from "./schema";
 import { resolveItemState } from "./state";
 import * as icons from "./icons";
 import { TOOLBAR_GROUPS, type ToolbarContext, type ToolbarItem, type ToolbarOptions } from "./types";
+import * as styles from "./styles";
 
 export interface ToolbarHandle {
   /** 立刻重算一遍所有项的状态。事件驱动之外的手动出口，宿主一般用不到。 */
@@ -49,9 +50,11 @@ export function createToolbar(
 
   const root = el("div", "cyx-toolbar");
   root.setAttribute("role", "toolbar");
+  styles.apply(root, styles.toolbarRoot);
   const moreButton = el("button", "cyx-toolbar-button cyx-toolbar-more");
   moreButton.type = "button";
   moreButton.innerHTML = icons.more;
+  styles.apply(moreButton, styles.button);
   moreButton.setAttribute("aria-label", "更多");
   moreButton.hidden = true;
   const overflowHost = el("div", "cyx-toolbar-overflow");
@@ -70,11 +73,18 @@ export function createToolbar(
     styleOf: (row, column) => sheet.getCellStyle(row, column)
   });
 
-  const rendered: { item: ToolbarItem; node: HTMLElement; control: HTMLElement }[] = [];
+  const rendered: {
+    item: ToolbarItem;
+    node: HTMLElement;
+    control: HTMLElement;
+    repaint?: () => void;
+  }[] = [];
+  const stateDisposers: (() => void)[] = [];
 
   function openPanel(item: ToolbarItem, anchor: HTMLElement): void {
     closeLayer();
     const layer = el("div", "cyx-toolbar-panel");
+    styles.apply(layer, styles.panel);
     const rect = anchor.getBoundingClientRect();
     const rootRect = root.getBoundingClientRect();
     layer.style.left = `${rect.left - rootRect.left}px`;
@@ -108,6 +118,7 @@ export function createToolbar(
   function buildControl(item: ToolbarItem): HTMLElement {
     if (item.type === "select") {
       const select = el("select", "cyx-toolbar-select");
+      styles.apply(select, styles.select);
       select.setAttribute("aria-label", item.label);
       for (const option of item.options ?? []) {
         const node = document.createElement("option");
@@ -123,6 +134,7 @@ export function createToolbar(
 
     const button = el("button", "cyx-toolbar-button");
     button.type = "button";
+    styles.apply(button, styles.button);
     button.setAttribute("aria-label", item.label);
     if (item.tooltip !== undefined) {
       button.title = item.tooltip;
@@ -147,14 +159,26 @@ export function createToolbar(
   let currentGroup: string | null = null;
   for (const item of items) {
     if (currentGroup !== null && item.group !== currentGroup) {
-      root.append(el("span", "cyx-toolbar-separator"));
+      const line = el("span", "cyx-toolbar-separator");
+      styles.apply(line, styles.separator);
+      root.append(line);
     }
     currentGroup = item.group;
     const slot = el("span", "cyx-toolbar-slot");
+    styles.apply(slot, styles.slot);
     const control = buildControl(item);
     slot.append(control);
     root.append(slot);
-    rendered.push({ item, node: slot, control });
+    const entry: (typeof rendered)[number] = { item, node: slot, control };
+    if (control instanceof HTMLButtonElement) {
+      let activated = false;
+      stateDisposers.push(styles.attachButtonStates(control, () => activated));
+      entry.repaint = () => {
+        activated = entry.node.dataset.activated === "true";
+        control.dispatchEvent(new Event("mouseleave"));
+      };
+    }
+    rendered.push(entry);
   }
   root.append(moreButton, overflowHost);
   container.append(root);
@@ -172,6 +196,7 @@ export function createToolbar(
         // 的值糊弄（见 state.ts 的 commonValue）。
         entry.control.value = state.value === undefined ? "" : String(state.value);
       }
+      entry.repaint?.();
     }
   }
 
@@ -212,6 +237,7 @@ export function createToolbar(
   moreButton.addEventListener("click", () => {
     closeLayer();
     const layer = el("div", "cyx-toolbar-panel");
+    styles.apply(layer, styles.panel);
     layer.style.right = "0px";
     layer.style.top = `${moreButton.offsetHeight}px`;
     for (const entry of rendered) {
@@ -220,6 +246,7 @@ export function createToolbar(
       }
       const clone = el("button", "cyx-toolbar-panel-action");
       clone.type = "button";
+      styles.apply(clone, styles.panelAction);
       clone.textContent = entry.item.label;
       clone.addEventListener("click", () => {
         closeLayer();
@@ -249,7 +276,7 @@ export function createToolbar(
         frame = 0;
       }
       resizeObserver?.disconnect();
-      for (const dispose of disposers) {
+      for (const dispose of [...disposers, ...stateDisposers]) {
         dispose();
       }
       root.remove();

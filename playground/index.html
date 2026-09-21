@@ -23,97 +23,21 @@
         <button class="button" id="themeButton" type="button">深色</button>
       </header>
 
+      <!--
+        工具栏不再是手搓的一排控件，而是 `cyexcel/toolbar` 模块渲染进这个空容器的
+        （Step 25）。playground 因此同时是工具栏的**真实验证场**——这一步没有浏览器
+        测试，工具栏的渲染、点击、面板、dispose 全靠在这里点。
+      -->
       <section class="toolbar" aria-label="工具栏">
+        <div id="toolbarMount"></div>
         <div class="toolbar-group">
-          <button class="button" id="undoButton" type="button">撤销</button>
-          <button class="button" id="redoButton" type="button">重做</button>
-          <span class="hint-inline">Ctrl/Cmd+Z 撤销、Ctrl/Cmd+Shift+Z 或 Ctrl/Cmd+Y 重做也能用</span>
-        </div>
-        <div class="toolbar-group">
-          <label class="hint-inline">排序列 <select id="sortColumn"></select></label>
-          <button class="button" id="sortAscButton" type="button">升序</button>
-          <button class="button" id="sortDescButton" type="button">降序</button>
-          <span class="hint-inline" id="sortHint">
-            调用 <code>sheet.sortByColumn(列, "asc" | "desc")</code>——物理重排行，行高跟着行走，
-            一次撤销同时还原顺序和行高。可排序的列在表头右端有一对上下小三角，直接点它排序；
-            当前方向的那个变成蓝色、另一个保持灰色（同 antd Table 的做法——留着灰的那个，才看得出
-            另一个方向还能再点一次）。再点一次在升/降序间切换，不会回到原始顺序（要找回原顺序
-            只能撤销）。三角就画在可点击的那条窄带里，所以看到的位置就是要点的位置。
-            「标签」列没有 ⇅——<code>array</code>/<code>json</code> 没有全序，由类型自己声明
-            <code>sortable: false</code>；「SKU」列则是在列上写了 <code>sortable: false</code>，
-            演示列级覆盖
-          </span>
-        </div>
-        <div class="toolbar-group">
-          <label class="hint-inline">过滤列 <select id="filterColumn"></select></label>
-          <input id="filterValue" type="text" placeholder="只看等于这个值的行" aria-label="过滤值" />
-          <button class="button" id="applyFilterButton" type="button">应用过滤</button>
-          <button class="button" id="clearFilterButton" type="button">清除过滤</button>
-          <span class="hint-inline" id="filterHint">
-            调用 <code>sheet.filterByColumn(列, predicate)</code>——不匹配的行折叠成 0 高度，
-            存储的行高和数据一个字节都不动，<code>清除过滤</code>逐像素复原。过滤不进撤销栈、
-            也不会清空已有的重做记录（同自动行高的提交方式）。表头右端第二条窄条
-            （紧挨着排序小三角左边）点一下会用当前输入框的值对那一列过滤——core 自己不知道
-            该用什么谓词，点击只发一个通知，谓词由这里（宿主）决定
-          </span>
-        </div>
-        <div class="toolbar-group">
-          <label class="hint-inline">查找 <input id="searchQuery" type="text" placeholder="要查找的文本" aria-label="查找" /></label>
-          <label class="hint-inline"><input id="searchMatchCase" type="checkbox" /> 区分大小写</label>
-          <label class="hint-inline"><input id="searchUseRegex" type="checkbox" /> 正则</label>
-          <button class="button" id="searchFindButton" type="button">查找</button>
-          <button class="button" id="searchPrevButton" type="button">上一个</button>
-          <button class="button" id="searchNextButton" type="button">下一个</button>
-          <label class="hint-inline">替换为 <input id="searchReplaceValue" type="text" placeholder="替换值" aria-label="替换值" /></label>
-          <button class="button" id="searchReplaceButton" type="button">替换当前</button>
-          <button class="button" id="searchReplaceAllButton" type="button">全部替换</button>
-          <button class="button" id="searchClearButton" type="button">清除查找</button>
-          <span class="hint-inline" id="searchHint">
-            调用 <code>sheet.find(query, options)</code>——只扫描实际有值的格子（分片让出主线程，
-            规模再大也不会卡成一个长任务），只返回匹配坐标，不在表格上画额外高亮（同 Excel：
-            工作表上看不到"全部匹配"，只有当前项用普通选区框标出）。
-            <code>sheet.findNext()</code>/<code>findPrevious()</code> 在匹配之间循环，把选区
-            移到那一格并把视口滚过去；<code>replace()</code> 走普通可撤销的单格写入，
-            <code>replaceAll()</code> 对所有匹配一次事务、一次撤销记录
-          </span>
-        </div>
-        <div class="toolbar-group">
-          <button class="button" id="styleBold" type="button"><b>B</b></button>
-          <button class="button" id="styleItalic" type="button"><i>I</i></button>
-          <button class="button" id="styleUnderline" type="button"><u>U</u></button>
-          <button class="button" id="styleStrike" type="button"><s>S</s></button>
-          <label class="hint-inline">字号 <input id="styleFontSize" type="number" min="8" max="72" step="1" style="width:4em" /></label>
-          <label class="hint-inline">字色 <input id="styleColor" type="color" value="#111827" /></label>
-          <label class="hint-inline">底色 <input id="styleBackground" type="color" value="#fff7c2" /></label>
-          <select id="styleAlign">
-            <option value="">对齐（默认左）</option>
-            <option value="left">左</option>
-            <option value="center">居中</option>
-            <option value="right">右</option>
-          </select>
-          <button class="button" id="styleBorder" type="button">加四边框</button>
-          <label class="hint-inline">数字格式 <input id="styleNumFmt" type="text" placeholder="#,##0.00" style="width:8em" /></label>
-          <button class="button" id="styleApplyNumFmt" type="button">套用格式</button>
-          <button class="button" id="styleClear" type="button">清除样式</button>
-          <span class="hint-inline" id="styleHint">
-            调用 <code>sheet.setRangeStyle(range, patch)</code>——**合并语义**：只改传进去的那个键，
-            其余保留，传 <code>null</code> 清掉某一个键。整片选区是一次事务、一次撤销记录。
-            数字格式交给 numfmt（Excel pattern），非法 pattern 在设置时就抛
-            <code>invalid-number-format</code>，不会等到那一格滚进视口
-          </span>
-        </div>
-        <div class="toolbar-group">
-          <span class="hint-inline" id="styleDebug">样式表：0 条</span>
-          <span class="hint-inline">
-            这行显示当前格的样式 id 与 <code>styles</code> 表的条目数——把同一个样式刷到很多格上，
-            条目数**不会**跟着涨（intern 去重）；这是肉眼验证稀疏存储的唯一直观方式
-          </span>
-        </div>
-        <div class="toolbar-group">
+          <span class="hint-inline" id="styleDebug">当前格：无样式</span>
           <button class="button" id="exportButton" type="button">导出选区为 TSV</button>
           <span class="hint-inline" id="shortcutHint">
-            调用 <code>sheet.copy({ download: true })</code>；Ctrl/Cmd+S 是同一个动作的快捷键
-            （<code>sheet.registerShortcut()</code> 演示），Ctrl/Cmd+K 切换主题
+            上面整条工具栏来自 <code>createToolbar(sheet, container)</code>——独立入口
+            <code>cyexcel/toolbar</code>，不 import 就不进产物。
+            导出按钮调 <code>sheet.copy({ download: true })</code>，Ctrl/Cmd+S 是它的快捷键，
+            Ctrl/Cmd+K 切换主题
           </span>
         </div>
       </section>

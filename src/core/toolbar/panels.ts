@@ -1,5 +1,6 @@
 import type { BorderSide } from "../style/types";
 import type { ToolbarContext } from "./types";
+import * as styles from "./styles";
 
 /**
  * 四个弹出面板，都是纯 DOM。
@@ -38,9 +39,11 @@ export function colorPanel(
   options: { current: string | undefined; onPick: (color: string | null) => void }
 ): () => void {
   const grid = el("div", "cyx-toolbar-swatches");
+  styles.apply(grid, styles.swatchGrid);
   for (const color of SWATCHES) {
     const button = el("button", "cyx-toolbar-swatch");
     button.type = "button";
+    styles.apply(button, styles.swatch);
     button.style.background = color;
     button.setAttribute("aria-label", color);
     if (options.current === color) {
@@ -51,6 +54,8 @@ export function colorPanel(
   }
   const clear = el("button", "cyx-toolbar-panel-action", "无颜色");
   clear.type = "button";
+  styles.apply(clear, styles.panelAction);
+  styles.apply(clear, styles.panelAction);
   clear.addEventListener("click", () => options.onPick(null));
 
   host.append(grid, clear);
@@ -74,6 +79,7 @@ export function borderPanel(host: HTMLElement, ctx: ToolbarContext): () => void 
   for (const preset of presets) {
     const button = el("button", "cyx-toolbar-panel-action", preset.label);
     button.type = "button";
+    styles.apply(button, styles.panelAction);
     button.addEventListener("click", () => {
       ctx.sheet.setRangeStyle(ctx.range, preset.patch);
     });
@@ -97,12 +103,14 @@ export function filterPanel(host: HTMLElement, ctx: ToolbarContext): () => void 
   const form = el("div", "cyx-toolbar-panel-list");
 
   const input = el("input", "cyx-toolbar-panel-input");
+  styles.apply(input, styles.panelInput);
   input.type = "text";
   input.placeholder = "包含文本…";
   input.setAttribute("aria-label", "过滤条件");
 
   const apply = el("button", "cyx-toolbar-panel-action", "应用");
   apply.type = "button";
+  styles.apply(apply, styles.panelAction);
   apply.addEventListener("click", () => {
     const needle = input.value.trim().toLowerCase();
     ctx.sheet.filterByColumn(column, (value) =>
@@ -112,6 +120,7 @@ export function filterPanel(host: HTMLElement, ctx: ToolbarContext): () => void 
 
   const nonEmpty = el("button", "cyx-toolbar-panel-action", "只看非空");
   nonEmpty.type = "button";
+  styles.apply(nonEmpty, styles.panelAction);
   nonEmpty.addEventListener("click", () => {
     ctx.sheet.filterByColumn(column, (value) => value !== null && value !== undefined && value !== "");
   });
@@ -131,19 +140,23 @@ export function findPanel(host: HTMLElement, ctx: ToolbarContext): () => void {
   const form = el("div", "cyx-toolbar-panel-list");
 
   const query = el("input", "cyx-toolbar-panel-input");
+  styles.apply(query, styles.panelInput);
   query.type = "text";
   query.placeholder = "查找…";
   query.setAttribute("aria-label", "查找内容");
 
   const replacement = el("input", "cyx-toolbar-panel-input");
+  styles.apply(replacement, styles.panelInput);
   replacement.type = "text";
   replacement.placeholder = "替换为…";
   replacement.setAttribute("aria-label", "替换为");
 
   const status = el("div", "cyx-toolbar-panel-status", "");
+  styles.apply(status, styles.panelStatus);
 
   const find = el("button", "cyx-toolbar-panel-action", "查找全部");
   find.type = "button";
+  styles.apply(find, styles.panelAction);
   find.addEventListener("click", () => {
     void ctx.sheet.find(query.value).then((matches) => {
       status.textContent =
@@ -153,6 +166,7 @@ export function findPanel(host: HTMLElement, ctx: ToolbarContext): () => void {
 
   const next = el("button", "cyx-toolbar-panel-action", "下一个");
   next.type = "button";
+  styles.apply(next, styles.panelAction);
   next.addEventListener("click", () => {
     const match = ctx.sheet.findNext();
     status.textContent = match === null ? "没有匹配" : `第 ${match.row} 行第 ${match.column} 列`;
@@ -160,6 +174,7 @@ export function findPanel(host: HTMLElement, ctx: ToolbarContext): () => void {
 
   const previous = el("button", "cyx-toolbar-panel-action", "上一个");
   previous.type = "button";
+  styles.apply(previous, styles.panelAction);
   previous.addEventListener("click", () => {
     const match = ctx.sheet.findPrevious();
     status.textContent = match === null ? "没有匹配" : `第 ${match.row} 行第 ${match.column} 列`;
@@ -167,6 +182,7 @@ export function findPanel(host: HTMLElement, ctx: ToolbarContext): () => void {
 
   const replaceAll = el("button", "cyx-toolbar-panel-action", "全部替换");
   replaceAll.type = "button";
+  styles.apply(replaceAll, styles.panelAction);
   replaceAll.addEventListener("click", () => {
     void ctx.sheet.replaceAll(query.value, replacement.value).then((count) => {
       status.textContent = count === null ? "已取消" : `替换了 ${count} 处`;
