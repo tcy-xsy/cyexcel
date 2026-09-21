@@ -1,5 +1,4 @@
 import type { CyExcelCore } from "../CyExcelCore";
-import { computeOverflow } from "./overflow";
 import { defaultToolbarSchema } from "./schema";
 import { resolveItemState } from "./state";
 import * as icons from "./icons";
@@ -63,9 +62,9 @@ export function createToolbar(
   moreButton.setAttribute("aria-label", "更多");
   const disposeMoreFocus = styles.attachFocusStyle(moreButton);
   const disposeMoreTooltip = styles.attachTooltip(moreButton, "更多工具");
-  moreButton.hidden = true;
+  styles.setHidden(moreButton, true);
   const overflowHost = el("div", "cyx-toolbar-overflow");
-  overflowHost.hidden = true;
+  styles.setHidden(overflowHost, true);
 
   /** 当前打开的弹层（面板或溢出菜单）的清理函数。同一时刻只允许开一个。 */
   let closeOpenLayer: (() => void) | null = null;
@@ -112,11 +111,22 @@ export function createToolbar(
     closeLayer();
     const layer = el("div", "cyx-toolbar-panel");
     styles.apply(layer, styles.panel);
-    const rootRect = root.getBoundingClientRect();
-    layer.style.left = `${options.anchorRect.left - rootRect.left}px`;
-    layer.style.top = `${options.anchorRect.bottom - rootRect.top}px`;
+    // 视口坐标 + 挂 body：工具栏是 overflow:hidden，挂进去会被整个裁掉（见 styles.panel）。
+    layer.style.left = `${options.anchorRect.left}px`;
+    layer.style.top = `${options.anchorRect.bottom}px`;
     const disposeContent = options.fill(layer);
-    root.append(layer);
+    document.body.append(layer);
+    // 量一次再往回收：靠右的按钮（"更多"就在最右）弹出的面板会越过视口边缘；
+    // 项多的面板（溢出菜单）也可能顶破视口底边。与 tooltip 同一套收边做法。
+    const layerRect = layer.getBoundingClientRect();
+    if (layerRect.right > window.innerWidth - 4) {
+      layer.style.left = `${Math.max(4, window.innerWidth - 4 - layerRect.width)}px`;
+    }
+    if (layerRect.bottom > window.innerHeight - 4) {
+      // 优先翻到锚点上方；上方也放不下就贴着视口底边。
+      const above = options.anchorRect.top - layerRect.height;
+      layer.style.top = `${above >= 4 ? above : Math.max(4, window.innerHeight - 4 - layerRect.height)}px`;
+    }
 
     const onPointerDown = (event: MouseEvent): void => {
       if (!layer.contains(event.target as Node)) {
@@ -202,7 +212,7 @@ export function createToolbar(
         // 拿去当背景色只会得到透明，所以那种项干脆不画色带。
         const value = item.type === "color" ? remembered.get(item.id) ?? item.defaultValue : undefined;
         swatch.style.background = value ?? "transparent";
-        swatch.hidden = value === undefined;
+        styles.setHidden(swatch, value === undefined);
       };
       paintSwatch();
       main.addEventListener("click", () => {
@@ -301,61 +311,54 @@ export function createToolbar(
   }
 
   /**
-   * 各项的自然宽度，量一次就缓存。
+   * 哪些项收进"更多"。
    *
-   * **不能每次现量**：被隐藏的项 `offsetWidth` 是 0，于是下一轮会算成"都放得下"、
-   * 全部显示，ResizeObserver 随即又触发、又隐藏——工具栏会一直抖。按钮的宽度本来
-   * 就不随容器变，量一次足够。
+   * **用浏览器的测量，不自己做算术**：早先的版本把各项 offsetWidth 加起来跟容器宽
+   * 比，结果漏掉了 flex 的 gap（2px × 三十几项）和分隔线的 margin，总宽被低估上百
+   * 像素，临界区就判断成"放得下"——工具栏被裁掉一截却不出现"更多"。往里补 gap、
+   * margin、padding 是补不完的，而 `scrollWidth > clientWidth` 天然把它们都算进去了。
+   *
+   * 代价是逐个隐藏时会多次触发 reflow。项只有三十几个，且这只在容器宽度真的变了
+   * 时才跑（见 lastWidth），不在滚动或数据变化的路径上。
    */
-  let naturalWidths: number[] | null = null;
-  let separatorsWidth = 0;
+  let lastWidth = -1;
 
-  function measureNaturalWidths(): number[] {
-    if (naturalWidths !== null) {
-      return naturalWidths;
+  function applyOverflow(force = false): void {
+    const available = root.clientWidth;
+    if (!force && available === lastWidth) {
+      return;
     }
-    const hiddenBefore = rendered.map((entry) => entry.node.hasAttribute("hidden"));
+    lastWidth = available;
+
     for (const entry of rendered) {
-      entry.node.removeAttribute("hidden");
+      styles.setHidden(entry.node, false);
     }
-    const widths = rendered.map((entry) => entry.node.offsetWidth);
-    separatorsWidth = [...root.querySelectorAll(".cyx-toolbar-separator")].reduce(
-      (sum, node) => sum + (node as HTMLElement).offsetWidth,
-      0
-    );
-    rendered.forEach((entry, index) => {
-      if (hiddenBefore[index] === true) {
-        entry.node.setAttribute("hidden", "");
+    syncSeparators();
+    styles.setHidden(moreButton, true);
+    if (available === 0 || root.scrollWidth <= available) {
+      return;
+    }
+
+    // 放不下：先把"更多"亮出来（它自己也占位），再从右往左收，收到塞得下为止。
+    styles.setHidden(moreButton, false);
+    for (let index = rendered.length - 1; index >= 0; index -= 1) {
+      const node = rendered[index]?.node;
+      if (node !== undefined) {
+        styles.setHidden(node, true);
       }
-    });
-    // 容器还没布局（display:none 里、或尚未插进文档）时量出来全是 0——那不是
-    // "所有按钮都零宽"，而是"还不知道"，所以不缓存，等下一次再量。
-    if (widths.every((width) => width === 0)) {
-      return widths;
+      syncSeparators();
+      if (root.scrollWidth <= available) {
+        return;
+      }
     }
-    naturalWidths = widths;
-    return widths;
   }
 
-  function applyOverflow(): void {
-    const itemWidths = measureNaturalWidths();
-    const { visible, overflowed } = computeOverflow({
-      itemWidths,
-      available: root.clientWidth,
-      moreButtonWidth: moreButton.offsetWidth || 32,
-      separatorsWidth
-    });
-    for (const index of visible) {
-      rendered[index]?.node.removeAttribute("hidden");
-    }
-    for (const index of overflowed) {
-      rendered[index]?.node.setAttribute("hidden", "");
-    }
-    moreButton.hidden = overflowed.length === 0;
-    // 溢出是从左往右连续的，所以"前一项还在"就等于"这条分隔线两侧都还有东西"。
+  /** 一整组被收起后，它前面的分隔线也要消失，否则末尾会悬着一条竖线。 */
+  function syncSeparators(): void {
     for (const separator of separators) {
       const preceding = rendered[separator.precedingIndex];
-      separator.node.hidden = preceding === undefined || preceding.node.hasAttribute("hidden");
+      // `HTMLElement.hidden` 的类型是 `boolean | "until-found"`，这里只会是前者。
+      styles.setHidden(separator.node, preceding === undefined || preceding.node.hidden === true);
     }
   }
 
@@ -368,7 +371,7 @@ export function createToolbar(
     frame = requestAnimationFrame(() => {
       frame = 0;
       refresh();
-      applyOverflow();
+      applyOverflow(true);
     });
   };
 
@@ -400,7 +403,7 @@ export function createToolbar(
         const ctx = context();
         const disposers: (() => void)[] = [];
         for (const entry of rendered) {
-          if (!entry.node.hasAttribute("hidden")) {
+          if (!entry.node.hidden) {
             continue;
           }
           const item = entry.item;
@@ -468,7 +471,7 @@ export function createToolbar(
   resizeObserver?.observe(root);
 
   refresh();
-  applyOverflow();
+  applyOverflow(true);
 
   return {
     refresh,

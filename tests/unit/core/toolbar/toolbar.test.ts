@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { defaultToolbarSchema } from "../../../../src/core/toolbar/schema";
-import { computeOverflow } from "../../../../src/core/toolbar/overflow";
 import {
   commonValue,
   everyCellHas,
@@ -193,62 +192,5 @@ describe("toggle 的 run", () => {
     );
     defaultToolbarSchema.find((item) => item.id === "bold")?.run?.(ctx);
     expect(setRangeStyle).toHaveBeenCalledWith(ctx.range, { bold: true });
-  });
-});
-
-describe("computeOverflow", () => {
-  it("放得下时全部可见，不出现更多按钮", () => {
-    expect(computeOverflow({ itemWidths: [30, 30, 30], available: 200, moreButtonWidth: 32 })).toEqual({
-      visible: [0, 1, 2],
-      overflowed: []
-    });
-  });
-
-  it("放不下时从左往右塞，剩下的收起", () => {
-    // 可用 100，减去更多按钮 32 剩 68：能放两个 30
-    expect(computeOverflow({ itemWidths: [30, 30, 30, 30], available: 100, moreButtonWidth: 32 })).toEqual({
-      visible: [0, 1],
-      overflowed: [2, 3]
-    });
-  });
-
-  it("一旦有一项放不下，后面的全部收起——不跳过它去塞更窄的项", () => {
-    // 否则工具栏的顺序会随宽度变来变去，用户记不住任何按钮的位置
-    const result = computeOverflow({ itemWidths: [30, 90, 10], available: 100, moreButtonWidth: 32 });
-    expect(result.visible).toEqual([0]);
-    expect(result.overflowed).toEqual([1, 2]);
-  });
-
-  it("恰好放得下时不出现更多按钮，也就不该为它预留宽度", () => {
-    // 总宽 90 <= 可用 90：真的放得下，此时减 moreButtonWidth 是错的
-    expect(computeOverflow({ itemWidths: [30, 30, 30], available: 90, moreButtonWidth: 32 })).toEqual({
-      visible: [0, 1, 2],
-      overflowed: []
-    });
-  });
-
-  it("一旦要溢出，预算里就要减掉更多按钮自己的宽度", () => {
-    // 总宽 90 > 可用 89，必须溢出；预算是 89-32=57，所以只放得下一个 30，
-    // 而不是不减时的两个（60 <= 89）。
-    const result = computeOverflow({ itemWidths: [30, 30, 30], available: 89, moreButtonWidth: 32 });
-    expect(result.visible).toEqual([0]);
-    expect(result.overflowed).toEqual([1, 2]);
-  });
-
-  it("分隔线占的地方也算", () => {
-    const withSeparators = computeOverflow({
-      itemWidths: [30, 30],
-      available: 70,
-      moreButtonWidth: 32,
-      separatorsWidth: 20
-    });
-    expect(withSeparators.overflowed.length).toBeGreaterThan(0);
-  });
-
-  it("空工具栏不炸", () => {
-    expect(computeOverflow({ itemWidths: [], available: 100, moreButtonWidth: 32 })).toEqual({
-      visible: [],
-      overflowed: []
-    });
   });
 });

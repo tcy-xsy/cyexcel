@@ -26,6 +26,41 @@ export function apply(element: HTMLElement, style: Style): void {
   Object.assign(element.style, style);
 }
 
+/**
+ * 显隐一个元素。**不能只写 `element.hidden`。**
+ *
+ * `hidden` 属性靠 UA 样式表的 `[hidden] { display: none }` 生效，而那条规则的优先级
+ * 低于内联样式。这个模块（见文件顶部）恰恰是全内联样式的：`slot` 是 `inline-flex`、
+ * `separator` 是 `inline-block`、`button` 是 `inline-flex`、`splitSwatch` 是 `block`
+ * ——于是 `hidden` 被自己的 `display` 盖掉，元素照常显示、照常占宽度。
+ *
+ * 这对溢出计算是致命的：`applyOverflow` 靠"收起一项，`scrollWidth` 就小一点"来收敛，
+ * 而 `hidden` 不生效时收起整整三十几项，宽度纹丝不动，循环跑到底也塞不下，"更多"
+ * 按钮于是被挤到可视区外——工具栏被裁掉一截却看不到任何入口。
+ *
+ * 所以这里连内联 `display` 一起改，并把原值存在 `dataset` 上以便还原。**还原时不能
+ * 写 `display = ""`**：那会连 `apply()` 设下的 `inline-flex` 一起抹掉，把 flex 项退回
+ * 成 block。没被隐藏过的元素（dataset 里没有存档）则根本不碰它的 `display`。
+ *
+ * `hidden` 属性仍然照设——a11y 树和 `[hidden]` 选择器读的是它。
+ */
+export function setHidden(element: HTMLElement, hidden: boolean): void {
+  if (hidden) {
+    if (element.dataset.cyxDisplay === undefined) {
+      element.dataset.cyxDisplay = element.style.display;
+    }
+    element.hidden = true;
+    element.style.display = "none";
+    return;
+  }
+  element.hidden = false;
+  const restored = element.dataset.cyxDisplay;
+  if (restored !== undefined) {
+    element.style.display = restored;
+    delete element.dataset.cyxDisplay;
+  }
+}
+
 export const toolbarRoot: Style = {
   position: "relative",
   display: "flex",
@@ -108,9 +143,19 @@ export const separator: Style = {
   background: COLORS.border
 };
 
+/**
+ * 弹层（颜色/边框/数字格式/查找/过滤，以及"更多"菜单）。
+ *
+ * `fixed` + 挂 `document.body`，与 tooltip 同一个理由：工具栏自身是
+ * `overflow: hidden`（溢出计算要靠它），而面板是从工具栏**底边往下**展开的——挂在
+ * 里面等于整个落在可视区外被裁掉，只露出顶边一条。坐标因此用
+ * `getBoundingClientRect()` 的视口坐标直接给，不再减 rootRect。
+ *
+ * `zIndex` 低于 tooltip 的 9999：气泡该浮在面板之上。
+ */
 export const panel: Style = {
-  position: "absolute",
-  zIndex: "20",
+  position: "fixed",
+  zIndex: "9990",
   minWidth: "160px",
   padding: "6px",
   background: COLORS.surface,
