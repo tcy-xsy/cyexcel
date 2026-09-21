@@ -32,8 +32,46 @@ export interface SearchRequest {
 /** The caller-facing subset of SearchRequest — everything except the sheet-specific data feed, which CyExcelCore supplies itself. */
 export type SearchOptions = Pick<SearchRequest, "matchCase" | "useRegex" | "signal" | "onProgress">;
 
+export interface ReplaceMatchesOptions {
+  readonly matchCase?: boolean;
+  readonly useRegex?: boolean;
+  /** 替换文本里的全部命中；默认只替换第一处。 */
+  readonly all?: boolean;
+}
+
 function yieldToEventLoop(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * 按查找条件替换文本；没找到时返回 `null`，让调用方区分"没命中"和"替换成空串"。
+ * 替换串按字面量写入——这里不展开 `$1`，避免用户输入的普通文本被当成正则反向引用。
+ */
+export function replaceMatches(
+  text: string,
+  query: string,
+  replacement: string,
+  options: ReplaceMatchesOptions = {}
+): string | null {
+  if (query.length === 0) {
+    return null;
+  }
+
+  const { matchCase = false, useRegex = false, all = false } = options;
+  const pattern = useRegex
+    ? new RegExp(query, `${matchCase ? "" : "i"}${all ? "g" : ""}`)
+    : new RegExp(escapeRegExp(query), `${matchCase ? "" : "i"}${all ? "g" : ""}`);
+
+  if (!pattern.test(text)) {
+    return null;
+  }
+  pattern.lastIndex = 0;
+  const nextText = text.replace(pattern, () => replacement);
+  return nextText === text ? null : nextText;
 }
 
 /**

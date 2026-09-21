@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { computeMatches } from "../../../../src/core/search";
+import { computeMatches, replaceMatches } from "../../../../src/core/search";
 import type { CellValue } from "../../../../src/core/sheet/types";
 
 interface Cell {
@@ -168,5 +168,16 @@ describe("computeMatches", () => {
     expect(onProgress).toHaveBeenCalledWith(1);
     expect(onProgress).toHaveBeenCalledWith(2);
     expect(onProgress).toHaveBeenCalledWith(3);
+  });
+});
+
+describe("replaceMatches", () => {
+  it("replaces only the matched substring and keeps surrounding text", () => {
+    expect(replaceMatches("工业温度传感器", "工业", "消费")).toBe("消费温度传感器");
+  });
+
+  it("respects case-insensitive matching and replaces every occurrence with all", () => {
+    expect(replaceMatches("Abc abc", "abc", "x", { all: true })).toBe("x x");
+    expect(replaceMatches("Abc abc", "abc", "x", { all: true, matchCase: true })).toBe("Abc x");
   });
 });

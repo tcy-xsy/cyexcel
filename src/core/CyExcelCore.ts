@@ -51,7 +51,13 @@ import {
   type SemanticChange,
   summarizeStructuralChanges
 } from "./data";
-import { computeMatches, SearchState, type SearchMatch, type SearchOptions } from "./search";
+import {
+  computeMatches,
+  replaceMatches,
+  SearchState,
+  type SearchMatch,
+  type SearchOptions
+} from "./search";
 import { formatCellText } from "./style/formatCellText";
 import { buildCopyHtml, CopyStyleCache, styleAt, type CopiedStyles } from "./clipboard/styleClipboard";
 import { assertValidCoordinate, assertValidRange } from "./validation";
@@ -1743,10 +1749,25 @@ export class CyExcelCore {
     this.#renderScheduler.invalidateSelection();
   }
 
-  /** Writes `value` into one previously found match. A normal undoable SetCellCommand — nothing search-specific about the write itself. */
-  replace(match: SearchMatch, value: CellValue): void {
+  /**
+   * Replaces the matched text inside one previously found cell. `query` keeps
+   * the old whole-cell behavior for callers that only have coordinates.
+   */
+  replace(
+    match: SearchMatch,
+    value: CellValue,
+    query?: string,
+    options: Pick<SearchOptions, "matchCase" | "useRegex"> = {}
+  ): void {
     this.#enqueueOrRunMutation(() => {
-      this.#applyCommandNow(new SetCellCommand(match.row, match.column, value));
+      if (query === undefined) {
+        this.#applyCommandNow(new SetCellCommand(match.row, match.column, value));
+        return;
+      }
+      const nextValue = this.#getPartialReplacedValue(match, value, query, options, false);
+      if (nextValue !== null) {
+        this.#applyCommandNow(new SetCellCommand(match.row, match.column, nextValue));
+      }
     });
   }
 
@@ -1776,12 +1797,31 @@ export class CyExcelCore {
       this.#cancelActiveEdit();
       const receipts = this.#commandManager.transaction(() => {
         for (const match of matches) {
-          this.#commandManager.execute(new SetCellCommand(match.row, match.column, value));
+          const nextValue = this.#getPartialReplacedValue(match, value, query, options, true);
+          if (nextValue !== null) {
+            this.#commandManager.execute(new SetCellCommand(match.row, match.column, nextValue));
+          }
         }
       });
       this.#publishCommitReceipt(receipts);
     });
     return matches.length;
+  }
+
+  /** Search and replace operate on displayed text, so partial replacement does too. */
+  #getPartialReplacedValue(
+    match: SearchMatch,
+    value: CellValue,
+    query: string,
+    options: Pick<SearchOptions, "matchCase" | "useRegex">,
+    all: boolean
+  ): CellValue | null {
+    const displayText = this.#getCellDisplayText(
+      match.row,
+      match.column,
+      this.#store.getCell(match.row, match.column)
+    );
+    return replaceMatches(displayText, query, String(value), { ...options, all });
   }
 
   /** The same text `column.format()` would paint for this cell — search matches what the user sees, not the raw stored value. */

@@ -83,6 +83,35 @@ export function createToolbar(
    */
   const openDialogs = new Map<string, DialogHandle>();
 
+  /**
+   * 打开某一项的对话框。
+   *
+   * **两个入口共用这一个**：工具栏上的按钮，以及溢出菜单里的同一项。分开写过一次，
+   * 结果就是加了 `dialog` 类型只改了工具栏那条路径，被收进"更多"之后点了毫无反应
+   * ——溢出菜单的按钮分支只认 `panel` 和 `run`。新增项类型时这里和溢出菜单都要过一遍。
+   *
+   * 收 `anchorRect` 而不是锚点元素：溢出菜单里那一行点完就随菜单消失了，必须先量后关。
+   */
+  function openItemDialog(item: ToolbarItem, anchorRect: DOMRect): void {
+    const openDialog = item.dialog;
+    if (openDialog === undefined) {
+      return;
+    }
+    const existing = openDialogs.get(item.id);
+    if (existing !== undefined) {
+      existing.focus();
+      return;
+    }
+    const handle = createDialog({
+      title: item.label,
+      anchorRect,
+      fill: (body, close) => openDialog(context(), body, close),
+      onClosed: () => openDialogs.delete(item.id)
+    });
+    openDialogs.set(item.id, handle);
+    handle.focus();
+  }
+
   const rendered: {
     item: ToolbarItem;
     node: HTMLElement;
@@ -196,24 +225,12 @@ export function createToolbar(
 
     // 对话框项：渲染成普通按钮，点击开一个非模态、可拖动的框（见 createDialog）。
     if (item.dialog !== undefined) {
-      const openDialog = item.dialog;
       const trigger = makeButton(item, item.label, item.icon);
       trigger.addEventListener("click", () => {
+        const anchorRect = trigger.getBoundingClientRect();
         // 面板与对话框不共存：面板是点外面就关的浮层，开着框时留一个在那儿很怪。
         closeLayer();
-        const existing = openDialogs.get(item.id);
-        if (existing !== undefined) {
-          existing.focus();
-          return;
-        }
-        const handle = createDialog({
-          title: item.label,
-          anchorRect: trigger.getBoundingClientRect(),
-          fill: (body, close) => openDialog(context(), body, close),
-          onClosed: () => openDialogs.delete(item.id)
-        });
-        openDialogs.set(item.id, handle);
-        handle.focus();
+        openItemDialog(item, anchorRect);
       });
       stateDisposers.push(
         styles.attachButtonStates(trigger, () => openDialogs.has(item.id)),
@@ -474,8 +491,15 @@ export function createToolbar(
             button.style.color = styles.COLORS.activeText;
           }
           button.addEventListener("click", () => {
-            if (item.panel !== undefined) {
+            if (item.dialog !== undefined) {
               // 先量后关：这一行马上就要随菜单一起消失了。
+              const anchorRect = button.getBoundingClientRect();
+              closeLayer();
+              openItemDialog(item, anchorRect);
+              return;
+            }
+            if (item.panel !== undefined) {
+              // 同上，openPanel 内部自己先量。
               openPanel(item, button);
               return;
             }

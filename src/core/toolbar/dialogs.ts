@@ -143,7 +143,7 @@ export function findReplaceDialog(
       status.textContent = "先用「下一个」定位到一处，再替换";
       return;
     }
-    ctx.sheet.replace(target, replacement.value);
+    ctx.sheet.replace(target, replacement.value, query.value, searchOptions());
     // 重扫而不是复用旧匹配集——见函数头的说明。
     void scan().then((count) => {
       if (count === null || count === 0) {
