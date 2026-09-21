@@ -2,11 +2,7 @@ import { CyExcelError, CyExcelErrorCode } from "../errors";
 import { styleKey } from "./styleKey";
 import type { CellStyle } from "./types";
 
-/**
- * 6 位 base36 随机串。用 `Math.random` 而不是 `crypto.randomUUID`：这个值不需要
- * 密码学强度，只需要"两次 intern 不撞"，而 `crypto` 在 Worker/SSR 里还要多考虑
- * 一层可用性。
- */
+/** 6 位 base36 随机串。不用 crypto：只需要"两次 intern 不撞"，且它在 Worker/SSR 下要多一层可用性判断。 */
 function randomStyleId(): string {
   return `s${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -14,23 +10,10 @@ function randomStyleId(): string {
 /**
  * workbook 级样式表：存储层只有 id，API 层接受对象（ADR 0004 §3.4）。
  *
- * # 三处与 Univer 的 `Styles` 不同
- *
- * 1. **key 规范化**，见 `styleKey`——它那条"cache miss 就遍历整表深比较"的 O(n)
- *    兜底在这里不需要存在。
- * 2. **不接受内联样式对象**。Univer 的 `getStyleByCell` 要处理 `cell.s` 既可能是
- *    id 又可能是整个样式对象的联合类型，正是 ADR 0004 §3.4/§4.4 否掉的那条。
- * 3. **存盘时剔除无人引用的条目**（`toJSON(usedIds)`）。
- *
- * # 为什么不做引用计数
- *
- * 引用计数要在 7 个结构操作、撤销、剪贴板每条路径上都记得加减，漏一处就是静默泄漏
- * 或者过早回收——后者会让一个还在用的 id 指向空，是不会报错的那种坏。"存盘时扫一遍"
- * 是 O(占用格)、只在存盘时发生、不可能算错。代价是长会话的内存里留着废弃样式，
- * 一条几十字节。
- *
- * 随机 id 的代价也落在同一处：它**不幂等**，同一个样式反复 intern（undo/redo 来回
- * 折腾就会）会生成多个 id，表越滚越大——同样由存盘剔除兜底。
+ * **不做引用计数**，改为存盘时剔除无人引用的条目（`toJSON(usedIds)`）。引用计数要在
+ * 7 个结构操作、撤销、剪贴板每条路径上都记得加减，漏一处就是静默泄漏或过早回收；
+ * 存盘扫一遍是 O(占用格)、只在存盘时发生、不可能算错。随机 id 不幂等带来的重复条目
+ * 也由它兜住。
  */
 export class StyleRegistry {
   readonly #byId = new Map<string, CellStyle>();

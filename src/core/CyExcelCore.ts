@@ -252,12 +252,16 @@ export interface CyExcelCoreOptions {
   readonly clipboard?: ClipboardOptions;
   /** Installed via PluginManager at construction, in order — see doc/customization-and-hooks.md §11.2. Nothing is installed by default (e.g. createBasicContextMenuPlugin() must be listed explicitly to get a Copy/Paste right-click menu). */
   readonly plugins?: readonly CyExcelPlugin[];
+  /** 顶部部件，按顺序挂在表格上方。开箱即用的走法见主入口的 `createSheet()`。 */
+  readonly topWidgets?: readonly TopWidgetFactory[];
 }
 
 const DEFAULT_ROW_HEIGHT = 24;
 const AUTO_HEIGHT_MAX_SYNC_PASSES = 2;
 
 interface DomLayer {
+  /** 顶部部件区，只有 options.topWidgets 非空时才存在 */
+  readonly topWidgetHost?: HTMLDivElement;
   readonly scroller: HTMLDivElement;
   readonly spacer: HTMLDivElement;
   readonly headerCanvas: HTMLCanvasElement;
@@ -270,7 +274,23 @@ interface DomLayer {
   readonly menuLayer: HTMLDivElement;
 }
 
-function createDom(container: HTMLElement, headerHeight: number, rowHeaderWidth: number): DomLayer {
+/**
+ * 顶部部件（工具栏、编辑栏）的工厂。归 core 管是因为布局——部件占掉的高度要从网格
+ * 可用高度里扣掉，宿主在外面套 div 算不准。部件本身从 options 注入，所以瘦核心不会
+ * import 到工具栏代码。
+ */
+export type TopWidgetFactory = (sheet: CyExcelCore, host: HTMLElement) => TopWidgetHandle;
+
+export interface TopWidgetHandle {
+  dispose(): void;
+}
+
+function createDom(
+  container: HTMLElement,
+  headerHeight: number,
+  rowHeaderWidth: number,
+  withTopWidgets: boolean
+): DomLayer {
   const scroller = document.createElement("div");
   scroller.style.position = "relative";
   scroller.style.width = "100%";
@@ -379,14 +399,36 @@ function createDom(container: HTMLElement, headerHeight: number, rowHeaderWidth:
   // the bottom of the scrollable content), it would never need to "stick"
   // while scrolled to the top and would sit far below the viewport instead.
   scroller.append(stickyLayer, spacer);
+
+  // 有顶部部件时，容器改成纵向 flex：部件按内容高度占位，剩下的全给 scroller。
+  // 没有部件时一个字节都不改宿主容器的样式——既有用法的布局必须原样不动。
+  let topWidgetHost: HTMLDivElement | undefined;
+  if (withTopWidgets) {
+    topWidgetHost = document.createElement("div");
+    topWidgetHost.className = "cyx-top-widgets";
+    topWidgetHost.style.flex = "0 0 auto";
+    container.style.display = "flex";
+    container.style.flexDirection = "column";
+    scroller.style.flex = "1 1 auto";
+    // flex 子项的默认 min-height:auto 会让 scroller 被内容撑高、顶穿容器，
+    // 于是整页出现第二条滚动条。这一行是必需的，不是保险。
+    scroller.style.minHeight = "0";
+    scroller.style.height = "auto";
+  }
+
   try {
+    if (topWidgetHost !== undefined) {
+      container.append(topWidgetHost);
+    }
     container.append(scroller);
   } catch (error) {
+    topWidgetHost?.remove();
     scroller.remove();
     throw error;
   }
 
   return {
+    ...(topWidgetHost !== undefined ? { topWidgetHost } : {}),
     scroller,
     spacer,
     headerCanvas,
@@ -740,10 +782,12 @@ export class CyExcelCore {
 
     const initialization = new InitializationRollback();
     try {
+    const topWidgetFactories = options.topWidgets ?? [];
     const dom = createDom(
       container,
       this.#headerHeight(), // #headerManager/#columnHeaderHeight are both assigned above
-      this.#rowHeaderWidth
+      this.#rowHeaderWidth,
+      topWidgetFactories.length > 0
     );
     initialization.defer(() => dom.scroller.remove());
     initialization.defer(() => {
@@ -1328,6 +1372,16 @@ export class CyExcelCore {
     // Same story for a 0-width row header canvas — see CyExcelCoreOptions.rowHeaderWidth.
     this.#rowHeaderCanvas.addEventListener("pointermove", this.#handleRowHeaderPointerHover);
 
+    // 顶部部件必须**最后**创建：工具栏一构造就会读选区与样式来算按钮状态，
+    // 放在前面会读到还没赋值的 #selectionModel。core 只给槽位与布局，部件本身
+    // 从 options.topWidgets 注入，所以瘦核心不会 import 到工具栏代码。
+    if (dom.topWidgetHost !== undefined) {
+      for (const factory of topWidgetFactories) {
+        const handle = factory(this, dom.topWidgetHost);
+        initialization.defer(() => handle.dispose());
+      }
+    }
+
     this.#pluginManager.activate();
     this.#events.emit("ready", undefined);
     initialization.commit();
@@ -1357,6 +1411,20 @@ export class CyExcelCore {
   /** The immutable selection snapshot currently shared by paint and input. */
   get selection(): SelectionSnapshot {
     return this.#selectionModel.snapshot;
+  }
+
+  /**
+   * 把选区移到某一格并滚动到可见处。
+   *
+   * 在此之前"选中某一格"只有交互层内部能做（点击、方向键、findNext），宿主没有
+   * 程序化入口——编辑栏的名称框要支持"输入 A1 跳过去"就需要它。与 `findNext()`
+   * 走的是同一条路径（选中 + 滚动可见），所以行为一致。
+   */
+  selectCell(row: number, column: number): void {
+    assertValidCoordinate(row, column);
+    this.#selectionModel.selectCell(row, column);
+    this.#renderScheduler.invalidateSelection();
+    this.#scrollActiveIntoView();
   }
 
   get contextMenu(): ContextMenuService {

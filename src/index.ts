@@ -21,3 +21,16 @@ export {
   DEFAULT_CYEXCEL_TAG_NAME,
   defineCyExcel
 } from "./element/defineCyExcel";
+
+export { createSheet, type CreateSheetOptions } from "./createSheet";
+
+// 工具栏与编辑栏也从根入口出去：用 createSheet() 的人多半还想改 schema 或单独挂一条。
+export {
+  createFormulaBar,
+  createToolbar,
+  defaultToolbarSchema,
+  formulaBarWidget,
+  toolbarWidget,
+  type ToolbarItem,
+  type ToolbarSchema
+} from "./core/toolbar";

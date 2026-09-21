@@ -36,7 +36,12 @@ const SWATCHES = [
 
 export function colorPanel(
   host: HTMLElement,
-  options: { current: string | undefined; onPick: (color: string | null) => void }
+  options: {
+    current: string | undefined;
+    onPick: (color: string | null) => void;
+    /** 回报给工具栏：分段按钮据此记住"上次选的颜色"，下次点图标直接套用。 */
+    onChosen?: (value: string) => void;
+  }
 ): () => void {
   const grid = el("div", "cyx-toolbar-swatches");
   styles.apply(grid, styles.swatchGrid);
@@ -49,7 +54,10 @@ export function colorPanel(
     if (options.current === color) {
       button.dataset.current = "true";
     }
-    button.addEventListener("click", () => options.onPick(color));
+    button.addEventListener("click", () => {
+      options.onChosen?.(color);
+      options.onPick(color);
+    });
     grid.append(button);
   }
   const clear = el("button", "cyx-toolbar-panel-action", "无颜色");
@@ -65,22 +73,40 @@ export function colorPanel(
 
 const BORDER_SIDE: BorderSide = { color: "#111827", width: 1 };
 
-export function borderPanel(host: HTMLElement, ctx: ToolbarContext): () => void {
-  const presets: readonly { label: string; patch: Record<string, unknown> }[] = [
-    { label: "四周", patch: { border: { top: BORDER_SIDE, right: BORDER_SIDE, bottom: BORDER_SIDE, left: BORDER_SIDE } } },
-    { label: "上", patch: { border: { top: BORDER_SIDE } } },
-    { label: "下", patch: { border: { bottom: BORDER_SIDE } } },
-    { label: "左", patch: { border: { left: BORDER_SIDE } } },
-    { label: "右", patch: { border: { right: BORDER_SIDE } } },
-    { label: "无", patch: { border: null } }
-  ];
+/** 边框预设：key 同时是分段按钮记住的那个值（见 applyBorderPreset）。 */
+export const BORDER_PRESETS: readonly { key: string; label: string }[] = Object.freeze([
+  { key: "all", label: "四周" },
+  { key: "top", label: "上边框" },
+  { key: "bottom", label: "下边框" },
+  { key: "left", label: "左边框" },
+  { key: "right", label: "右边框" },
+  { key: "none", label: "无边框" }
+]);
+
+/** 按预设 key 套用边框。分段按钮的主区与面板走的是同一条路径。 */
+export function applyBorderPreset(ctx: ToolbarContext, key: string): void {
+  const patch =
+    key === "all"
+      ? { border: { top: BORDER_SIDE, right: BORDER_SIDE, bottom: BORDER_SIDE, left: BORDER_SIDE } }
+      : key === "none"
+        ? { border: null }
+        : { border: { [key]: BORDER_SIDE } };
+  ctx.sheet.setRangeStyle(ctx.range, patch);
+}
+
+export function borderPanel(
+  host: HTMLElement,
+  ctx: ToolbarContext,
+  onChosen?: (value: string) => void
+): () => void {
   const list = el("div", "cyx-toolbar-panel-list");
-  for (const preset of presets) {
+  for (const preset of BORDER_PRESETS) {
     const button = el("button", "cyx-toolbar-panel-action", preset.label);
     button.type = "button";
     styles.apply(button, styles.panelAction);
     button.addEventListener("click", () => {
-      ctx.sheet.setRangeStyle(ctx.range, preset.patch);
+      onChosen?.(preset.key);
+      applyBorderPreset(ctx, preset.key);
     });
     list.append(button);
   }

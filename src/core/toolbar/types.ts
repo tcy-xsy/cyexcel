@@ -2,10 +2,7 @@ import type { CyExcelCore } from "../CyExcelCore";
 import type { CellStyle } from "../style/types";
 import type { CellRange } from "../types";
 
-/**
- * 工具栏分组。压成一行五组，不做 Univer 那种六个标签页的 ribbon——我们的功能量
- * 填不满四个标签页，而填不满的标签页比不分页更难用（见 step25-toolbar-plan.md §3）。
- */
+/** 压成一行五组，不做多标签页 ribbon——功能量填不满，填不满的标签页更难用。 */
 export type ToolbarGroup = "history" | "format" | "align" | "data" | "structure";
 
 export const TOOLBAR_GROUPS: readonly ToolbarGroup[] = Object.freeze([
@@ -17,15 +14,8 @@ export const TOOLBAR_GROUPS: readonly ToolbarGroup[] = Object.freeze([
 ]);
 
 /**
- * 工具栏与 core 之间**唯一**的接口面。
- *
- * 项的实现只能经由它调公开 API，不碰 Store、不碰 SheetModel——与
- * `createBasicContextMenuPlugin` 的"不直接操作 Store"是同一条约束
- * （doc/customization-and-hooks.md §11.2）。
- *
- * `styleOf` 单独列出来而不是让调用方自己 `sheet.getCellStyle(...)`，是因为
- * `state.ts` 的纯函数要能在没有真实 `CyExcelCore` 的情况下被测——测试传一个
- * 手搓的 context 进去就行。
+ * 工具栏与 core 之间唯一的接口面：项只能经由它调公开 API，不碰 Store。
+ * `styleOf` 单列出来是为了让 `state.ts` 能脱离真实 CyExcelCore 被测。
  */
 export interface ToolbarContext {
   readonly sheet: CyExcelCore;
@@ -64,8 +54,13 @@ export interface ToolbarItem {
   readonly options?: readonly ToolbarSelectOption[];
   /** select / color 选中某个值时调用。 */
   apply?(ctx: ToolbarContext, value: string | number): void | Promise<void>;
-  /** panel 自绘，返回 disposer。 */
-  panel?(ctx: ToolbarContext, host: HTMLElement): () => void;
+  /** panel 自绘，返回 disposer。`onChosen` 把选中的值回报给分段按钮记住。 */
+  panel?(ctx: ToolbarContext, host: HTMLElement, onChosen?: (value: string) => void): () => void;
+  /**
+   * 分段按钮的初始值。同时有 `panel` 和 `apply` 的项渲染成"图标 + 箭头"：点图标套用
+   * 上次选过的值，点箭头展开面板（同 Excel 与 Univer 的 BUTTON_SELECTOR）。
+   */
+  readonly defaultValue?: string;
 }
 
 export type ToolbarSchema = readonly ToolbarItem[];

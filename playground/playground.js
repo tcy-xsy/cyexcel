@@ -1,5 +1,4 @@
 import {
-  CyExcelCore,
   CyExcelError,
   createBasicContextMenuPlugin,
   createBooleanCellEditor,
@@ -8,9 +7,8 @@ import {
   createTextAreaCellEditor,
   rowsToWorkbookSnapshot
 } from "/src/core/index.ts";
-// 工具栏是**独立入口**的可选模块：从 /src/core/toolbar/ 引，而不是从 core 的桶文件
-// ——这正是"不 import 就不进产物"在源码层面的样子（Step 25）。
-import { createToolbar } from "/src/core/toolbar/index.ts";
+// 开箱即用的入口：createSheet 默认装上工具栏与编辑栏，高度布局由 core 负责。
+import { createSheet } from "/src/createSheet.ts";
 
 const PRODUCTS = [
   "工业温度传感器",
@@ -313,7 +311,7 @@ function rebuild() {
   // A fresh instance starts unfiltered — a stale "0 rows matched" overlay
   // left over from the previous instance would be actively wrong, not just
   // out of date. 搜索状态不必在这里清：查找面板现在归工具栏管，而工具栏会随
-  // 实例一起重建（mountToolbar 先 dispose 旧的）。
+  // 实例一起重建（工具栏归 core 管，随实例一起 dispose）。
   emptyFilterState.hidden = true;
 
   const rows = buildRows(config.rowCount);
@@ -327,7 +325,7 @@ function rebuild() {
   );
 
   const start = performance.now();
-  core = new CyExcelCore(sheetMount, {
+  core = createSheet(sheetMount, {
     columns: columnConfigs,
     // ADR 0004 §3.2：入口只吃一份快照。对象数组在这里导进稀疏矩阵，导完这
     // 一遍之后 `rows` 与表格再无联系——改表格不会改到它，改它也不会改表格。
@@ -414,8 +412,6 @@ function rebuild() {
     cellRow.value = String(maxRow);
   }
   cellRow.max = String(maxRow);
-  // 工具栏要在 core 建好之后挂：它构造时就会读一次选区与样式来算按钮状态。
-  mountToolbar();
   // Step 25 之前这块调试信息是靠 sheetMount 的 click/keyup 猜"选区可能变了"，
   // 现在 core 有 selection-change 事件了（工具栏的按钮高亮也走它），订阅即可。
   core.events.on("selection-change", () => updateStyleDebug());
@@ -573,15 +569,6 @@ function setStatus(text) {
     statusBar.textContent = statusBarDefaultText;
     statusResetTimeoutId = null;
   }, 6000);
-}
-
-const toolbarMount = document.getElementById("toolbarMount");
-/** 上一条工具栏的清理函数——重建实例时必须先 dispose，否则监听器会越积越多。 */
-let toolbarHandle = null;
-
-function mountToolbar() {
-  toolbarHandle?.dispose();
-  toolbarHandle = core === null ? null : createToolbar(core, toolbarMount);
 }
 
 rebuildButton.addEventListener("click", rebuild);

@@ -1,7 +1,7 @@
 /**
  * 工具栏图标：内联 SVG 串。
  *
- * 用 stroke 风格、24×24、`currentColor`，与项目现有 chrome 的"细而轻"一致
+ * 用 stroke 风格、24×24、`currentColor`，与项目现有界面外框的"细而轻"一致
  * （见 render/theme.ts 的排序指示器注释）。内联而不是引图标库：一个图标库的体积
  * 顶得上整个工具栏模块，而我们只要这二十来个。
  *
@@ -26,6 +26,11 @@ export const textColor = wrap('<path d="m5 17 5-12 5 12"/><path d="M7 13h6"/><pa
 export const background = wrap('<path d="M12 3 4 11l6 6 8-8z"/><path d="M6 21h14"/>');
 export const border = wrap('<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 12h18"/><path d="M12 3v18"/>');
 
+export const percent = wrap('<circle cx="7" cy="7" r="2.5"/><circle cx="17" cy="17" r="2.5"/><path d="M19 5 5 19"/>');
+export const thousands = wrap('<path d="M4 7h16"/><path d="M4 12h10"/><path d="M4 17h16"/><circle cx="18" cy="12" r="1"/>');
+export const addDecimalIcon = wrap('<path d="M5 18h1"/><path d="M9 6v12"/><path d="M13 6v12"/><path d="M17 9v6"/><path d="M20 12h-6"/>');
+export const subtractDecimalIcon = wrap('<path d="M5 18h1"/><path d="M9 6v12"/><path d="M13 6v12"/><path d="M20 12h-6"/>');
+
 export const alignLeft = wrap('<path d="M4 6h16"/><path d="M4 12h10"/><path d="M4 18h13"/>');
 export const alignCenter = wrap('<path d="M4 6h16"/><path d="M7 12h10"/><path d="M6 18h12"/>');
 export const alignRight = wrap('<path d="M4 6h16"/><path d="M10 12h10"/><path d="M7 18h13"/>');
@@ -45,4 +50,5 @@ export const deleteRow = wrap('<rect x="3" y="12" width="18" height="8" rx="1"/>
 export const insertColumn = wrap('<rect x="12" y="3" width="8" height="18" rx="1"/><path d="M5 12h5"/><path d="M7.5 9.5v5"/>');
 export const deleteColumn = wrap('<rect x="12" y="3" width="8" height="18" rx="1"/><path d="M5 12h5"/>');
 export const hideColumn = wrap('<path d="M3 3l18 18"/><path d="M10.6 5.1A9 9 0 0 1 21 12a9 9 0 0 1-3 3.9"/><path d="M6.6 6.6A9 9 0 0 0 3 12a9 9 0 0 0 9 6 9 9 0 0 0 3.2-.6"/>');
+export const caretDown = wrap('<path d="m7 10 5 5 5-5"/>');
 export const more = wrap('<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>');

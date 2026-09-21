@@ -29,13 +29,12 @@
         测试，工具栏的渲染、点击、面板、dispose 全靠在这里点。
       -->
       <section class="toolbar" aria-label="工具栏">
-        <div id="toolbarMount"></div>
         <div class="toolbar-group">
           <span class="hint-inline" id="styleDebug">当前格：无样式</span>
           <button class="button" id="exportButton" type="button">导出选区为 TSV</button>
           <span class="hint-inline" id="shortcutHint">
-            上面整条工具栏来自 <code>createToolbar(sheet, container)</code>——独立入口
-            <code>cyexcel/toolbar</code>，不 import 就不进产物。
+            工具栏与编辑栏由 <code>createSheet()</code> 默认装上（core 负责它们的高度布局）；
+            要精简的用 <code>CyExcelCore</code>，自己挑 <code>topWidgets</code>。
             导出按钮调 <code>sheet.copy({ download: true })</code>，Ctrl/Cmd+S 是它的快捷键，
             Ctrl/Cmd+K 切换主题
           </span>

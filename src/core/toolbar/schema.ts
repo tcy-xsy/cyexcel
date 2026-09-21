@@ -1,8 +1,9 @@
 import { STYLE_KEYS, type CellStyle } from "../style/types";
+import { addDecimal, subtractDecimal } from "../style/numFmtDecimals";
 import { commonValue, everyCellHas } from "./state";
 import type { ToolbarItem, ToolbarSchema } from "./types";
 import * as icons from "./icons";
-import { borderPanel, colorPanel, filterPanel, findPanel } from "./panels";
+import { applyBorderPreset, borderPanel, colorPanel, filterPanel, findPanel } from "./panels";
 
 /**
  * toggle 一个布尔样式键：整片选区已经全是真就清掉，否则全部设上。
@@ -174,6 +175,8 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
   toggleStyleItem("italic", "italic", "斜体", 40, icons.italic),
   toggleStyleItem("underline", "underline", "下划线", 50, icons.underline),
   toggleStyleItem("strike", "strike", "删除线", 60, icons.strike),
+  // 颜色与边框是**分段按钮**：点图标直接套用上次选过的那个，点箭头才展开面板。
+  // 同时有 panel 和 apply 的项会被渲染成这种形态（见 createToolbar.buildControl）。
   {
     id: "text-color",
     group: "format",
@@ -181,11 +184,17 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     type: "color",
     icon: icons.textColor,
     label: "字体颜色",
+    tooltip: "字体颜色（点图标套用上次的颜色）",
+    defaultValue: "#ef4444",
     value: (ctx) => commonValue(ctx, "color") ?? "",
-    panel: (ctx, host) =>
+    apply: (ctx, value) => {
+      ctx.sheet.setRangeStyle(ctx.range, { color: String(value) });
+    },
+    panel: (ctx, host, onChosen) =>
       colorPanel(host, {
         current: commonValue(ctx, "color"),
-        onPick: (color) => ctx.sheet.setRangeStyle(ctx.range, { color: color ?? null })
+        onPick: (color) => ctx.sheet.setRangeStyle(ctx.range, { color: color ?? null }),
+        ...(onChosen !== undefined ? { onChosen } : {})
       })
   },
   {
@@ -195,11 +204,17 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     type: "color",
     icon: icons.background,
     label: "背景颜色",
+    tooltip: "背景颜色（点图标套用上次的颜色）",
+    defaultValue: "#eab308",
     value: (ctx) => commonValue(ctx, "background") ?? "",
-    panel: (ctx, host) =>
+    apply: (ctx, value) => {
+      ctx.sheet.setRangeStyle(ctx.range, { background: String(value) });
+    },
+    panel: (ctx, host, onChosen) =>
       colorPanel(host, {
         current: commonValue(ctx, "background"),
-        onPick: (color) => ctx.sheet.setRangeStyle(ctx.range, { background: color ?? null })
+        onPick: (color) => ctx.sheet.setRangeStyle(ctx.range, { background: color ?? null }),
+        ...(onChosen !== undefined ? { onChosen } : {})
       })
   },
   {
@@ -209,7 +224,10 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     type: "panel",
     icon: icons.border,
     label: "边框",
-    panel: (ctx, host) => borderPanel(host, ctx)
+    tooltip: "边框（点图标套用上次的边框）",
+    defaultValue: "all",
+    apply: (ctx, value) => applyBorderPreset(ctx, String(value)),
+    panel: (ctx, host, onChosen) => borderPanel(host, ctx, onChosen)
   },
   {
     id: "number-format",
@@ -217,10 +235,57 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     order: 100,
     type: "select",
     label: "数字格式",
+    tooltip: "数字格式",
     options: NUMBER_FORMATS,
     value: (ctx) => commonValue(ctx, "numFmt") ?? "",
     apply: (ctx, value) => {
       ctx.sheet.setRangeStyle(ctx.range, { numFmt: value === "" ? null : String(value) });
+    }
+  },
+  // Excel 与 Univer 工具栏上都有的四颗数字格式快捷键（Univer 对应
+  // SetPercentCommand / AddDecimalCommand / SubtractDecimalCommand）。
+  {
+    id: "format-percent",
+    group: "format",
+    order: 110,
+    type: "button",
+    icon: icons.percent,
+    label: "百分比格式",
+    tooltip: "百分比格式（0%）",
+    run: (ctx) => ctx.sheet.setRangeStyle(ctx.range, { numFmt: "0%" })
+  },
+  {
+    id: "format-thousands",
+    group: "format",
+    order: 120,
+    type: "button",
+    icon: icons.thousands,
+    label: "千分位",
+    tooltip: "千分位样式（#,##0.00）",
+    run: (ctx) => ctx.sheet.setRangeStyle(ctx.range, { numFmt: "#,##0.00" })
+  },
+  {
+    id: "add-decimal",
+    group: "format",
+    order: 130,
+    type: "button",
+    icon: icons.addDecimalIcon,
+    label: "增加小数位",
+    tooltip: "增加小数位",
+    run: (ctx) => {
+      ctx.sheet.setRangeStyle(ctx.range, { numFmt: addDecimal(commonValue(ctx, "numFmt")) });
+    }
+  },
+  {
+    id: "subtract-decimal",
+    group: "format",
+    order: 140,
+    type: "button",
+    icon: icons.subtractDecimalIcon,
+    label: "减少小数位",
+    tooltip: "减少小数位",
+    run: (ctx) => {
+      ctx.sheet.setRangeStyle(ctx.range, { numFmt: subtractDecimal(commonValue(ctx, "numFmt")) });
     }
   },
 

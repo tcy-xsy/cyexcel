@@ -10,6 +10,8 @@ export {
   createCyExcelCore,
   type CyExcelColumnConfig,
   type CyExcelCoreOptions,
+  type TopWidgetFactory,
+  type TopWidgetHandle,
   type CyExcelHeaderActionEvent,
   type SortState,
   type FilterState,

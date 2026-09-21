@@ -41,6 +41,11 @@ function sortItems(items: readonly ToolbarItem[]): readonly ToolbarItem[] {
  * `activated$`/`disabled$` 那套语义，但用函数而不是 Observable，因为我们没有 rxjs，
  * 而几十个按钮重算一遍的成本远低于引入一套响应式。
  */
+/** 作为 `CyExcelCoreOptions.topWidgets` 的一项使用。 */
+export function toolbarWidget(options: ToolbarOptions = {}) {
+  return (sheet: CyExcelCore, host: HTMLElement) => createToolbar(sheet, host, options);
+}
+
 export function createToolbar(
   sheet: CyExcelCore,
   container: HTMLElement,
@@ -56,6 +61,8 @@ export function createToolbar(
   moreButton.innerHTML = icons.more;
   styles.apply(moreButton, styles.button);
   moreButton.setAttribute("aria-label", "更多");
+  const disposeMoreFocus = styles.attachFocusStyle(moreButton);
+  const disposeMoreTooltip = styles.attachTooltip(moreButton, "更多工具");
   moreButton.hidden = true;
   const overflowHost = el("div", "cyx-toolbar-overflow");
   overflowHost.hidden = true;
@@ -72,6 +79,12 @@ export function createToolbar(
     range: sheet.selection.range,
     styleOf: (row, column) => sheet.getCellStyle(row, column)
   });
+
+  /**
+   * 分段按钮"上次选过的值"。点主区套用它，不必每次都展开面板重选——Excel 与
+   * Univer 的颜色/边框按钮都是这个行为（Univer 的边框图标甚至会变成上次那一种）。
+   */
+  const remembered = new Map<string, string>();
 
   const rendered: {
     item: ToolbarItem;
@@ -128,7 +141,7 @@ export function createToolbar(
     };
   }
 
-  function openPanel(item: ToolbarItem, anchor: HTMLElement): void {
+  function openPanel(item: ToolbarItem, anchor: HTMLElement, onChosen?: (value: string) => void): void {
     // 先量后关：见 openLayer 的 anchorRect 说明。
     const anchorRect = anchor.getBoundingClientRect();
     // 锚点若本身在某个弹层里（从溢出菜单点进来的），它马上就会随那个层消失，
@@ -137,8 +150,23 @@ export function createToolbar(
     openLayer({
       anchorRect,
       focusTarget,
-      fill: (layer) => item.panel?.(context(), layer) ?? (() => {})
+      fill: (layer) => item.panel?.(context(), layer, onChosen) ?? (() => {})
     });
+  }
+
+  /** 一颗图标按钮的公共部分：外观、无障碍名、tooltip。 */
+  function makeButton(item: ToolbarItem, label: string, icon: string | undefined): HTMLButtonElement {
+    const button = el("button", "cyx-toolbar-button");
+    button.type = "button";
+    styles.apply(button, styles.button);
+    button.setAttribute("aria-label", label);
+    if (icon !== undefined) {
+      // icons.ts 全是字面量常量，没有任何外部输入参与拼接——这是能用 innerHTML 的前提。
+      button.innerHTML = icon;
+    } else {
+      button.textContent = label;
+    }
+    return button;
   }
 
   function buildControl(item: ToolbarItem): HTMLElement {
@@ -158,19 +186,55 @@ export function createToolbar(
       return select;
     }
 
-    const button = el("button", "cyx-toolbar-button");
-    button.type = "button";
-    styles.apply(button, styles.button);
-    button.setAttribute("aria-label", item.label);
-    if (item.tooltip !== undefined) {
-      button.title = item.tooltip;
+    // 分段按钮：同时有 panel 和 apply 的项（颜色、边框）。左边图标直接套用上次选过的
+    // 值，右边箭头展开面板——最常见的操作是"再来一次刚才那个"。
+    if (item.panel !== undefined && item.apply !== undefined) {
+      const group = el("span", "cyx-toolbar-split");
+      styles.apply(group, styles.split);
+
+      const main = makeButton(item, item.label, item.icon);
+      styles.apply(main, styles.splitMain);
+      const swatch = el("span", "cyx-toolbar-split-swatch");
+      styles.apply(swatch, styles.splitSwatch);
+      main.append(swatch);
+      const paintSwatch = (): void => {
+        // 只有颜色类的记忆值是个颜色串；边框记的是 "all"/"top" 这类预设名，
+        // 拿去当背景色只会得到透明，所以那种项干脆不画色带。
+        const value = item.type === "color" ? remembered.get(item.id) ?? item.defaultValue : undefined;
+        swatch.style.background = value ?? "transparent";
+        swatch.hidden = value === undefined;
+      };
+      paintSwatch();
+      main.addEventListener("click", () => {
+        closeLayer();
+        const value = remembered.get(item.id) ?? item.defaultValue;
+        if (value !== undefined) {
+          void item.apply?.(context(), value);
+        }
+      });
+
+      const caret = makeButton(item, `${item.label}（更多）`, icons.caretDown);
+      styles.apply(caret, styles.splitCaret);
+      caret.addEventListener("click", () => {
+        openPanel(item, group, (value) => {
+          remembered.set(item.id, value);
+          paintSwatch();
+        });
+      });
+
+      group.append(main, caret);
+      stateDisposers.push(
+        styles.attachButtonStates(main, () => false),
+        styles.attachButtonStates(caret, () => false),
+        styles.attachFocusStyle(main),
+        styles.attachFocusStyle(caret),
+        styles.attachTooltip(main, item.tooltip ?? item.label),
+        styles.attachTooltip(caret, `${item.label}（更多选项）`)
+      );
+      return group;
     }
-    if (item.icon !== undefined) {
-      // icons.ts 全是字面量常量，没有任何外部输入参与拼接——这是能用 innerHTML 的前提。
-      button.innerHTML = item.icon;
-    } else {
-      button.textContent = item.label;
-    }
+
+    const button = makeButton(item, item.label, item.icon);
     button.addEventListener("click", () => {
       if (item.panel !== undefined) {
         openPanel(item, button);
@@ -182,12 +246,16 @@ export function createToolbar(
     return button;
   }
 
+  /** 分隔线与"它前面那一项的下标"——那一项被收起时分隔线也要跟着消失。 */
+  const separators: { node: HTMLElement; precedingIndex: number }[] = [];
+
   let currentGroup: string | null = null;
   for (const item of items) {
     if (currentGroup !== null && item.group !== currentGroup) {
       const line = el("span", "cyx-toolbar-separator");
       styles.apply(line, styles.separator);
       root.append(line);
+      separators.push({ node: line, precedingIndex: rendered.length - 1 });
     }
     currentGroup = item.group;
     const slot = el("span", "cyx-toolbar-slot");
@@ -196,6 +264,12 @@ export function createToolbar(
     slot.append(control);
     root.append(slot);
     const entry: (typeof rendered)[number] = { item, node: slot, control };
+    if (control instanceof HTMLButtonElement || control instanceof HTMLSelectElement) {
+      stateDisposers.push(
+        styles.attachFocusStyle(control),
+        styles.attachTooltip(control, item.tooltip ?? item.label)
+      );
+    }
     if (control instanceof HTMLButtonElement) {
       let activated = false;
       stateDisposers.push(styles.attachButtonStates(control, () => activated));
@@ -226,11 +300,50 @@ export function createToolbar(
     }
   }
 
+  /**
+   * 各项的自然宽度，量一次就缓存。
+   *
+   * **不能每次现量**：被隐藏的项 `offsetWidth` 是 0，于是下一轮会算成"都放得下"、
+   * 全部显示，ResizeObserver 随即又触发、又隐藏——工具栏会一直抖。按钮的宽度本来
+   * 就不随容器变，量一次足够。
+   */
+  let naturalWidths: number[] | null = null;
+  let separatorsWidth = 0;
+
+  function measureNaturalWidths(): number[] {
+    if (naturalWidths !== null) {
+      return naturalWidths;
+    }
+    const hiddenBefore = rendered.map((entry) => entry.node.hasAttribute("hidden"));
+    for (const entry of rendered) {
+      entry.node.removeAttribute("hidden");
+    }
+    const widths = rendered.map((entry) => entry.node.offsetWidth);
+    separatorsWidth = [...root.querySelectorAll(".cyx-toolbar-separator")].reduce(
+      (sum, node) => sum + (node as HTMLElement).offsetWidth,
+      0
+    );
+    rendered.forEach((entry, index) => {
+      if (hiddenBefore[index] === true) {
+        entry.node.setAttribute("hidden", "");
+      }
+    });
+    // 容器还没布局（display:none 里、或尚未插进文档）时量出来全是 0——那不是
+    // "所有按钮都零宽"，而是"还不知道"，所以不缓存，等下一次再量。
+    if (widths.every((width) => width === 0)) {
+      return widths;
+    }
+    naturalWidths = widths;
+    return widths;
+  }
+
   function applyOverflow(): void {
+    const itemWidths = measureNaturalWidths();
     const { visible, overflowed } = computeOverflow({
-      itemWidths: rendered.map((entry) => entry.node.offsetWidth),
+      itemWidths,
       available: root.clientWidth,
-      moreButtonWidth: moreButton.offsetWidth || 32
+      moreButtonWidth: moreButton.offsetWidth || 32,
+      separatorsWidth
     });
     for (const index of visible) {
       rendered[index]?.node.removeAttribute("hidden");
@@ -239,6 +352,11 @@ export function createToolbar(
       rendered[index]?.node.setAttribute("hidden", "");
     }
     moreButton.hidden = overflowed.length === 0;
+    // 溢出是从左往右连续的，所以"前一项还在"就等于"这条分隔线两侧都还有东西"。
+    for (const separator of separators) {
+      const preceding = rendered[separator.precedingIndex];
+      separator.node.hidden = preceding === undefined || preceding.node.hasAttribute("hidden");
+    }
   }
 
   /** 一次事务可能连发多条 change，几十个按钮没必要各算几遍——合并到下一帧。 */
@@ -361,6 +479,8 @@ export function createToolbar(
         frame = 0;
       }
       resizeObserver?.disconnect();
+      disposeMoreFocus();
+      disposeMoreTooltip();
       for (const dispose of [...disposers, ...stateDisposers]) {
         dispose();
       }
