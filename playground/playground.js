@@ -312,13 +312,9 @@ function rebuild() {
   statusBar.classList.remove("status-bar--error");
   // A fresh instance starts unfiltered — a stale "0 rows matched" overlay
   // left over from the previous instance would be actively wrong, not just
-  // out of date (unlike sortHint's text, which is merely stale until the
-  // next sort).
+  // out of date. 搜索状态不必在这里清：查找面板现在归工具栏管，而工具栏会随
+  // 实例一起重建（mountToolbar 先 dispose 旧的）。
   emptyFilterState.hidden = true;
-  // Same reasoning: a fresh instance has no search state either, and
-  // currentMatch would otherwise point at coordinates in the previous
-  // instance's now-disposed sheet.
-  currentMatch = null;
 
   const rows = buildRows(config.rowCount);
   // Pass every real ColumnDefinition field through as-is — only "label" is
@@ -457,14 +453,6 @@ function registerPlaygroundShortcuts(sheetCore) {
     void exportSelection(sheetCore);
   };
 }
-
-undoButton.addEventListener("click", () => {
-  core?.undo();
-});
-
-redoButton.addEventListener("click", () => {
-  core?.redo();
-});
 
 readCellButton.addEventListener("click", () => {
   if (!core) {

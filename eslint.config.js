@@ -1,5 +1,6 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
+import globals from "globals";
 
 export default tseslint.config(
   {
@@ -194,20 +195,20 @@ export default tseslint.config(
     }
   },
   {
-    // Plain browser script (loaded via <script type="module">, not built or
-    // type-checked), so DOM/browser globals need the same no-undef
-    // exemption the .ts block gets from the TypeScript compiler instead.
+    // Plain browser scripts (loaded via <script type="module">, not built or
+    // type-checked). 这里**声明浏览器全局**而不是关掉 no-undef：关掉的话
+    // `document` 不报了，但 `undoButton is not defined` 这类真错误也一起不报，
+    // 只能等到运行时在页面上炸——Step 25 删 playground 旧控件时就是这么漏掉两处的。
     files: ["playground/**/*.js", "examples/**/*.js"],
-    rules: {
-      "no-undef": "off"
+    languageOptions: {
+      globals: globals.browser
     }
   },
   {
-    // Plain Node script, same story as the browser-globals block above but
-    // for Node globals (process/console/URL) instead of DOM ones.
+    // Plain Node scripts. 同上，声明 Node 全局而不是关规则。
     files: ["scripts/**/*.mjs"],
-    rules: {
-      "no-undef": "off"
+    languageOptions: {
+      globals: globals.node
     }
   }
 );
