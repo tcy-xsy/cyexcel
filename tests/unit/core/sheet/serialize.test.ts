@@ -9,6 +9,7 @@ import {
 } from "../../../../src/core/sheet";
 import type { SheetSnapshot, WorkbookSnapshot } from "../../../../src/core/sheet";
 import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
+import { CellValueType } from "../../../../src/core/sheet/types";
 
 function buildInput(matrix: CellMatrix) {
   return {
@@ -56,7 +57,7 @@ describe("serializeSheet", () => {
   it("survives a JSON round trip unchanged", () => {
     const matrix = new CellMatrix();
     matrix.set(0, 0, { v: "text" });
-    matrix.set(1, 1, { v: 3.5, t: "money", s: "s7" });
+    matrix.set(1, 1, { v: 3.5, t: CellValueType.NUMBER, s: "s7" });
     const snapshot = serializeSheet(buildInput(matrix));
     // JSON.stringify 恰好丢掉值为 undefined 的键，而 toEqual 也正好把那种键
     // 当作不存在——两者叠加，这条断言对**往返唯一会改变的那件事**是瞎的。
@@ -85,11 +86,16 @@ describe("deserializeSheet", () => {
   it("round-trips a date cell through its semantic type name", () => {
     // spec §4.1：不需要额外的原始类型标记，t 已经携带了这个信息
     const matrix = new CellMatrix();
-    matrix.set(0, 0, { v: "2026-01-01T00:00:00.000Z", t: "date" });
+    // 日期现在与 Excel 一致，存序列号（数字）+ 日期 numFmt；这里留一条字符串值的
+    // 往返，测的是 `t` 与 `v` 原样进出，不是日期语义。
+    matrix.set(0, 0, { v: "2026-01-01T00:00:00.000Z", t: CellValueType.STRING });
     const restored = deserializeSheet(
       JSON.parse(JSON.stringify(serializeSheet(buildInput(matrix)))) as ReturnType<typeof serializeSheet>
     );
-    expect(restored.matrix.get(0, 0)).toEqual({ v: "2026-01-01T00:00:00.000Z", t: "date" });
+    expect(restored.matrix.get(0, 0)).toEqual({
+      v: "2026-01-01T00:00:00.000Z",
+      t: CellValueType.STRING
+    });
   });
 });
 

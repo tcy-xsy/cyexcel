@@ -3,20 +3,19 @@ import type { LayoutRootAction } from "../mutations/LayoutRootMutation";
 import type { Mutation } from "../mutations/types";
 import type { CellRange } from "../types";
 import type { CellStylePatch } from "../style/styleKey";
+import type { CellValue } from "../sheet/types";
 import type {
   RowHeightCommandProvenance,
   SetRowHeightUpdate
 } from "./SetRowHeightsCommand";
 
 export interface DataCommandMutationFactory {
-  createSetCell(row: number, column: number, value: unknown): Mutation;
-  createSetRange(range: CellRange, values: readonly (readonly unknown[])[]): Mutation;
+  createSetCell(row: number, column: number, value: CellValue | null | undefined): Mutation;
+  createSetRange(range: CellRange, values: readonly (readonly (CellValue | null | undefined)[])[]): Mutation;
   /** 一片区域改样式（合并语义）。Step 24。 */
   createSetStyle(range: CellRange, patch: CellStylePatch): Mutation;
-  /** 格级语义类型。Step 25 之后。 */
-  createSetCellType(range: CellRange, typeName: string | null): Mutation;
   createSetMerges(merges: readonly CellRange[]): Mutation;
-  createInsertRows(start: number, rows: readonly (readonly unknown[])[]): Mutation;
+  createInsertRows(start: number, rows: readonly (readonly (CellValue | null | undefined)[])[]): Mutation;
   createDeleteRows(start: number, count: number): Mutation;
   createMoveRows(start: number, count: number, target: number): Mutation;
   /** Whole-axis permutation, `order[newPosition] = oldPosition`. */

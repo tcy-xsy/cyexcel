@@ -1,9 +1,18 @@
 import { CELL_FONT, CELL_PADDING, SELECTION_STROKE_COLOR, SELECTION_STROKE_WIDTH } from "../render/theme";
 import type { CellEditor, CellEditorContext } from "./CellEditor";
 import { positionEditorElement } from "./positionEditorElement";
+import type { CellValue } from "../sheet/types";
+import { serialFromISODate, serialToISODate } from "../style/dateSerial";
 
-function toDateInputValue(value: unknown): string {
-  return value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString().slice(0, 10) : "";
+/**
+ * 格子里存的是 Excel 序列号（数字），`<input type="date">` 要的是 `yyyy-mm-dd`。
+ * 不是序列号的值（比如还没设过的空格）就交给浏览器显示空。
+ */
+function toDateInputValue(value: CellValue | undefined): string {
+  if (typeof value !== "number") {
+    return "";
+  }
+  return serialToISODate(value) ?? "";
 }
 
 /**
@@ -40,8 +49,14 @@ export function createDateCellEditor(): CellEditor {
     focus(): void {
       input?.focus();
     },
-    getValue(): unknown {
-      return input?.value ? new Date(input.value) : null;
+    getValue(): CellValue {
+      // 写回的也是序列号——日期在这个模型里就是数字 + 日期格式（同 Excel）。
+      if (!input?.value) {
+        return "";
+      }
+      // `<input type="date">` 的 value 就是 `yyyy-mm-dd`，直接按墙上时钟换算，
+      // 不绕 `Date`（那会按 UTC 解析，东八区往返会多出 0.333 天）。
+      return serialFromISODate(input.value) ?? "";
     },
     destroy(): void {
       input?.remove();

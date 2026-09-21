@@ -20,6 +20,8 @@ export {
 } from "./CyExcelCore";
 
 export { CyExcelError, CyExcelErrorCode } from "./errors";
+// 日期 = 序列号 + 日期格式（同 Excel/xlsx），宿主要 Date 或 ISO 串就用这几个转。
+export { fromSerial, serialFromISODate, serialToISODate, toSerial } from "./style/dateSerial";
 
 export type { CellRange, Command, Disposer } from "./types";
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { CellTypeRegistry, registerBuiltinCellTypes } from "../../../../src/core/cells";
+import type { CellValue } from "../../../../src/core/sheet/types";
 
 function registry(): CellTypeRegistry {
   const registry = new CellTypeRegistry();
@@ -11,11 +12,10 @@ function registry(): CellTypeRegistry {
 const ctx = { row: 0, column: {} as never };
 
 describe("builtin cell types — text", () => {
-  it("formats values as their string form, empty for null/undefined", () => {
+  it("formats values as their string form, empty for an unoccupied cell", () => {
     const type = registry().resolve("text");
     expect(type.format("hello", ctx)).toBe("hello");
     expect(type.format(undefined, ctx)).toBe("");
-    expect(type.format(null, ctx)).toBe("");
   });
 });
 
@@ -68,7 +68,7 @@ describe("builtin cell types — boolean", () => {
     const type = registry().resolve("boolean");
     // A "boolean" column may hold any truthy/falsy value — format() and
     // parse() both coerce — so sorting has to agree with what is drawn.
-    const values: unknown[] = [true, 0, false, 1];
+    const values: CellValue[] = [true, 0, false, 1];
 
     const byString = [...values].sort((left, right) =>
       String(left) < String(right) ? -1 : String(left) > String(right) ? 1 : 0
@@ -84,63 +84,59 @@ describe("builtin cell types — boolean", () => {
 });
 
 describe("builtin cell types — date", () => {
-  it("formats a Date as an ISO date (YYYY-MM-DD)", () => {
+  // 日期不是一种值类型：格子里存的是 Excel 序列号（数字），显示成什么样由
+  // numFmt 决定，这个类型只负责序列号 <-> 日期串。46037 = 2026-01-15。
+  const JAN_15_2026 = 46037;
+
+  it("formats a serial number as an ISO date (YYYY-MM-DD)", () => {
     const type = registry().resolve("date");
-    expect(type.format(new Date(Date.UTC(2026, 0, 15)), ctx)).toBe("2026-01-15");
+    expect(type.format(JAN_15_2026, ctx)).toBe("2026-01-15");
   });
 
-  it("returns an empty string for an invalid date", () => {
+  it("falls back to the raw text when the value isn't a serial number", () => {
     const type = registry().resolve("date");
-    expect(type.format(new Date(Number.NaN), ctx)).toBe("");
+    expect(type.format("not a date", ctx)).toBe("not a date");
+    expect(type.format(undefined, ctx)).toBe("");
   });
 
-  it("parses an ISO date string back into a Date", () => {
+  it("parses an ISO date string into a serial number", () => {
     const type = registry().resolve("date");
-    const parsed = type.parse?.("2026-01-15", ctx) as Date;
-    expect(parsed.toISOString().slice(0, 10)).toBe("2026-01-15");
+    expect(type.parse?.("2026-01-15", ctx)).toBe(JAN_15_2026);
+  });
+
+  it("keeps unparseable text as text instead of inventing a serial", () => {
+    const type = registry().resolve("date");
+    expect(type.parse?.("not a date", ctx)).toBe("not a date");
   });
 
   it("serializes for editing the same way it formats for display", () => {
     const type = registry().resolve("date");
-    expect(type.serialize?.(new Date(Date.UTC(2026, 0, 15)), ctx)).toBe("2026-01-15");
+    expect(type.serialize?.(JAN_15_2026, ctx)).toBe("2026-01-15");
   });
 
   it("round-trips through serialize -> parse without changing the value", () => {
     const type = registry().resolve("date");
-    const original = new Date(Date.UTC(2026, 0, 15));
-    const parsed = type.parse?.(type.serialize?.(original, ctx) ?? "", ctx) as Date;
-    expect(parsed.toISOString().slice(0, 10)).toBe("2026-01-15");
+    expect(type.parse?.(type.serialize?.(JAN_15_2026, ctx) ?? "", ctx)).toBe(JAN_15_2026);
   });
 
-  it("orders chronologically, which is not the order the raw Date strings give", () => {
+  it("round-trips a whole-day serial without picking up a time-of-day fraction", () => {
+    // Regression: going through `new Date("2026-01-15")` parses as UTC
+    // midnight, which in a UTC+8 zone comes back as 46037.333. A serial is a
+    // wall clock — it must survive the round trip in every timezone.
     const type = registry().resolve("date");
-    // String(date) starts with the weekday name, so the default string
-    // comparator orders these Mon < Sat < Wed. Noon UTC keeps the weekday
-    // the same in every plausible local timezone.
-    const wedJan01 = new Date(Date.UTC(2020, 0, 1, 12));
-    const monJan06 = new Date(Date.UTC(2020, 0, 6, 12));
-    const satJan11 = new Date(Date.UTC(2020, 0, 11, 12));
-    const chronological = [wedJan01, monJan06, satJan11];
-
-    const byString = [...chronological].sort((left, right) =>
-      String(left) < String(right) ? -1 : String(left) > String(right) ? 1 : 0
-    );
-    // Premise: the two orders genuinely disagree, so this test can only pass
-    // because of compare(), never by coincidence.
-    expect(byString).toEqual([monJan06, satJan11, wedJan01]);
-
-    expect([satJan11, wedJan01, monJan06].sort((left, right) => type.compare?.(left, right) ?? 0))
-      .toEqual(chronological);
+    const parsed = type.parse?.("2026-01-15", ctx);
+    expect(Number.isInteger(parsed)).toBe(true);
   });
 
-  it("groups values that are not valid dates ahead of the real ones", () => {
+  it("needs no compare(): serial numbers are already in chronological order", () => {
     const type = registry().resolve("date");
-    const invalid = new Date(Number.NaN);
-    const real = new Date(Date.UTC(2020, 0, 1));
-
-    expect(type.compare?.(invalid, real)).toBeLessThan(0);
-    expect(type.compare?.(real, invalid)).toBeGreaterThan(0);
-    expect(type.compare?.(invalid, new Date("nope"))).toBe(0);
+    // Premise — the three serials really are consecutive days, so plain
+    // numeric order is chronological order and a comparator would be dead code.
+    const jan01 = type.parse?.("2020-01-01", ctx) as number;
+    const jan06 = type.parse?.("2020-01-06", ctx) as number;
+    const jan11 = type.parse?.("2020-01-11", ctx) as number;
+    expect([jan11, jan01, jan06].sort((left, right) => left - right)).toEqual([jan01, jan06, jan11]);
+    expect(type.compare).toBeUndefined();
   });
 });
 
@@ -160,77 +156,5 @@ describe("builtin cell types — select", () => {
     const type = registry().resolve("select");
     const context = { row: 0, column: { options: [{ value: "draft", label: "草稿" }] } as never };
     expect(type.format("archived", context)).toBe("archived");
-  });
-});
-
-describe("builtin cell types — array", () => {
-  it("previews the first few items and the total count", () => {
-    const type = registry().resolve("array");
-    expect(type.format(["a", "b", "c", "d"], ctx)).toBe("[4] a, b, c, ...");
-    expect(type.format(["a"], ctx)).toBe("[1] a");
-    expect(type.format(undefined, ctx)).toBe("");
-  });
-
-  it("parses JSON array syntax back into an array", () => {
-    const type = registry().resolve("array");
-    expect(type.parse?.('["a","b",3]', ctx)).toEqual(["a", "b", 3]);
-  });
-
-  it("serializes using JSON array syntax, not the comma-joined display preview", () => {
-    const type = registry().resolve("array");
-    expect(type.serialize?.(["a", "b", 3], ctx)).toBe('["a","b",3]');
-  });
-
-  it("round-trips arbitrary nested values through serialize -> parse", () => {
-    const type = registry().resolve("array");
-    const original = ["a", 1, { nested: true }];
-    expect(type.parse?.(type.serialize?.(original, ctx) ?? "", ctx)).toEqual(original);
-  });
-
-  it("degrades to an empty array instead of throwing on malformed input", () => {
-    const type = registry().resolve("array");
-    expect(type.parse?.("not json", ctx)).toEqual([]);
-    expect(type.parse?.('{"not":"an array"}', ctx)).toEqual([]);
-  });
-});
-
-describe("builtin cell types — json", () => {
-  it("previews a serialized, length-capped form", () => {
-    const type = registry().resolve("json");
-    expect(type.format({ a: 1 }, ctx)).toBe('{"a":1}');
-  });
-
-  it("returns an empty string when the value can't be serialized to JSON (e.g. undefined)", () => {
-    const type = registry().resolve("json");
-    expect(type.format(undefined, ctx)).toBe("");
-  });
-
-  it("truncates long serialized values", () => {
-    const type = registry().resolve("json");
-    const big = { text: "x".repeat(200) };
-    const formatted = type.format(big, ctx);
-    expect(formatted.length).toBeLessThan(90);
-    expect(formatted.endsWith("...")).toBe(true);
-  });
-
-  it("parses JSON text back into the original value", () => {
-    const type = registry().resolve("json");
-    expect(type.parse?.('{"a":1}', ctx)).toEqual({ a: 1 });
-  });
-
-  it("serializes the same way it previews for display when short", () => {
-    const type = registry().resolve("json");
-    expect(type.serialize?.({ a: 1 }, ctx)).toBe('{"a":1}');
-  });
-
-  it("round-trips through serialize -> parse without changing the value", () => {
-    const type = registry().resolve("json");
-    const original = { a: 1, nested: { b: [1, 2, 3] } };
-    expect(type.parse?.(type.serialize?.(original, ctx) ?? "", ctx)).toEqual(original);
-  });
-
-  it("degrades to undefined instead of throwing on malformed input", () => {
-    const type = registry().resolve("json");
-    expect(type.parse?.("not json", ctx)).toBeUndefined();
   });
 });

@@ -6,6 +6,7 @@ import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "../../../../sr
 import type { ViewportState } from "../../../../src/core/layout";
 import { SceneSnapshot } from "../../../../src/core/scene";
 import type { CellRange } from "../../../../src/core/types";
+import type { CellValue } from "../../../../src/core/sheet/types";
 
 interface FakeContainer {
   readonly element: HTMLElement;
@@ -59,7 +60,7 @@ function createScene(layout: LayoutEngine, viewport: ViewportState = VIEWPORT): 
 
 function createRecordingEditor(
   overrides: {
-    readonly value?: unknown;
+    readonly value?: CellValue;
     readonly validate?: () => ValidationResult;
   } = {}
 ): {
@@ -85,7 +86,7 @@ function createRecordingEditor(
     focus(): void {
       calls.push("focus");
     },
-    getValue(): unknown {
+    getValue(): CellValue {
       calls.push("getValue");
       return value;
     },
@@ -649,15 +650,17 @@ describe("EditorManager.serializeCellValue — initial edit text", () => {
     const manager = new EditorManager({
       container: container.element,
       getScene: () => createScene(layout),
-      getCellValue: () => ({ nested: true }),
+      // 46037 = 2026-01-15：日期在格子里是序列号，编辑时要看到的是日期串，
+      // 这正是 serializeCellValue 存在的理由。
+      getCellValue: () => 46037,
       commitValue: () => {},
       editorFactory: () => recording.editor,
-      serializeCellValue: (_row, _column, value) => JSON.stringify(value)
+      serializeCellValue: (_row, _column, value) => `serial:${String(value)}`
     });
 
     manager.startEdit(0, 0);
 
-    expect(recording.getLastContext()?.initialText).toBe('{"nested":true}');
+    expect(recording.getLastContext()?.initialText).toBe("serial:46037");
   });
 
   it("leaves initialText undefined when serializeCellValue is not provided", () => {

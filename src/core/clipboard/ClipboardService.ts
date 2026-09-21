@@ -6,6 +6,7 @@ import { buildCellGrid } from "./serializers";
 import type { CopiedStyles } from "./styleClipboard";
 import { decodeTsv } from "./tsv";
 import type { ClipboardCopyOptions, ClipboardCopyResult, ClipboardOptions, ClipboardPasteOptions, CopyPlan } from "./types";
+import type { CellValue } from "../sheet/types";
 
 const DEFAULT_MAX_CELLS = 100_000;
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024;
@@ -17,17 +18,17 @@ export interface ClipboardIO {
 }
 
 export interface ClipboardServiceOptions {
-  readonly getCellValue: (row: number, column: number) => unknown;
+  readonly getCellValue: (row: number, column: number) => CellValue | undefined;
   readonly getColumn: (column: number) => RuntimeColumn;
   readonly getRowCount: () => number;
   readonly getColumnCount: () => number;
-  readonly parseValue: (row: number, column: number, text: string) => unknown;
+  readonly parseValue: (row: number, column: number, text: string) => CellValue;
   readonly getSelectionRange: () => CellRange;
   readonly getStoreVersion: () => number;
   /** Expected to be a single Command execution (e.g. one SetRangeCommand), so one paste = one transaction = one History entry. */
   readonly applyRangeCommand: (
     range: CellRange,
-    values: readonly (readonly unknown[])[],
+    values: readonly (readonly (CellValue | null | undefined)[])[],
     /** 认领成功时带上的样式——值与样式必须落在同一个事务里，否则撤销要按两次。 */
     styles?: CopiedStyles
   ) => void | Promise<void>;
@@ -148,9 +149,9 @@ export class ClipboardService {
       return;
     }
 
-    const values: unknown[][] = [];
+    const values: (CellValue | null | undefined)[][] = [];
     for (let row = anchor.startRow; row <= endRow; row += 1) {
-      const rowValues: unknown[] = [];
+      const rowValues: (CellValue | null | undefined)[] = [];
       for (let column = anchor.startColumn; column <= endColumn; column += 1) {
         const runtimeColumn = this.#options.getColumn(column);
         if (runtimeColumn.clipboard.paste === false) {

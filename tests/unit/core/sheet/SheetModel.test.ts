@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { SheetModel } from "../../../../src/core/sheet";
+import { CellValueType } from "../../../../src/core/sheet/types";
 
 describe("SheetModel", () => {
   it("starts empty with the coordinate space coming from blank counts alone", () => {
@@ -31,9 +32,9 @@ describe("SheetModel", () => {
   it("getCell returns the bare value, not the record", () => {
     // ADR 0004 §3.6：消费方都吃裸值，接线时才不用改
     const model = SheetModel.createEmpty();
-    model.setRecord(1, 1, { v: 42, t: "money", s: "s7" });
+    model.setRecord(1, 1, { v: 42, t: CellValueType.NUMBER, s: "s7" });
     expect(model.getCell(1, 1)).toBe(42);
-    expect(model.getRecord(1, 1)).toEqual({ v: 42, t: "money", s: "s7" });
+    expect(model.getRecord(1, 1)).toEqual({ v: 42, t: CellValueType.NUMBER, s: "s7" });
   });
 
   it("getCell returns undefined for an unoccupied cell", () => {
@@ -43,9 +44,9 @@ describe("SheetModel", () => {
 
   it("setCell preserves the other fields of an existing record", () => {
     const model = SheetModel.createEmpty();
-    model.setRecord(0, 0, { v: "old", t: "money", s: "s1" });
+    model.setRecord(0, 0, { v: "old", t: CellValueType.STRING, s: "s1" });
     model.setCell(0, 0, "new");
-    expect(model.getRecord(0, 0)).toEqual({ v: "new", t: "money", s: "s1" });
+    expect(model.getRecord(0, 0)).toEqual({ v: "new", t: CellValueType.STRING, s: "s1" });
   });
 
   it("setCell on an unoccupied cell creates a record with only v", () => {
@@ -57,9 +58,9 @@ describe("SheetModel", () => {
 
   it("round-trips through a snapshot", () => {
     const model = SheetModel.createEmpty({ blankRows: 7, blankColumns: 3 });
-    model.setRecord(2, 1, { v: 5, t: "number" });
+    model.setRecord(2, 1, { v: 5, t: CellValueType.NUMBER });
     const restored = SheetModel.fromSnapshot(model.toSnapshot());
-    expect(restored.getRecord(2, 1)).toEqual({ v: 5, t: "number" });
+    expect(restored.getRecord(2, 1)).toEqual({ v: 5, t: CellValueType.NUMBER });
     expect(restored.rowCount()).toBe(10); // 3 行数据 + 7 空白
     expect(restored.columnCount()).toBe(5); // 2 列数据 + 3 空白
   });

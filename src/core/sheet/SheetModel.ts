@@ -5,7 +5,7 @@ import { assertValidBlankCount, resolveCoordinateSpace } from "./coordinateSpace
 import { IndexedTable } from "./IndexedTable";
 import { IndexedTableRegistry } from "./IndexedTableRegistry";
 import { deserializeSheet, serializeSheet } from "./serialize";
-import type { CellRecord, ColumnMeta, RowMeta, SheetSnapshot } from "./types";
+import type { CellRecord, CellValue, ColumnMeta, RowMeta, SheetSnapshot } from "./types";
 import { DEFAULT_BLANK_COLUMNS, DEFAULT_BLANK_ROWS } from "./types";
 import {
   buildDeleteRowsPlan,
@@ -193,7 +193,7 @@ export class SheetModel {
   }
 
   /** 裸值，不是记录（ADR 0004 §3.6）。 */
-  getCell(row: number, column: number): unknown {
+  getCell(row: number, column: number): CellValue | undefined {
     return this.#matrix.get(row, column)?.v;
   }
 
@@ -206,7 +206,7 @@ export class SheetModel {
    * actually have something in them" walk Step 23's search scanner needs,
    * as opposed to scanning the full (possibly million-row) coordinate space.
    */
-  *occupiedCells(): Generator<{ row: number; column: number; value: unknown }> {
+  *occupiedCells(): Generator<{ row: number; column: number; value: CellValue | undefined }> {
     for (const [row, bucket] of this.#matrix.rows()) {
       for (const key of Object.keys(bucket)) {
         const column = Number(key);
@@ -241,7 +241,7 @@ export class SheetModel {
   }
 
   /** 只改值，保留该格已有的 `t`/`s`/`f`/`si`。 */
-  setCell(row: number, column: number, value: unknown): void {
+  setCell(row: number, column: number, value: CellValue | undefined): void {
     const existing = this.#matrix.get(row, column);
     this.#matrix.set(row, column, existing ? { ...existing, v: value } : { v: value });
   }

@@ -6,6 +6,7 @@ import { WrapMeasurementService } from "../../../../src/core/measurement";
 import { SceneSnapshot } from "../../../../src/core/scene";
 import { RecordingCanvasContext } from "../../../helpers/RecordingCanvasContext";
 import { provenanceViewOf } from "../../../helpers/rowHeightAuthority";
+import type { CellValue } from "../../../../src/core/sheet/types";
 
 // RecordingCanvasContext measures a deterministic 7px per character, and the
 // theme wraps at CELL_LINE_HEIGHT 16 + CELL_PADDING 4 on each side. So a
@@ -68,12 +69,12 @@ interface Harness {
 
 function createService(options: {
   readonly columns?: readonly RuntimeColumn[];
-  readonly cells?: ReadonlyMap<string, unknown>;
+  readonly cells?: ReadonlyMap<string, CellValue>;
   readonly layout?: LayoutEngine;
   readonly sceneHeight?: number;
 } = {}): Harness {
   const columns = options.columns ?? [textColumn({ wrap: true })];
-  const cells = options.cells ?? new Map<string, unknown>();
+  const cells = options.cells ?? new Map<string, CellValue>();
   const layout = options.layout ?? createLayout();
   const onError = vi.fn();
   const service = new WrapMeasurementService({
@@ -134,7 +135,7 @@ describe("WrapMeasurementService.computeRequiredRowHeight", () => {
         textColumn({ wrap: true }),
         textColumn({ wrap: true })
       ],
-      cells: new Map<string, unknown>([
+      cells: new Map<string, CellValue>([
         ["0:0", "aaaaaaaaaaaa bbbbbbbbbbbb cccccccccccc"],
         ["0:1", "short"]
       ]),

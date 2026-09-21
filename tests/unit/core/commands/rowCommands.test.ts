@@ -208,15 +208,19 @@ describe("MoveRowsCommand", () => {
     expect(readNames(store, 5)).toEqual(["A", "D", "B", "C", "E"]);
   });
 
-  // 行对象不再是存储（ADR 0004 §3.1），所以"行的身份"这件事没有了；仍然成立
-  // 而且仍然要钉的是**单元格值**的身份：复杂值是原子的（ADR 0001 §5），移动一段
-  // 行不能把值复制一份。
-  it("moves complex cell values by reference, not by copy", () => {
-    const marker = { id: "row-b" };
+  // 行对象不再是存储（ADR 0004 §3.1），所以"行的身份"这件事没有了；也不再有
+  // "复杂值按引用搬"要钉——`CellValue` 收紧成 string | number | boolean 之后，
+  // 格子里放不进可共享的对象。还成立的是：搬行搬的是**整行**，不是被断言盯着的
+  // 那一列。
+  it("moves every column of a row together, not just the first", () => {
     const store = new TableStore(
       createSheetFromRows(
-        [{ name: "A" }, { name: "B", marker }, { name: "C" }],
-        ["name", "marker"]
+        [
+          { name: "A", note: "a-note" },
+          { name: "B", note: "b-note" },
+          { name: "C", note: "c-note" }
+        ],
+        ["name", "note"]
       )
     );
     const manager = createTableCommandManager(store);
@@ -225,7 +229,10 @@ describe("MoveRowsCommand", () => {
     manager.execute(command);
 
     expect(store.getCell(2, 0)).toBe("B");
-    expect(store.getCell(2, 1)).toBe(marker);
+    expect(store.getCell(2, 1)).toBe("b-note");
+    // 其它行的第二列没有跟着错位。
+    expect(store.getCell(0, 1)).toBe("a-note");
+    expect(store.getCell(1, 1)).toBe("c-note");
   });
 
   it("undoing a move-earlier round-trips back to the original order", () => {

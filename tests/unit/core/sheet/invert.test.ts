@@ -7,6 +7,7 @@ import { SheetModel } from "../../../../src/core/sheet/SheetModel";
 import { WorkbookModel } from "../../../../src/core/sheet/WorkbookModel";
 import type { SheetSnapshot, WorkbookSnapshot } from "../../../../src/core/sheet/types";
 import type { CellRange } from "../../../../src/core/types";
+import { CellValueType } from "../../../../src/core/sheet/types";
 
 /**
  * `applySheetMutation` 在 4A 是本文件里的一个本地 helper（当时的注释写着"4A 没有
@@ -39,7 +40,7 @@ function workbookFixture(): WorkbookModel {
   const workbook = WorkbookModel.createEmpty({ sheet: { blankRows: 2, blankColumns: 2 } });
   const model = workbook.sheet();
   model.setRecord(0, 0, { v: "a0" });
-  model.setRecord(0, 1, { v: "b0", t: "text" });
+  model.setRecord(0, 1, { v: "b0", t: CellValueType.STRING });
   model.setRecord(1, 0, { v: "a1" });
   model.setRecord(1, 2, { v: "c1", s: "s1" });
   model.setRecord(2, 1, { v: "b2", f: "=1+1" });
@@ -244,7 +245,7 @@ function expectNonInvasive(mutation: SheetMutation): void {
 
 describe("invertSheetMutation — 精确性", () => {
   it("格子：set-cell 与 set-range 往返后逐字段相等", () => {
-    expectExactRoundTrip({ type: "set-cell", row: 0, column: 0, record: { v: "changed", t: "money" } });
+    expectExactRoundTrip({ type: "set-cell", row: 0, column: 0, record: { v: "changed", t: CellValueType.NUMBER } });
     // 区域里混着"原本有记录"与"原本是空格"两种格子，逆必须两种都还原
     expectExactRoundTrip({
       type: "set-range",

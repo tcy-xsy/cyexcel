@@ -1,11 +1,12 @@
+import type { CellValue } from "../sheet/types";
 /**
  * Sorts rows by a user-supplied key extractor and comparator, returning a
  * permutation without touching model state.
  */
 export interface SortRequest {
   readonly rowCount: number;
-  readonly getSortKey: (row: number) => unknown;
-  readonly compare: (left: unknown, right: unknown) => number;
+  readonly getSortKey: (row: number) => CellValue | undefined;
+  readonly compare: (left: CellValue | undefined, right: CellValue | undefined) => number;
   readonly direction: "asc" | "desc";
   readonly signal?: AbortSignal;
   readonly onProgress?: (ratio: number) => void;
@@ -37,7 +38,7 @@ export function computeSortOrder(request: SortRequest): Int32Array | null {
   // Keys up front: a user-supplied getSortKey may format or parse, and a
   // comparison sort would otherwise call it O(n log n) times. Only visible
   // rows need a key at all — a filtered row never enters the comparison.
-  const keys: unknown[] = new Array(targets.length) as unknown[];
+  const keys = new Array<CellValue | undefined>(targets.length);
   for (let index = 0; index < targets.length; index += 1) {
     keys[index] = getSortKey(targets[index] as number);
   }

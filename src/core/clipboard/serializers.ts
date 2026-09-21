@@ -1,26 +1,20 @@
 import type { CellFormatContext, RuntimeColumn } from "../cells";
 import type { CellRange } from "../types";
 import type { CopyMode } from "./types";
+import type { CellValue } from "../sheet/types";
 
 export interface SerializeContext {
-  readonly getCellValue: (row: number, column: number) => unknown;
+  readonly getCellValue: (row: number, column: number) => CellValue | undefined;
   readonly getColumn: (column: number) => RuntimeColumn;
   readonly findMergeAt?: (row: number, column: number) => CellRange | undefined;
 }
 
 /**
- * Same "degrade instead of throw" precedent as the built-in array/json
- * `parse()` (see doc/progress.md's editor-pluggability patch) — a
- * structured-mode copy shouldn't blow up on a value JSON.stringify can't
- * handle (e.g. one containing a BigInt).
+ * `CellValue` 只有 string | number | boolean，所以这里不需要"stringify 会抛"
+ * 的兜底——那条 try/catch 是给复杂值准备的，随复杂值一起没了。
  */
-function structuredCellText(value: unknown, column: RuntimeColumn): string {
-  try {
-    const serialized = JSON.stringify({ type: column.typeName, value });
-    return serialized ?? "";
-  } catch {
-    return "";
-  }
+function structuredCellText(value: CellValue | undefined, column: RuntimeColumn): string {
+  return JSON.stringify({ type: column.typeName, value });
 }
 
 /**

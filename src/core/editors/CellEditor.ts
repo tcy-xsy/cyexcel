@@ -1,9 +1,10 @@
 import type { CellRect } from "../layout";
+import type { CellValue } from "../sheet/types";
 
 export interface CellEditorContext {
   readonly row: number;
   readonly column: number;
-  readonly initialValue: unknown;
+  readonly initialValue: CellValue | undefined;
   /** The initial typed character when editing was started by typing, if any. */
   readonly initialInput?: string | undefined;
   /**
@@ -32,7 +33,7 @@ export interface CellEditor {
   /** Repositions the mounted editor from a newly published Scene snapshot. */
   updateGeometry(rect: CellRect): void;
   focus(): void;
-  getValue(): unknown;
+  getValue(): CellValue;
   validate?(): ValidationResult;
   destroy(): void;
 }

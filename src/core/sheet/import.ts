@@ -1,7 +1,7 @@
 import { WorkbookModel } from "./WorkbookModel";
 import type { RowCells } from "./mutation";
 import type { SheetModelOptions } from "./SheetModel";
-import type { CellRecord, WorkbookSnapshot } from "./types";
+import type { CellValue, CellRecord, WorkbookSnapshot } from "./types";
 
 /**
  * 导入用的一行：字段名 -> 值。
@@ -10,7 +10,7 @@ import type { CellRecord, WorkbookSnapshot } from "./types";
  * T7 会把它一起删掉，而导入器是**永久设施**（设计稿 §3.2：从 JSON 装载是真需求，
  * xlsx 导入将来落在同一个位置）。
  */
-export type ImportRow = Readonly<Record<string, unknown>>;
+export type ImportRow = Readonly<Record<string, CellValue | null | undefined>>;
 
 export interface RowsToWorkbookSnapshotOptions extends SheetModelOptions {
   /**
@@ -27,17 +27,17 @@ export interface RowsToWorkbookSnapshotOptions extends SheetModelOptions {
  * 一个值变成一条记录，`undefined` 变成"没有这个格子"。
  *
  * **`undefined` 与 `null` 不同口径，这是有意的。** 稀疏矩阵里"未占用"就是"这个键
- * 不存在"（spec §11 不变量 1：不存空记录），所以只有 `undefined` 能表达"没有"。
- * `null` 是一个普普通通的值，存成 `{ v: null }`——与 `set-cell` 那条变更里
- * `record: undefined` 表示删格、`{ v: null }` 表示一条真记录是同一条口径。设计稿
- * §9 第 3 条当时倾向让 `null` 也不产生格子，这里改成不那样：让同一个值在"导入"与
- * "写入"两条路上有两种含义，是下一个静默缺陷的生成条件。
+ * 不存在"（spec §11 不变量 1：不存空记录）。
  *
- * **不带 `t`/`s`：** 导入器不猜类型也不派样式（列默认类型走 `ColumnMeta.t`，样式是
- * 阶段 5）。
+ * **`null` 与 `undefined` 都表示"没有值"**，都不产生记录。`v` 收紧成
+ * `string | number | boolean` 之后（对齐 Univer 的 `CellValue` 与 xlsx），`null`
+ * 已经没有地方放了——而"空单元格就是没有记录"本来也正是 xlsx 的表示法。导入与
+ * 写入两条路口径仍然一致，只是那个共同答案从"存 `{ v: null }`"变成了"不存"。
+ *
+ * **不带 `t`/`s`：** 导入器不猜类型也不派样式。
  */
-export function valueToRecord(value: unknown): CellRecord | undefined {
-  return value === undefined ? undefined : { v: value };
+export function valueToRecord(value: CellValue | null | undefined): CellRecord | undefined {
+  return value === undefined || value === null ? undefined : { v: value };
 }
 
 /**
@@ -47,7 +47,7 @@ export function valueToRecord(value: unknown): CellRecord | undefined {
  * `rowsToWorkbookSnapshot`（导入）共用这一个，是为了让"空值算不算一个格子"在两条
  * 路上只有一个答案——插入一行空行与导入一行空行必须得到同一张矩阵。
  */
-export function rowValuesToCells(values: readonly unknown[]): RowCells {
+export function rowValuesToCells(values: readonly (CellValue | null | undefined)[]): RowCells {
   const cells: Record<number, CellRecord> = {};
   for (let column = 0; column < values.length; column += 1) {
     const record = valueToRecord(values[column]);

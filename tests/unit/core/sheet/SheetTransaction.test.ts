@@ -6,6 +6,7 @@ import type { SheetMutation } from "../../../../src/core/sheet/mutation";
 import { SheetTransaction } from "../../../../src/core/sheet/SheetTransaction";
 import type { PreparedSheetMutation } from "../../../../src/core/sheet/SheetTransaction";
 import { WorkbookModel } from "../../../../src/core/sheet/WorkbookModel";
+import { CellValueType } from "../../../../src/core/sheet/types";
 
 /**
  * 一张够小、但每一类状态都占着的表：格子、行元数据、列元数据、两张插件侧表。第 4 行
@@ -136,9 +137,9 @@ describe("SheetTransaction — 预览随每一条暂存前进", () => {
       type: "set-cell",
       row: 0,
       column: 0,
-      record: { v: 1, t: "number", s: "s1" }
+      record: { v: 1, t: CellValueType.NUMBER, s: "s1" }
     });
-    expect(transaction.getRecord(0, 0)).toStrictEqual({ v: 1, t: "number", s: "s1" });
+    expect(transaction.getRecord(0, 0)).toStrictEqual({ v: 1, t: CellValueType.NUMBER, s: "s1" });
     expect(transaction.getCell(0, 0)).toBe(1);
   });
 

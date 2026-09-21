@@ -31,6 +31,7 @@ import type { ColumnDefinition } from "../cells/types";
 import { createGridStructurePayload } from "./GridStructureOwner";
 import type { GridStructureOwner } from "./GridStructureOwner";
 import type { CellStylePatch } from "../style/styleKey";
+import type { CellValue } from "../sheet/types";
 
 const STANDALONE_COMMAND_HOOKS: HookRegistry = {
   beforeCommand: BEFORE_COMMAND_HOOK,
@@ -66,11 +67,11 @@ export class TableDataCommandMutationFactory implements DataCommandMutationFacto
     this.#store = store;
   }
 
-  createSetCell(row: number, column: number, value: unknown): Mutation {
+  createSetCell(row: number, column: number, value: CellValue | null | undefined): Mutation {
     return this.#store.createSetCellMutation(row, column, value);
   }
 
-  createSetRange(range: CellRange, values: readonly (readonly unknown[])[]): Mutation {
+  createSetRange(range: CellRange, values: readonly (readonly (CellValue | null | undefined)[])[]): Mutation {
     return this.#store.createSetRangeMutation(range, values);
   }
 
@@ -78,15 +79,11 @@ export class TableDataCommandMutationFactory implements DataCommandMutationFacto
     return this.#store.createSetStyleMutation(range, patch);
   }
 
-  createSetCellType(range: CellRange, typeName: string | null): Mutation {
-    return this.#store.createSetCellTypeMutation(range, typeName);
-  }
-
   createSetMerges(merges: readonly CellRange[]): Mutation {
     return this.#store.createSetMergesMutation(merges);
   }
 
-  createInsertRows(start: number, rows: readonly (readonly unknown[])[]): Mutation {
+  createInsertRows(start: number, rows: readonly (readonly (CellValue | null | undefined)[])[]): Mutation {
     return this.#store.createInsertRowsMutation(start, rows);
   }
 

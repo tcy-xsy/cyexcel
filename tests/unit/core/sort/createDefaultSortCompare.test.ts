@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { computeSortOrder, createDefaultSortCompare } from "../../../../src/core/sort";
+import type { CellValue } from "../../../../src/core/sheet/types";
 
 const sign = (value: number): number => (value < 0 ? -1 : value > 0 ? 1 : 0);
 
@@ -30,15 +31,25 @@ describe("createDefaultSortCompare", () => {
     expect(sign(compare(10, "9"))).toBe(-1);
   });
 
-  it("treats null and undefined as equal to each other", () => {
+  it("treats two empty cells as equal to each other", () => {
     const compare = createDefaultSortCompare("asc");
 
-    expect(sign(compare(null, undefined))).toBe(0);
-    expect(sign(compare(undefined, null))).toBe(0);
+    expect(sign(compare(undefined, undefined))).toBe(0);
   });
 
-  it("sorts null and undefined last under asc", () => {
-    const keys = [3, null, 1, undefined, 2];
+  it("still guards null, which only an untyped host can hand in", () => {
+    // `CellValue` has no `null` (see sheet/types.ts), so this can arrive only
+    // from a JS caller. The guard is what makes it degrade to "empty" rather
+    // than be stringified into "null" and sort in between "n" and "o".
+    const compare = createDefaultSortCompare("asc") as (left: unknown, right: unknown) => number;
+
+    expect(sign(compare(null, undefined))).toBe(0);
+    expect(sign(compare(null, "apple"))).toBe(1);
+    expect(sign(compare("apple", null))).toBe(-1);
+  });
+
+  it("sorts empty cells last under asc", () => {
+    const keys: (CellValue | undefined)[] = [3, undefined, 1, undefined, 2];
     const order = computeSortOrder({
       rowCount: keys.length,
       getSortKey: (row) => keys[row],
@@ -49,8 +60,8 @@ describe("createDefaultSortCompare", () => {
     expect([...order!]).toEqual([2, 4, 0, 1, 3]);
   });
 
-  it("sorts null and undefined last under desc too", () => {
-    const keys = [3, null, 1, undefined, 2];
+  it("sorts empty cells last under desc too", () => {
+    const keys: (CellValue | undefined)[] = [3, undefined, 1, undefined, 2];
     const order = computeSortOrder({
       rowCount: keys.length,
       getSortKey: (row) => keys[row],
@@ -58,45 +69,56 @@ describe("createDefaultSortCompare", () => {
       direction: "desc"
     });
 
-    // Nullish stays at the bottom; only the defined keys reverse. The two
-    // nullish rows keep their original relative order (1 before 3).
+    // Empties stay at the bottom; only the defined keys reverse. The two
+    // empty rows keep their original relative order (1 before 3).
     expect([...order!]).toEqual([0, 4, 2, 1, 3]);
   });
 });
 
 describe("createDefaultSortCompare with a cell type's comparator", () => {
-  // Chronological, like the "date" built-in: the string order of these is
-  // Mon < Sat < Wed, so the fallback could never produce it.
-  const wedJan01 = new Date(Date.UTC(2020, 0, 1, 12));
-  const monJan06 = new Date(Date.UTC(2020, 0, 6, 12));
-  const satJan11 = new Date(Date.UTC(2020, 0, 11, 12));
-  const chronological = (left: unknown, right: unknown): number =>
-    (left as Date).getTime() - (right as Date).getTime();
+  // Case-insensitive, like a text column that wants "apple" next to "Apple":
+  // the codepoint order of these three is Banana < Cherry < apple (uppercase
+  // sorts first), so the fallback could never produce the order below.
+  //
+  // 不再用 `Date` 举例：日期现在是序列号（数字），默认的数字比较天然就是时间序，
+  // 那个例子被数据模型消解掉了——见 cells/builtins.ts 的 "date"。
+  const chronologicalStandIn = (left: CellValue, right: CellValue): number => {
+    const leftText = String(left).toLowerCase();
+    const rightText = String(right).toLowerCase();
+    return leftText < rightText ? -1 : leftText > rightText ? 1 : 0;
+  };
+  const apple = "apple";
+  const banana = "Banana";
+  const cherry = "Cherry";
 
   it("delegates two defined values to it instead of comparing them as strings", () => {
-    const compare = createDefaultSortCompare("asc", chronological);
+    const compare = createDefaultSortCompare("asc", chronologicalStandIn);
 
-    expect(sign(compare(wedJan01, monJan06))).toBe(-1);
-    expect(sign(compare(satJan11, wedJan01))).toBe(1);
-    expect(sign(compare(wedJan01, wedJan01))).toBe(0);
+    // Premise: the codepoint order really does disagree, so these can only
+    // pass through the supplied comparator.
+    expect(sign(createDefaultSortCompare("asc")(apple, banana))).toBe(1);
+
+    expect(sign(compare(apple, banana))).toBe(-1);
+    expect(sign(compare(cherry, apple))).toBe(1);
+    expect(sign(compare(apple, apple))).toBe(0);
   });
 
-  it("never hands it a null or undefined side", () => {
-    const seen: unknown[] = [];
+  it("never hands it an empty side", () => {
+    const seen: CellValue[] = [];
     const compare = createDefaultSortCompare("asc", (left, right) => {
       seen.push(left, right);
-      return chronological(left, right);
+      return chronologicalStandIn(left, right);
     });
 
-    compare(null, wedJan01);
-    compare(wedJan01, undefined);
-    compare(undefined, null);
+    compare(undefined, apple);
+    compare(apple, undefined);
+    compare(undefined, undefined);
 
     expect(seen).toEqual([]);
   });
 
   it("still keeps empty cells last in both directions", () => {
-    const keys = [satJan11, null, wedJan01, undefined, monJan06];
+    const keys: (CellValue | undefined)[] = [cherry, undefined, apple, undefined, banana];
     const request = {
       rowCount: keys.length,
       getSortKey: (row: number) => keys[row]
@@ -105,18 +127,18 @@ describe("createDefaultSortCompare with a cell type's comparator", () => {
     expect([
       ...computeSortOrder({
         ...request,
-        compare: createDefaultSortCompare("asc", chronological),
+        compare: createDefaultSortCompare("asc", chronologicalStandIn),
         direction: "asc"
       })!
     ]).toEqual([2, 4, 0, 1, 3]);
 
-    // The cell type orders the real dates; the empties stay at the bottom
+    // The cell type orders the real values; the empties stay at the bottom
     // rather than flipping to the top, which is what a bare
     // `column.compare` would do here.
     expect([
       ...computeSortOrder({
         ...request,
-        compare: createDefaultSortCompare("desc", chronological),
+        compare: createDefaultSortCompare("desc", chronologicalStandIn),
         direction: "desc"
       })!
     ]).toEqual([0, 4, 2, 1, 3]);

@@ -1,3 +1,5 @@
+import type { CellValue } from "../sheet/types";
+
 /**
  * Scans occupied cells for a text match, yielding to the event loop between
  * batches so a scan over millions of occupied cells never shows up as a
@@ -12,12 +14,12 @@ export interface SearchMatch {
 export interface SearchCell {
   readonly row: number;
   readonly column: number;
-  readonly value: unknown;
+  readonly value: CellValue | undefined;
 }
 
 export interface SearchRequest {
   readonly occupiedCells: Iterable<SearchCell>;
-  readonly getDisplayText: (row: number, column: number, value: unknown) => string;
+  readonly getDisplayText: (row: number, column: number, value: CellValue | undefined) => string;
   readonly query: string;
   readonly matchCase?: boolean;
   readonly useRegex?: boolean;

@@ -1,7 +1,8 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
 import type { CellType, CellTypeDefinition } from "./types";
+import type { CellValue } from "../sheet/types";
 
-function baseDefaults<T>(): CellType<T> {
+function baseDefaults<T extends CellValue>(): CellType<T> {
   return {
     format: (value) => (value === undefined || value === null ? "" : String(value))
   };
@@ -16,7 +17,7 @@ export class CellTypeRegistry {
   readonly #definitions = new Map<string, CellTypeDefinition>();
   readonly #resolved = new Map<string, CellType>();
 
-  register<T>(name: string, definition: CellTypeDefinition<T>): void {
+  register<T extends CellValue>(name: string, definition: CellTypeDefinition<T>): void {
     this.#definitions.set(name, definition as CellTypeDefinition);
     this.#resolved.delete(name);
   }

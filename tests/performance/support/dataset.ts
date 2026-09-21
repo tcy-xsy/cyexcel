@@ -1,9 +1,10 @@
 import type { CyExcelColumnConfig } from "../../../src/core/CyExcelCore";
 import { rowsToWorkbookSnapshot } from "../../../src/core/sheet";
 import type { ImportRow, WorkbookSnapshot } from "../../../src/core/sheet";
+import type { CellValue } from "../../../src/core/sheet/types";
 
-const REGIONS = ["NA", "EU", "APAC", "LATAM", "MEA"];
-const STATUSES = ["active", "pending", "archived"];
+const REGIONS: readonly [string, ...string[]] = ["NA", "EU", "APAC", "LATAM", "MEA"];
+const STATUSES: readonly [string, ...string[]] = ["active", "pending", "archived"];
 
 /**
  * Deterministic synthetic columns/rows for the Step 15 benchmark fixtures.
@@ -23,23 +24,23 @@ export function buildBenchmarkColumns(columnCount: number): CyExcelColumnConfig[
   }));
 }
 
-function buildCellValue(row: number, column: number): unknown {
+function buildCellValue(row: number, column: number): CellValue {
   switch (column % 5) {
     case 0:
       return `Row ${row}`;
     case 1:
       return ((row * 7 + column * 13) % 100000) / 100;
     case 2:
-      return REGIONS[(row + column) % REGIONS.length];
+      return REGIONS[(row + column) % REGIONS.length] ?? REGIONS[0];
     case 3:
-      return STATUSES[(row + column) % STATUSES.length];
+      return STATUSES[(row + column) % STATUSES.length] ?? STATUSES[0];
     default:
       return (row + column) % 3 === 0;
   }
 }
 
 export function buildBenchmarkRow(row: number, columnCount: number): ImportRow {
-  const data: Record<string, unknown> = {};
+  const data: Record<string, CellValue> = {};
   for (let column = 0; column < columnCount; column += 1) {
     data[`c${column}`] = buildCellValue(row, column);
   }

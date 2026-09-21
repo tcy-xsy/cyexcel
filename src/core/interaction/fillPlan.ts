@@ -1,8 +1,9 @@
 import type { CellRange } from "../types";
 import { computeFillValues } from "./fillValues";
+import type { CellValue } from "../sheet/types";
 
 export interface FillPlanSources {
-  readonly getCell: (row: number, column: number) => unknown;
+  readonly getCell: (row: number, column: number) => CellValue | undefined;
   /**
    * Columns with `clipboard.paste === false` keep their existing values in
    * the extended region — the same semantic `ClipboardService.paste()` uses
@@ -28,12 +29,12 @@ export function computeFillPlan(
   sourceRange: CellRange,
   targetRange: CellRange,
   sources: FillPlanSources
-): unknown[][] {
+): (CellValue | undefined)[][] {
   const rows = targetRange.endRow - targetRange.startRow + 1;
   const columns = targetRange.endColumn - targetRange.startColumn + 1;
-  const values: unknown[][] = Array.from(
+  const values: (CellValue | undefined)[][] = Array.from(
     { length: rows },
-    () => new Array<unknown>(columns).fill(undefined)
+    () => new Array<CellValue | undefined>(columns).fill(undefined)
   );
 
   for (let row = sourceRange.startRow; row <= sourceRange.endRow; row += 1) {
@@ -99,7 +100,7 @@ export interface AutoFillDownBounds {
 export function computeAutoFillDownTargetRow(
   range: CellRange,
   bounds: AutoFillDownBounds,
-  getCell: (row: number, column: number) => unknown
+  getCell: (row: number, column: number) => CellValue | undefined
 ): number | null {
   const neighborColumn =
     range.startColumn > 0 ? range.startColumn - 1 : range.startColumn + 1;

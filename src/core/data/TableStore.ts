@@ -11,12 +11,12 @@ import {
 } from "../mutations";
 import { rowValuesToCells, valueToRecord } from "../sheet/import";
 import type { SheetMutation } from "../sheet/mutation";
+import type { CellValue } from "../sheet/types";
 import { changesForSheetMutation, type SheetAxisSpace } from "../sheet/patches";
 import type { SheetModel } from "../sheet/SheetModel";
 import { createSheetPlanningResources } from "../sheet/planning";
 import type { CellRange, Patch } from "../types";
 import { CellStyleMutation } from "../mutations/CellStyleMutation";
-import { CellTypeMutation } from "../mutations/CellTypeMutation";
 import { StyleRegistry } from "../style/StyleRegistry";
 import type { CellStylePatch } from "../style/styleKey";
 import { assertValidCoordinate, assertValidRange } from "../validation";
@@ -161,11 +161,6 @@ export class TableStore {
     return new CellStyleMutation(this.#sheet, this.#styles, range, patch);
   }
 
-  /** 格级语义类型（`CellRecord.t`）。`null` 回到列默认。 */
-  createSetCellTypeMutation(range: CellRange, typeName: string | null): Mutation {
-    assertValidRange(range);
-    return new CellTypeMutation(this.#sheet, range, typeName);
-  }
 
   get version(): number {
     return this.#coordinator.revisionGate.revision;
@@ -195,12 +190,12 @@ export class TableStore {
     return this.#sheet.columnCount();
   }
 
-  getCell(row: number, column: number): unknown {
+  getCell(row: number, column: number): CellValue | undefined {
     this.#assertCellExists(row, column);
     return this.#sheet.getCell(row, column);
   }
 
-  occupiedCells(): Generator<{ row: number; column: number; value: unknown }> {
+  occupiedCells(): Generator<{ row: number; column: number; value: CellValue | undefined }> {
     return this.#sheet.occupiedCells();
   }
 
@@ -215,7 +210,7 @@ export class TableStore {
    * 旧样式，把第一条的结果悄悄盖掉。届时的落点是给 `TableSheetMutation.prepare` 一条
    * "带值的 set-cell"变体，在 `prepareData` 之前就地问影子要记录。
    */
-  createSetCellMutation(row: number, column: number, value: unknown): Mutation {
+  createSetCellMutation(row: number, column: number, value: CellValue | null | undefined): Mutation {
     // 这里只查形状；"在不在坐标空间里"要等到 prepare 才知道——同一个事务里可以
     // 先插行再往新行写，那时新行只存在于影子模型上（见 `assertValueWriteIsInsideSpace`）。
     assertValidCoordinate(row, column);
@@ -226,7 +221,10 @@ export class TableStore {
     );
   }
 
-  createSetRangeMutation(range: CellRange, values: readonly (readonly unknown[])[]): Mutation {
+  createSetRangeMutation(
+    range: CellRange,
+    values: readonly (readonly (CellValue | null | undefined)[])[]
+  ): Mutation {
     assertValidRange(range);
     const expectedRows = range.endRow - range.startRow + 1;
     const expectedColumns = range.endColumn - range.startColumn + 1;
@@ -256,7 +254,7 @@ export class TableStore {
     );
   }
 
-  createInsertRowsMutation(start: number, rows: readonly (readonly unknown[])[]): Mutation {
+  createInsertRowsMutation(start: number, rows: readonly (readonly (CellValue | null | undefined)[])[]): Mutation {
     this.#assertStructuralShape("row", "insert", start, rows.length);
     return new TableSheetMutation(
       this.#sheet,
@@ -329,19 +327,23 @@ export class TableStore {
     );
   }
 
-  setCell(row: number, column: number, value: unknown): TableStoreCommitResult {
+  setCell(row: number, column: number, value: CellValue | null | undefined): TableStoreCommitResult {
     return this.#execute(this.createSetCellMutation(row, column, value));
   }
 
-  setRange(range: CellRange, values: readonly (readonly unknown[])[]): TableStoreCommitResult {
+  setRange(range: CellRange, values: readonly (readonly (CellValue | null | undefined)[])[]): TableStoreCommitResult {
     return this.#execute(this.createSetRangeMutation(range, values));
   }
 
-  updateCell(row: number, column: number, updater: (current: unknown) => unknown): TableStoreCommitResult {
+  updateCell(
+    row: number,
+    column: number,
+    updater: (current: CellValue | undefined) => CellValue | null | undefined
+  ): TableStoreCommitResult {
     return this.setCell(row, column, updater(this.getCell(row, column)));
   }
 
-  insertRows(start: number, rows: readonly (readonly unknown[])[]): TableStoreCommitResult {
+  insertRows(start: number, rows: readonly (readonly (CellValue | null | undefined)[])[]): TableStoreCommitResult {
     return this.#execute(this.createInsertRowsMutation(start, rows));
   }
 

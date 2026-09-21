@@ -4,6 +4,7 @@ import type { RowHeightProvenance } from "../layout";
 import { computeWrappedCellHeight, type Canvas2DLike } from "../render";
 import { CELL_PADDING } from "../render/theme";
 import type { SceneSnapshot } from "../scene";
+import type { CellValue } from "../sheet/types";
 
 /**
  * Everything the service needs to know about the authoritative state a
@@ -73,7 +74,7 @@ export interface WrapMeasurementServiceOptions {
    */
   readonly measureContext: Canvas2DLike;
   readonly getColumns: () => readonly RuntimeColumn[];
-  readonly getCell: (row: number, column: number) => unknown;
+  readonly getCell: (row: number, column: number) => CellValue | undefined;
   /** Formatters are user code; a throw is reported, never propagated. */
   readonly onError: (error: unknown, eventName: string) => void;
 }
@@ -90,7 +91,7 @@ export interface WrapMeasurementServiceOptions {
 export class WrapMeasurementService {
   readonly #measureContext: Canvas2DLike;
   readonly #getColumns: () => readonly RuntimeColumn[];
-  readonly #getCell: (row: number, column: number) => unknown;
+  readonly #getCell: (row: number, column: number) => CellValue | undefined;
   readonly #onError: (error: unknown, eventName: string) => void;
   readonly #measuredRows = new Set<number>();
 

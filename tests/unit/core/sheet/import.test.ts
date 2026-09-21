@@ -20,11 +20,12 @@ describe("valueToRecord — 只有 `undefined` 表示没有这个格子", () => 
     expect(valueToRecord("")).toStrictEqual({ v: "" });
   });
 
-  it("`undefined` 不产生记录，`null` 产生一条真记录", () => {
-    // 两者同口径的话，`set-cell` 的 `record: undefined`（删格）与 `{ v: null }`
-    // （一条真记录）在导入这条路上就分不开了。
+  it("`undefined` 与 `null` 都不产生记录", () => {
+    // `v` 收紧成 string | number | boolean（对齐 xlsx/Univer）之后 `null` 没地方
+    // 放了，而"空格子 = 没有记录"本来就是 xlsx 的表示法。导入与写入两条路仍然同
+    // 口径，只是那个共同答案从"存 { v: null }"变成了"不存"。
     expect(valueToRecord(undefined)).toBeUndefined();
-    expect(valueToRecord(null)).toStrictEqual({ v: null });
+    expect(valueToRecord(null)).toBeUndefined();
   });
 });
 
@@ -38,8 +39,9 @@ describe("rowValuesToCells — 按列号定位的稀疏一行", () => {
     expect(rowValuesToCells([undefined, undefined, undefined])).toStrictEqual({});
   });
 
-  it("`null` 占一个格子", () => {
-    expect(rowValuesToCells([null])).toStrictEqual({ 0: { v: null } });
+  it("`null` 不占格子，和 `undefined` 同一个答案", () => {
+    // `CellValue` 里没有 `null`（对齐 xlsx/Univer），"空格子"只有"没有记录"一种表示。
+    expect(rowValuesToCells([null])).toStrictEqual({});
   });
 });
 

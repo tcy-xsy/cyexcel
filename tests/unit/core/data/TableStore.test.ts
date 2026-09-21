@@ -10,11 +10,11 @@ function createStore() {
   const sheet = WorkbookModel.fromSnapshot(
     rowsToWorkbookSnapshot(
       [
-        { name: "A", price: 1, tags: ["x"] },
-        { name: "B", price: 2, tags: ["y"] },
-        { name: "C", price: 3, tags: ["z"] }
+        { name: "A", price: 1, tag: "x" },
+        { name: "B", price: 2, tag: "y" },
+        { name: "C", price: 3, tag: "z" }
       ],
-      ["name", "price", "tags"]
+      ["name", "price", "tag"]
     )
   ).sheet();
   return { sheet, store: new TableStore(sheet) };
@@ -74,18 +74,18 @@ describe("TableStore.setRange", () => {
 });
 
 describe("TableStore.updateCell", () => {
-  it("only produces a patch when updateCell is called explicitly", () => {
+  it("reads the current value, writes the updater's result, and emits one patch", () => {
+    // 不再有"就地改一个复杂值，store 看不见"那条测试了：`CellValue` 收紧成
+    // string | number | boolean 之后，格子里根本没有可以就地改的东西，那件事由
+    // 类型保证而不是由这条断言保证。
     const { store } = createStore();
-
-    const current = store.getCell(0, 2) as string[];
-    current.push("mutated-without-updateCell");
     expect(store.version).toBe(0);
 
-    const result = store.updateCell(0, 2, value => [...(value as string[]), "y"]);
+    const result = store.updateCell(0, 2, (value) => `${String(value)}y`);
 
     expect(result.patches).toEqual([{ type: "cell-value", row: 0, column: 2 }]);
     expect(store.version).toBe(1);
-    expect(store.getCell(0, 2)).toEqual(["x", "mutated-without-updateCell", "y"]);
+    expect(store.getCell(0, 2)).toBe("xy");
   });
 });
 
@@ -224,7 +224,7 @@ describe("TableStore — structural row operations", () => {
   it("insertRows emits a row-structure Patch and bumps the version", () => {
     const { store } = createStore();
 
-    const result = store.insertRows(1, [["X", 10, []]]);
+    const result = store.insertRows(1, [["X", 10, ""]]);
 
     expect(result.patches).toEqual([{ type: "row-structure", operation: "insert", start: 1, count: 1 }]);
     expect(result.version).toBe(1);
@@ -343,7 +343,7 @@ describe("TableStore — structural column operations", () => {
     expect(store.getColumnCount()).toBe(3);
     expect(store.getCell(0, 0)).toBe("A");
     expect(store.getCell(0, 1)).toBe(1);
-    expect(store.getCell(0, 2)).toEqual(["x"]);
+    expect(store.getCell(0, 2)).toBe("x");
   });
 });
 
@@ -381,13 +381,13 @@ describe("TableStore.occupiedCells", () => {
     expect(seen).toEqual([
       { row: 0, column: 0, value: "A" },
       { row: 0, column: 1, value: 1 },
-      { row: 0, column: 2, value: ["x"] },
+      { row: 0, column: 2, value: "x" },
       { row: 1, column: 0, value: "B" },
       { row: 1, column: 1, value: 2 },
-      { row: 1, column: 2, value: ["y"] },
+      { row: 1, column: 2, value: "y" },
       { row: 2, column: 0, value: "C" },
       { row: 2, column: 1, value: 3 },
-      { row: 2, column: 2, value: ["z"] }
+      { row: 2, column: 2, value: "z" }
     ]);
   });
 });

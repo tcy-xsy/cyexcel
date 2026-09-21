@@ -26,17 +26,38 @@ import type { CellStyle } from "../style/types";
  * 之类），绝不能就地修改已存在记录的字段。就地修改会通过共享引用直接污染快照
  * 或活矩阵中的另一份。
  */
+/**
+ * 单元格能存的值——**只有这三种 JSON 原生类型**，与 Univer 的 `CellValue` 一字不差
+ * （核对记录见 ADR 0004 §2.1），也正是 xlsx 能表达的全部。
+ *
+ * 没有 `Date`：日期是"数字（序列号）+ 日期 numFmt"，见 `style/dateSerial.ts`。
+ * 没有数组和对象：它们既不能安全地 JSON 往返，也没有 xlsx 对应物。把它们挡在类型
+ * 之外，是为了让"快照往返无损"和"导出 xlsx 是直译"这两件事从类型上就成立，而不是
+ * 靠约定。
+ */
+export type CellValue = string | number | boolean;
+
 export interface CellRecord {
-  /** 值 */
-  readonly v: unknown;
   /**
-   * 语义类型名，覆盖列默认。
+   * 值。`undefined` 是唯一的"空"——**这里比 Univer 严一档**：它的 `v` 是
+   * `Nullable<CellValue>`（含 `null`），我们没有 `null`。
    *
-   * 注意：与 Univer 的 `t` **同名不同义**——Univer 的是原始类型枚举
-   * （1=string/2=number/3=boolean/4=force text），我们的是注册表里的类型名
-   * （"text"/"number"/"date"/…），描述行为而非原始类型。见 spec §4.1。
+   * 这个差异只是表示法，不是语义：Univer 的 `isNullCell()` 用宽松相等，`null` 与
+   * `undefined` 落进同一个分支，它允许 `null` 落盘但不靠它区分任何东西。我们干脆
+   * 不存，是同一语义的更强表示（ADR 0004 §2.1 第 2、3 条）。
+   *
+   * **代价在导入**：读 Univer 快照时 `{ v: null }` 要在导入层归一成"没有这一格"，
+   * 不能原样透传——见 `sheet/import.ts` 的 `valueToRecord()`。
    */
-  readonly t?: string;
+  readonly v: CellValue | undefined;
+  /**
+   * 值的**物理类型**，与 xlsx `<c t>` 和 Univer 的 `CellValueType` 一一对应。
+   *
+   * 不是"这一格按什么行为解析"——那是列类型的事。这里只说值本身是什么，于是
+   * xlsx 往返零翻译。数字是默认形态，**省略不写**；日期也不在这里，它是
+   * "数字（序列号）+ 日期 numFmt"，与 Excel 一致。
+   */
+  readonly t?: CellValueType;
   /** 样式 id，指向 workbook 级 `styles`。存储层只存 id（ADR §3.4） */
   readonly s?: string;
   /** 公式串 */
@@ -44,6 +65,21 @@ export interface CellRecord {
   /** 共享公式 id */
   readonly si?: string;
 }
+
+/**
+ * 值的物理类型（xlsx `<c t>` 的直译，与 Univer 的 `CellValueType` 同义同值）。
+ *
+ * `FORCE_STRING` 对应 Excel 的文本格式 `@`：`"00123"` 原样保留，不被当成数字 123。
+ * 数字不需要标记（省略 `t` 即数字），所以这里没有 NUMBER 之外的"默认"成员之说。
+ */
+export const CellValueType = {
+  STRING: 1,
+  NUMBER: 2,
+  BOOLEAN: 3,
+  FORCE_STRING: 4
+} as const;
+
+export type CellValueType = (typeof CellValueType)[keyof typeof CellValueType];
 
 /** 行高来源。`default` 表示该行不出现在 `rowData` 里，故不是本类型的成员。 */
 export type RowHeightSource = "manual" | "auto";
@@ -62,7 +98,7 @@ export interface RowMeta {
 export interface ColumnMeta {
   readonly w?: number;
   readonly hd?: boolean;
-  /** 列默认语义类型 */
+  /** 列默认类型名（注册表里的行为类型，不是 `CellRecord.t` 那个物理类型） */
   readonly t?: string;
   /** 列默认样式 id */
   readonly s?: string;

@@ -5,6 +5,7 @@ import type { CellRange } from "../types";
 import type { Canvas2DLike } from "./Canvas2DLike";
 import type { BorderSide, CellStyle } from "../style/types";
 import type { DirtyState } from "./RenderScheduler";
+import type { CellValue } from "../sheet/types";
 import {
   CELL_FONT,
   CELL_PADDING,
@@ -19,7 +20,7 @@ export interface CellPaintContext {
   readonly rect: CellRect;
   readonly row: number;
   readonly column: number;
-  readonly value: unknown;
+  readonly value: CellValue | undefined;
   /**
    * 这一格生效的样式（列默认 + 格样式合并后的结果），没有则 `undefined`。
    * 自定义 renderer 拿得到它，但**要不要用是 renderer 自己的事**——核心不会替一个
@@ -39,7 +40,7 @@ export type CellPainter = (context: CellPaintContext) => unknown;
 export interface ContentLayerRendererOptions {
   readonly ctx: Canvas2DLike;
   readonly getScene: () => SceneSnapshot;
-  readonly getCellValue: (row: number, column: number) => unknown;
+  readonly getCellValue: (row: number, column: number) => CellValue | undefined;
   /** 与 getCellValue 对称：渲染层继续不认识 SheetModel，样式也从回调进来。 */
   readonly getCellStyle?: (row: number, column: number) => CellStyle | undefined;
   readonly painter?: CellPainter;
@@ -95,7 +96,7 @@ function isThenable(value: unknown): boolean {
 export class ContentLayerRenderer {
   readonly #ctx: Canvas2DLike;
   readonly #getScene: () => SceneSnapshot;
-  readonly #getCellValue: (row: number, column: number) => unknown;
+  readonly #getCellValue: (row: number, column: number) => CellValue | undefined;
   readonly #getCellStyle: ((row: number, column: number) => CellStyle | undefined) | undefined;
   readonly #painter: CellPainter;
   readonly #onError:

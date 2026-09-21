@@ -15,6 +15,13 @@ function registryWithMoney(): CellTypeRegistry {
     extends: "number",
     format: (value) => `¥${String(value)}`
   });
+  // 一个自称"没有总序"的类型。内建类型里已经没有这样的了——`array`/`json` 随
+  // `CellValue` 收紧一起删掉了——但 `sortable` 的解析链仍然要能表达这件事，所以
+  // 由测试自己注册一个，而不是借一个恰好如此的内建类型。
+  registry.register("opaque", {
+    extends: "text",
+    sortable: false
+  });
   return registry;
 }
 
@@ -418,21 +425,22 @@ describe("ColumnManager — sortable resolution", () => {
   });
 
   it("takes sortable from the cell type, so a type with no total order opts itself out", () => {
-    // `array`/`json` have no meaningful total order — sorting them would fall
-    // back to comparing their string previews, which is a fake sort.
+    // A type that declares itself unordered — sorting it would fall back to
+    // comparing string forms, which is a fake sort.
     const manager = new ColumnManager({
-      columns: [{ type: "array" }, { type: "json" }],
+      columns: [{ type: "opaque" }, { type: "text" }],
       registry: registryWithMoney()
     });
 
     expect(manager.getColumn(0).sortable).toBe(false);
-    expect(manager.getColumn(1).sortable).toBe(false);
+    // Premise: the default really is true, so the false above came from the type.
+    expect(manager.getColumn(1).sortable).toBe(true);
   });
 
   it("lets a column override the type's own answer in both directions", () => {
     const manager = new ColumnManager({
       columns: [
-        { type: "array", sortable: true },
+        { type: "opaque", sortable: true },
         { sortable: false }
       ],
       registry: registryWithMoney()
@@ -444,7 +452,7 @@ describe("ColumnManager — sortable resolution", () => {
 
   it("inherits sortable through `extends`", () => {
     const registry = registryWithMoney();
-    registry.register("tagList", { extends: "array" });
+    registry.register("tagList", { extends: "opaque" });
     const manager = new ColumnManager({ columns: [{ type: "tagList" }], registry });
 
     expect(manager.getColumn(0).sortable).toBe(false);

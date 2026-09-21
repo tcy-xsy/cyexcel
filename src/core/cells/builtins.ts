@@ -1,27 +1,33 @@
 import type { CellTypeRegistry } from "./CellTypeRegistry";
+import { serialFromISODate, serialToISODate } from "../style/dateSerial";
 
-const JSON_PREVIEW_LIMIT = 80;
-const ARRAY_PREVIEW_COUNT = 3;
 
 function formatText(value: unknown): string {
   return value === undefined || value === null ? "" : String(value);
 }
 
-function isValidDate(value: unknown): value is Date {
-  return value instanceof Date && !Number.isNaN(value.getTime());
+/** 序列号画成 `yyyy-mm-dd`；不是序列号（空格、脏数据）就原样走文本兜底。 */
+function formatSerialDate(value: unknown): string {
+  if (typeof value !== "number") {
+    return formatText(value);
+  }
+  return serialToISODate(value) ?? formatText(value);
 }
 
 /**
  * Registers the built-in CellTypes listed in doc/architecture.md §8. Each
  * has a distinct, deterministic `format()` (no Intl locale formatting, to
- * keep output stable across test environments). `array`/`json` only render a
- * preview, per architecture.md's "数组和 JSON 默认只绘制预览内容".
+ * keep output stable across test environments).
+ *
+ * 没有 `array` / `json` 类型了：`CellValue` 收紧成 `string | number | boolean`
+ * 之后，格子里根本放不进数组和对象，这两个类型没有可格式化的输入（见
+ * `sheet/types.ts` 的 `CellValue`）。
  *
  * `compare` is defined by exactly the types whose natural order differs from
  * the order their values' string forms give, because that string order is
  * what `createDefaultSortCompare()` falls back to when a type defines no
- * `compare`. `text`/`select` are already in string order; `array`/`json`
- * have no meaningful total order at all.
+ * `compare`. `text`/`select` are already in string order; `date` is a serial
+ * number, so plain numeric order is already chronological.
  */
 export function registerBuiltinCellTypes(registry: CellTypeRegistry): void {
   registry.register("text", {
@@ -49,30 +55,17 @@ export function registerBuiltinCellTypes(registry: CellTypeRegistry): void {
     compare: (left, right) => Number(Boolean(left)) - Number(Boolean(right))
   });
 
+  // 日期 = **序列号**（自 1900-01-01 起的天数）+ 日期 numFmt，与 Excel / xlsx /
+  // Univer 一致。这个类型本身只负责把用户敲的日期串转成序列号；显示成什么样由
+  // numFmt 决定，所以这里的 format 只是没有格式时的兜底。
   registry.register("date", {
-    format: (value) => (isValidDate(value) ? value.toISOString().slice(0, 10) : ""),
-    parse: (text) => new Date(text),
-    serialize: (value) => (isValidDate(value) ? value.toISOString().slice(0, 10) : ""),
-    // Chronological. `String(date)` starts with the weekday name, so without
-    // this a date column would sort Fri < Mon < Sat — visibly wrong, and the
-    // reason this exists at all (see the Step 22 sort review).
-    //
-    // Values that are not valid dates carry no instant to order by, so they
-    // group together ahead of the real ones. That grouping is direction-
-    // agnostic, so it flips under "desc"; genuinely empty cells (null /
-    // undefined) never reach here — createDefaultSortCompare() keeps those
-    // last in both directions before delegating.
-    compare: (left, right) => {
-      const leftTime = isValidDate(left) ? left.getTime() : Number.NaN;
-      const rightTime = isValidDate(right) ? right.getTime() : Number.NaN;
-      if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
-        if (Number.isNaN(leftTime) && Number.isNaN(rightTime)) {
-          return 0;
-        }
-        return Number.isNaN(leftTime) ? -1 : 1;
-      }
-      return leftTime < rightTime ? -1 : leftTime > rightTime ? 1 : 0;
-    }
+    format: (value) => formatSerialDate(value),
+    // 走 numfmt 的解析器而不是 `new Date(text)`：后者把 "2026-01-15" 当 UTC 午夜，
+    // 在东八区往返出来是 46037.333。序列号是墙上时钟，不该带时区。
+    parse: (text) => serialFromISODate(text) ?? text,
+    serialize: (value) => formatSerialDate(value)
+    // 不需要 compare：序列号就是数字，默认的数字比较天然按时间序。
+    // （Step 22 那段处理 "Fri < Mon < Sat" 的代码被这个数据模型消解掉了。）
   });
 
   registry.register("select", {
@@ -86,58 +79,4 @@ export function registerBuiltinCellTypes(registry: CellTypeRegistry): void {
     }
   });
 
-  registry.register("array", {
-    // No total order exists for arrays, so sorting one could only compare the
-    // rendered previews — a sort that looks like it worked and means nothing.
-    sortable: false,
-    format: (value) => {
-      if (!Array.isArray(value)) {
-        return "";
-      }
-      const preview = value.slice(0, ARRAY_PREVIEW_COUNT).map((item) => formatText(item));
-      const suffix = value.length > ARRAY_PREVIEW_COUNT ? ", ..." : "";
-      return `[${value.length}] ${preview.join(", ")}${suffix}`;
-    },
-    // JSON array syntax, not comma-joined text — has to round-trip
-    // arbitrary nested values (numbers, objects, ...), not just flat
-    // strings. A TextAreaCellEditor with a validate() callback (see
-    // doc/progress.md's editor-pluggability patch) is the primary defense
-    // against committing malformed JSON; this catch is a second line of
-    // defense for columns that never opted into one — same "degrade to an
-    // empty-looking value, don't throw" precedent as "number"'s parse().
-    parse: (text) => {
-      try {
-        const parsed = JSON.parse(text);
-        return Array.isArray(parsed) ? parsed : [];
-      } catch {
-        return [];
-      }
-    },
-    serialize: (value) => (Array.isArray(value) ? JSON.stringify(value) : "[]")
-  });
-
-  registry.register("json", {
-    /** Same reasoning as `array`: no total order, so no honest sort. */
-    sortable: false,
-    format: (value) => {
-      const serialized = JSON.stringify(value);
-      if (serialized === undefined) {
-        return "";
-      }
-      return serialized.length > JSON_PREVIEW_LIMIT
-        ? `${serialized.slice(0, JSON_PREVIEW_LIMIT - 3)}...`
-        : serialized;
-    },
-    parse: (text) => {
-      try {
-        return JSON.parse(text);
-      } catch {
-        return undefined;
-      }
-    },
-    serialize: (value) => {
-      const serialized = JSON.stringify(value);
-      return serialized === undefined ? "" : serialized;
-    }
-  });
 }

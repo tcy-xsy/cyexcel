@@ -1,6 +1,7 @@
 import { CELL_FONT, CELL_PADDING, SELECTION_STROKE_COLOR, SELECTION_STROKE_WIDTH } from "../render/theme";
 import type { CellEditor, CellEditorContext } from "./CellEditor";
 import { positionEditorElement } from "./positionEditorElement";
+import type { CellValue } from "../sheet/types";
 
 /**
  * Built-in default editor: a plain absolutely-positioned <input>, styled to
@@ -55,7 +56,7 @@ export function createTextCellEditor(): CellEditor {
       // value instead of replacing all of it.
       input?.focus();
     },
-    getValue(): unknown {
+    getValue(): CellValue {
       return input?.value ?? "";
     },
     destroy(): void {

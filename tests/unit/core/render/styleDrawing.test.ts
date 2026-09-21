@@ -6,6 +6,7 @@ import { registerBuiltinCellTypes } from "../../../../src/core/cells/builtins";
 import { CELL_FONT, TEXT_COLOR } from "../../../../src/core/render/theme";
 import type { CellStyle } from "../../../../src/core/style/types";
 import { RecordingCanvasContext } from "../../../helpers/RecordingCanvasContext";
+import type { CellValue } from "../../../../src/core/sheet/types";
 
 const rect = { x: 100, y: 50, width: 80, height: 24 };
 
@@ -18,7 +19,7 @@ const rect = { x: 100, y: 50, width: 80, height: 24 };
  */
 function paint(
   style: CellStyle | undefined,
-  value: unknown = "文本",
+  value: CellValue = "文本",
   cellRect: typeof rect = rect
 ) {
   const ctx = new RecordingCanvasContext();

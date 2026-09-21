@@ -17,14 +17,14 @@ describe("snapshotColumnDefinitions", () => {
       mount: () => {},
       updateGeometry: () => {},
       focus: () => {},
-      getValue: () => null,
+      getValue: () => "",
       destroy: () => {}
     });
     const header = { title: "Initial", renderer: headerRenderer };
     const option = { value: "a", label: "A" };
     const options = [option];
     const clipboard = { copy: true, paste: false };
-    const input = [{ id: "status", header, options, clipboard, renderer, createEditor }];
+    const input = [{ header, options, clipboard, renderer, createEditor }];
 
     const snapshot = snapshotColumnDefinitions(input);
     const column = snapshot[0];

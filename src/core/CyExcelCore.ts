@@ -26,7 +26,6 @@ import {
   SetCellCommand,
   SetRangeCommand,
   SetStyleCommand,
-  SetCellTypeCommand,
   MergeCellsCommand,
   UnmergeCellsCommand,
   InsertRowsCommand,
@@ -146,6 +145,7 @@ import {
   seedAxisMeta
 } from "./integration";
 import { columnWidthOf } from "./mutations/columnWidthMeta";
+import type { CellValue } from "./sheet/types";
 import {
   validateCyExcelCoreDataDimensions,
   validateCyExcelCoreOptions
@@ -965,10 +965,7 @@ export class CyExcelCore {
       getScene: () => this.#scene,
       getCellValue: (row, column) => this.#store.getCell(row, column),
       getCellStyle: (row, column) => this.getCellStyle(row, column),
-      painter: createColumnAwarePainter(
-        () => this.#columnManager.getColumns(),
-        (row, column) => this.#resolveCell(row, column)
-      ),
+      painter: createColumnAwarePainter(() => this.#columnManager.getColumns()),
       onError: (error, cell) =>
         this.#events.emit("error", { error, eventName: `finalize:canvas-cell:${cell.row}:${cell.column}` }),
       getMergesInRange: (range) => mergesIntersectingRange(this.#sheet.merges(), range),
@@ -1271,11 +1268,11 @@ export class CyExcelCore {
       // createEditor()/serialize() just falls back to EditorManager's own
       // defaults (see doc/progress.md's editor-pluggability patch).
       resolveEditor: (row, column) => {
-        const runtimeColumn = this.#resolveCell(row, column);
+        const runtimeColumn = this.#columnManager.getColumn(column);
         return runtimeColumn.createEditor?.({ row, column: runtimeColumn });
       },
-      serializeCellValue: (row, column, value) => {
-        const runtimeColumn = this.#resolveCell(row, column);
+      serializeCellValue: (row, column, value: CellValue | undefined) => {
+        const runtimeColumn = this.#columnManager.getColumn(column);
         return runtimeColumn.serialize
           ? runtimeColumn.serialize(value, { row, column: runtimeColumn })
           : String(value ?? "");
@@ -1483,7 +1480,7 @@ export class CyExcelCore {
     return this.#headerManager.getHeader(column);
   }
 
-  setCell(row: number, column: number, value: unknown): void {
+  setCell(row: number, column: number, value: CellValue | null | undefined): void {
     this.#enqueueOrRunMutation(() =>
       this.#applyCommandNow(new SetCellCommand(row, column, value))
     );
@@ -1524,7 +1521,9 @@ export class CyExcelCore {
     this.#enqueueOrRunMutation(() => {
       validateAxisChange({ axis: "row", operation: "insert", start, count }, this.#sheet.rowCount());
       this.#cancelActiveEdit();
-      const rows = Array.from({ length: count }, () => new Array<unknown>(this.#columns.length).fill(undefined));
+      const rows = Array.from({ length: count }, () =>
+        new Array<CellValue | undefined>(this.#columns.length).fill(undefined)
+      );
       this.#applyCommandNow(new InsertRowsCommand(start, rows));
     });
   }
@@ -1745,7 +1744,7 @@ export class CyExcelCore {
   }
 
   /** Writes `value` into one previously found match. A normal undoable SetCellCommand — nothing search-specific about the write itself. */
-  replace(match: SearchMatch, value: unknown): void {
+  replace(match: SearchMatch, value: CellValue): void {
     this.#enqueueOrRunMutation(() => {
       this.#applyCommandNow(new SetCellCommand(match.row, match.column, value));
     });
@@ -1760,7 +1759,7 @@ export class CyExcelCore {
    * number of cells replaced, or `null` if cancelled before the scan
    * finished — no writes happen in that case.
    */
-  async replaceAll(query: string, value: unknown, options: SearchOptions = {}): Promise<number | null> {
+  async replaceAll(query: string, value: CellValue, options: SearchOptions = {}): Promise<number | null> {
     const matches = await computeMatches({
       occupiedCells: this.#store.occupiedCells(),
       getDisplayText: (row, column, cellValue) => this.#getCellDisplayText(row, column, cellValue),
@@ -1786,8 +1785,8 @@ export class CyExcelCore {
   }
 
   /** The same text `column.format()` would paint for this cell — search matches what the user sees, not the raw stored value. */
-  #getCellDisplayText(row: number, column: number, value: unknown): string {
-    const runtimeColumn = this.#resolveCell(row, column);
+  #getCellDisplayText(row: number, column: number, value: CellValue | undefined): string {
+    const runtimeColumn = this.#columnManager.getColumn(column);
     // 样式的 numFmt 优先于列的 CellType.format（Step 24）。搜索走的是同一个函数，
     // 所以"屏幕上是 1,234.00、搜 1,234 搜不到"这种事不会发生。
     return formatCellText(value, this.getCellStyle(row, column), () =>
@@ -2141,55 +2140,12 @@ export class CyExcelCore {
    * that already returns a properly-typed value (e.g. a boolean from a
    * checkbox) passes straight through unchanged.
    */
-  #parseEditedValue(row: number, column: number, value: unknown): unknown {
+  #parseEditedValue(row: number, column: number, value: CellValue): CellValue {
     if (typeof value !== "string") {
       return value;
     }
-    const runtimeColumn = this.#resolveCell(row, column);
-    return runtimeColumn.parse ? runtimeColumn.parse(value, { row, column: runtimeColumn }) : value;
-  }
-
-  /**
-   * 这一格实际生效的类型：格级 `t` 优先，没有就是列的。
-   *
-   * 格级类型只换行为方法（format/parse/createEditor/compare），列的其余配置
-   * （宽度、renderer、剪贴板策略）照旧——那些是列的属性，与"这一格是什么"无关。
-   */
-  #resolveCell(row: number, column: number): RuntimeColumn {
     const runtimeColumn = this.#columnManager.getColumn(column);
-    const typeName = this.#sheet.getRecord(row, column)?.t;
-    if (typeName === undefined || typeName === runtimeColumn.typeName) {
-      return runtimeColumn;
-    }
-    try {
-      return { ...runtimeColumn, ...this.#cellTypeRegistry.resolve(typeName), typeName };
-    } catch {
-      // 快照可能来自别处，带着我们没注册的类型名——退回列类型，不让一格毁掉整张表。
-      return runtimeColumn;
-    }
-  }
-
-  /** 这一格生效的类型名（格级覆盖优先）。 */
-  getCellType(row: number, column: number): string {
-    assertValidCoordinate(row, column);
-    return this.#resolveCell(row, column).typeName;
-  }
-
-  /**
-   * 给一片区域设格级类型，`null` 回到列默认。
-   *
-   * **不会**因为设了日期数字格式就自动改类型（也不会反过来）：格式管显示、类型管
-   * 行为，两件事分开，改哪个都要明说。
-   */
-  setCellType(range: CellRange, typeName: string | null): void {
-    assertValidRange(range);
-    if (typeName !== null) {
-      // 先解析一次，未注册的类型名从调用点就抛，而不是等到画那一格时才发现。
-      this.#cellTypeRegistry.resolve(typeName);
-    }
-    this.#enqueueOrRunMutation(() => {
-      this.#applyCommandNow(new SetCellTypeCommand(range, typeName));
-    });
+    return runtimeColumn.parse ? runtimeColumn.parse(value, { row, column: runtimeColumn }) : value;
   }
 
   /**
@@ -2817,7 +2773,7 @@ export class CyExcelCore {
    * dragging or auto-filling down from a merged cell propagates its actual
    * value, not the covered cells' blanks.
    */
-  #getCellThroughMerge(row: number, column: number): unknown {
+  #getCellThroughMerge(row: number, column: number): CellValue | undefined {
     const merge = findMergeAt(this.#sheet.merges(), row, column);
     return this.#store.getCell(merge ? merge.startRow : row, merge ? merge.startColumn : column);
   }
@@ -2946,7 +2902,7 @@ export class CyExcelCore {
    */
   #applyPastedRange(
     range: CellRange,
-    values: readonly (readonly unknown[])[],
+    values: readonly (readonly (CellValue | null | undefined)[])[],
     styles: CopiedStyles | undefined
   ): void {
     if (styles === undefined) {

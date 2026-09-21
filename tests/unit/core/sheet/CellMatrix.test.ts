@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { CellMatrix } from "../../../../src/core/sheet";
+import { CellValueType } from "../../../../src/core/sheet/types";
 
 describe("CellMatrix", () => {
   it("returns undefined for an unoccupied cell instead of throwing", () => {
@@ -11,8 +12,8 @@ describe("CellMatrix", () => {
 
   it("stores and reads back a record", () => {
     const matrix = new CellMatrix();
-    matrix.set(3, 2, { v: 42, t: "number" });
-    expect(matrix.get(3, 2)).toEqual({ v: 42, t: "number" });
+    matrix.set(3, 2, { v: 42, t: CellValueType.NUMBER });
+    expect(matrix.get(3, 2)).toEqual({ v: 42, t: CellValueType.NUMBER });
     expect(matrix.occupiedCount()).toBe(1);
   });
 

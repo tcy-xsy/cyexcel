@@ -1,5 +1,6 @@
 import { buildMergeClearGrid, rangesIntersect, resolveMergeCells } from "../sheet/merges";
 import type { CellRange, CommandContext } from "../types";
+import type { CellValue } from "../sheet/types";
 import { assertValidRange } from "../validation";
 import type { ClearRangeCommand } from "./ClearRangeCommand";
 import { CommandHandlerRegistry } from "./CommandHandlerRegistry";
@@ -18,7 +19,6 @@ import type { ResizeRowCommand } from "./ResizeRowCommand";
 import type { SetCellCommand } from "./SetCellCommand";
 import type { SetRangeCommand } from "./SetRangeCommand";
 import type { SetStyleCommand } from "./SetStyleCommand";
-import type { SetCellTypeCommand } from "./SetCellTypeCommand";
 import type { SetRowHeightsCommand } from "./SetRowHeightsCommand";
 import type { ShowColumnCommand } from "./ShowColumnCommand";
 import type { UnmergeCellsCommand } from "./UnmergeCellsCommand";
@@ -50,7 +50,7 @@ function toContiguousRuns(rows: readonly number[]): readonly { readonly start: n
   return runs;
 }
 
-function createEmptyGrid(range: CellRange): readonly (readonly undefined[])[] {
+function createEmptyGrid(range: CellRange): readonly (readonly (CellValue | undefined)[])[] {
   const rowCount = range.endRow - range.startRow + 1;
   const columnCount = range.endColumn - range.startColumn + 1;
   return Object.freeze(
@@ -106,13 +106,6 @@ export function createBuiltinCommandPlanner(options: BuiltinCommandPlannerOption
     plan: ({ range, patch }, context) => {
       assertValidRange(range);
       context.stage(options.data.createSetStyle(range, patch));
-    }
-  });
-  registry.register<SetCellTypeCommand>({
-    type: "set-cell-type",
-    plan: ({ range, typeName }, context) => {
-      assertValidRange(range);
-      context.stage(options.data.createSetCellType(range, typeName));
     }
   });
   registry.register<MergeCellsCommand>({

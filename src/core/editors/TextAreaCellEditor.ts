@@ -1,6 +1,7 @@
 import { CELL_FONT, CELL_PADDING, SELECTION_STROKE_COLOR, SELECTION_STROKE_WIDTH } from "../render/theme";
 import type { CellEditor, CellEditorContext, ValidationResult } from "./CellEditor";
 import { positionEditorElement } from "./positionEditorElement";
+import type { CellValue } from "../sheet/types";
 
 export interface TextAreaCellEditorOptions {
   /**
@@ -50,7 +51,7 @@ export function createTextAreaCellEditor(options: TextAreaCellEditorOptions = {}
       textarea?.focus();
       textarea?.select();
     },
-    getValue(): unknown {
+    getValue(): CellValue {
       return textarea?.value ?? "";
     },
     destroy(): void {

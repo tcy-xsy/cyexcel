@@ -1,6 +1,7 @@
 import { SELECTION_STROKE_COLOR, SELECTION_STROKE_WIDTH } from "../render/theme";
 import type { CellEditor, CellEditorContext } from "./CellEditor";
 import { positionEditorElement } from "./positionEditorElement";
+import type { CellValue } from "../sheet/types";
 
 /**
  * Optional built-in editor for boolean-shaped values — a native
@@ -70,7 +71,7 @@ export function createBooleanCellEditor(): CellEditor {
     focus(): void {
       checkbox?.focus();
     },
-    getValue(): unknown {
+    getValue(): CellValue {
       return checkbox?.checked ?? false;
     },
     destroy(): void {

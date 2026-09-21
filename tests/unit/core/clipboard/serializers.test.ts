@@ -6,6 +6,11 @@ import {
   registerBuiltinCellTypes
 } from "../../../../src/core/cells";
 import { buildCellGrid } from "../../../../src/core/clipboard";
+import type { CellValue } from "../../../../src/core/sheet/types";
+
+/** 46037 = 2026-01-15。日期在这个模型里就是序列号（见 cells/builtins.ts 的 "date"）。 */
+const JAN_15_2026 = 46037;
+const JAN_16_2026 = 46038;
 
 function manager(): ColumnManager {
   const registry = new CellTypeRegistry();
@@ -13,29 +18,28 @@ function manager(): ColumnManager {
   return new ColumnManager({
     columns: [
       { type: "text" },
-      { type: "array" },
-      { type: "json" },
+      // display 与 raw 真正分岔的一列：`select` 的 format() 画标签，没有
+      // serialize()，于是 raw 落到 String(value) 拿到原值。
+      { type: "select", options: [{ value: "draft", label: "草稿" }] },
+      { type: "date" },
       { type: "text", clipboard: { copy: false } }
     ],
     registry
   });
 }
 
-function values(): Record<string, unknown[]> {
+function values(): Record<string, CellValue[]> {
   return {
     name: ["Alice", "Bob"],
-    tags: [
-      ["red", "green", "blue", "yellow"],
-      ["x"]
-    ],
-    meta: [{ a: 1, b: 2 }, { c: 3 }],
+    status: ["draft", "published"],
+    due: [JAN_15_2026, JAN_16_2026],
     secret: ["s1", "s2"]
   };
 }
 
 function contextFor(columnManager: ColumnManager) {
   const rows = values();
-  const columnIds = ["name", "tags", "meta", "secret"] as const;
+  const columnIds = ["name", "status", "due", "secret"] as const;
   return {
     getCellValue: (row: number, column: number) => rows[columnIds[column] as string]?.[row],
     getColumn: (column: number) => columnManager.getColumn(column)
@@ -43,7 +47,7 @@ function contextFor(columnManager: ColumnManager) {
 }
 
 describe("buildCellGrid — display mode", () => {
-  it("uses each column's format() output, which previews arrays/json instead of fully serializing them", () => {
+  it("uses each column's format() output, not the stored value", () => {
     const columnManager = manager();
     const grid = buildCellGrid(
       { startRow: 0, startColumn: 0, endRow: 0, endColumn: 2 },
@@ -52,13 +56,13 @@ describe("buildCellGrid — display mode", () => {
     );
 
     expect(grid[0]?.[0]).toBe("Alice");
-    expect(grid[0]?.[1]).toBe("[4] red, green, blue, ...");
-    expect(grid[0]?.[2]).toBe('{"a":1,"b":2}');
+    expect(grid[0]?.[1]).toBe("草稿");
+    expect(grid[0]?.[2]).toBe("2026-01-15");
   });
 });
 
 describe("buildCellGrid — raw mode", () => {
-  it("uses each column's serialize() output, which fully serializes arrays/json", () => {
+  it("uses the stored value rather than the display form", () => {
     const columnManager = manager();
     const grid = buildCellGrid(
       { startRow: 0, startColumn: 0, endRow: 0, endColumn: 2 },
@@ -67,8 +71,10 @@ describe("buildCellGrid — raw mode", () => {
     );
 
     expect(grid[0]?.[0]).toBe("Alice");
-    expect(grid[0]?.[1]).toBe(JSON.stringify(["red", "green", "blue", "yellow"]));
-    expect(grid[0]?.[2]).toBe(JSON.stringify({ a: 1, b: 2 }));
+    // Premise: display mode draws "草稿" here, so raw mode really is a
+    // different path and not the same string by coincidence.
+    expect(grid[0]?.[1]).toBe("draft");
+    expect(grid[0]?.[2]).toBe("2026-01-15");
   });
 
   it("falls back to String(value) for a type with no serialize()", () => {

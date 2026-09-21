@@ -99,8 +99,13 @@ describe("ClipboardService.copy", () => {
   it("writes raw-serialized text when mode is 'raw'", async () => {
     const registry = new CellTypeRegistry();
     registerBuiltinCellTypes(registry);
-    const columnManager = new ColumnManager({ columns: [{ type: "array" }], registry });
-    const sheet = createSheetFromRows([{ tags: ["a", "b", "c", "d"] }], ["tags"]);
+    // `select` 是 display 与 raw 真正分岔的类型：format() 画标签，没有
+    // serialize()，raw 于是落到 String(value) 拿到原值。
+    const columnManager = new ColumnManager({
+      columns: [{ type: "select", options: [{ value: "draft", label: "草稿" }] }],
+      registry
+    });
+    const sheet = createSheetFromRows([{ status: "draft" }], ["status"]);
     const store = new TableStore(sheet);
     const commandManager = createTableCommandManager(store);
     const io = fakeIo();
@@ -122,7 +127,9 @@ describe("ClipboardService.copy", () => {
     const result = await service.copy({ mode: "raw" });
 
     expect(result.status).toBe("copied");
-    expect(io.writeText).toHaveBeenCalledWith(escapeTsvCell(JSON.stringify(["a", "b", "c", "d"])));
+    // Premise: display mode would have written "草稿" here.
+    expect(columnManager.getColumn(0).format("draft", { row: 0, column: columnManager.getColumn(0) })).toBe("草稿");
+    expect(io.writeText).toHaveBeenCalledWith(escapeTsvCell("draft"));
   });
 
   it("returns 'oversized' without calling the raw serializer or writing to the clipboard", async () => {

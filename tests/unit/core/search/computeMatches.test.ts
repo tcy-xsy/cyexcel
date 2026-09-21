@@ -1,17 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { computeMatches } from "../../../../src/core/search";
+import type { CellValue } from "../../../../src/core/sheet/types";
 
 interface Cell {
   readonly row: number;
   readonly column: number;
-  readonly value: unknown;
+  readonly value: CellValue | undefined;
 }
 
-const cells = (values: readonly [number, number, unknown][]): readonly Cell[] =>
+const cells = (values: readonly [number, number, CellValue][]): readonly Cell[] =>
   values.map(([row, column, value]) => ({ row, column, value }));
 
-const asText = (_row: number, _column: number, value: unknown) => String(value);
+const asText = (_row: number, _column: number, value: CellValue | undefined) => String(value);
 
 describe("computeMatches", () => {
   it("finds substring matches, case-insensitive by default", async () => {

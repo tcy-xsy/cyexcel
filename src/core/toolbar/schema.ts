@@ -289,27 +289,6 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     }
   },
 
-  {
-    id: "cell-type",
-    group: "format",
-    order: 150,
-    type: "select",
-    label: "单元格类型",
-    tooltip: "这一格按什么类型解析与编辑（覆盖列的类型）",
-    options: [
-      { value: "", label: "跟随列" },
-      { value: "text", label: "文本" },
-      { value: "number", label: "数字" },
-      { value: "date", label: "日期" },
-      { value: "boolean", label: "布尔" }
-    ],
-    // 类型决定"怎么编辑"，数字格式决定"怎么显示"——两者独立，改哪个都要明说。
-    value: (ctx) => ctx.sheet.getCellType(ctx.range.startRow, ctx.range.startColumn),
-    apply: (ctx, value) => {
-      ctx.sheet.setCellType(ctx.range, value === "" ? null : String(value));
-    }
-  },
-
   // ---- align ----
   alignItem("align-left", "align", "left", "左对齐", 10, icons.alignLeft),
   alignItem("align-center", "align", "center", "居中", 20, icons.alignCenter),

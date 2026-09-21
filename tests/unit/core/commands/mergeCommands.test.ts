@@ -37,10 +37,12 @@ describe("MergeCellsCommand", () => {
 
     manager.execute(new MergeCellsCommand(range(0, 0, 1, 1)));
 
+    // 清空 = 没有记录 = 读出来是 undefined。`CellValue` 里没有 `null` 了
+    // （对齐 xlsx/Univer），空格子只有这一种表示。
     expect(store.getCell(0, 0)).toBe("R0C0"); // anchor untouched
-    expect(store.getCell(0, 1)).toBeNull();
-    expect(store.getCell(1, 0)).toBeNull();
-    expect(store.getCell(1, 1)).toBeNull();
+    expect(store.getCell(0, 1)).toBeUndefined();
+    expect(store.getCell(1, 0)).toBeUndefined();
+    expect(store.getCell(1, 1)).toBeUndefined();
     // Outside the merge range, nothing changed.
     expect(store.getCell(0, 2)).toBe("R0C2");
     expect(store.getCell(2, 0)).toBe("R2C0");
@@ -132,7 +134,7 @@ describe("MergeCellsCommand", () => {
     manager.redo();
 
     expect(store.sheet.merges()).toEqual([range(0, 0, 1, 1)]);
-    expect(store.getCell(0, 1)).toBeNull();
+    expect(store.getCell(0, 1)).toBeUndefined();
   });
 });
 
@@ -179,7 +181,7 @@ describe("UnmergeCellsCommand", () => {
     manager.execute(new UnmergeCellsCommand(range(0, 0, 1, 1)));
 
     expect(store.getCell(0, 0)).toBe("R0C0");
-    expect(store.getCell(0, 1)).toBeNull(); // cleared earlier by the merge itself, unmerge doesn't restore it
+    expect(store.getCell(0, 1)).toBeUndefined(); // cleared earlier by the merge itself, unmerge doesn't restore it
   });
 
   it("rejects an inverted range (endColumn before startColumn) with InvalidRange (final-review M1)", () => {

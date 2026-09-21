@@ -1,5 +1,6 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
 import type { CellRange } from "../types";
+import type { CellValue } from "./types";
 
 /**
  * 合并区几何搬移的纯函数集合（设计稿 §0.2/§2/§3）。这个文件只做几何/数组运算，
@@ -134,17 +135,20 @@ export function resolveMergeCells(
 }
 
 /**
- * `mergeCells(range)` 清空合并区内非锚点格用的取值网格：`[0,0]`（锚点）用
- * `undefined` 表示"跳过、保留原值"，其余格子用 `null` 表示"清空"。
+ * `mergeCells(range)` 清空合并区用的取值网格：整张全是 `undefined`（"清空这一格"）。
+ * 锚点不由这张网格保护——`stageMergeClear` 把锚点排除在写入范围之外。
  */
-export function buildMergeClearGrid(range: CellRange): (readonly unknown[])[] {
+export function buildMergeClearGrid(range: CellRange): readonly (readonly (CellValue | undefined)[])[] {
   const rows = range.endRow - range.startRow + 1;
   const columns = range.endColumn - range.startColumn + 1;
-  const grid: unknown[][] = [];
+  const grid: (CellValue | undefined)[][] = [];
   for (let row = 0; row < rows; row += 1) {
-    const line: unknown[] = [];
+    const line: (CellValue | undefined)[] = [];
     for (let column = 0; column < columns; column += 1) {
-      line.push(row === 0 && column === 0 ? undefined : null);
+      // 全部是 undefined（"这一格清空"）。`null` 曾经用来区分"清空"与"跳过锚点"，
+      // 但 `CellValue` 收紧之后 null 不再是合法值；而调用方（stageMergeClear）本来
+      // 就把锚点排除在写入范围之外，所以这里不需要再表达"跳过"。
+      line.push(undefined);
     }
     grid.push(line);
   }

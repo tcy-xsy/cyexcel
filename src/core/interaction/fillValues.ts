@@ -1,3 +1,4 @@
+import type { CellValue } from "../sheet/types";
 /**
  * Extends a known sequence of values (one column's cells, or one row's
  * cells, in the source selection) by `targetCount` new values, matching the
@@ -11,15 +12,18 @@
  * An empty `sourceValues` (e.g. a target column with no rows selected) has
  * nothing to extend from, so it fills with `undefined`.
  */
-export function computeFillValues(sourceValues: readonly unknown[], targetCount: number): unknown[] {
+export function computeFillValues(
+  sourceValues: readonly (CellValue | undefined)[],
+  targetCount: number
+): (CellValue | undefined)[] {
   if (targetCount <= 0) {
     return [];
   }
   if (sourceValues.length === 0) {
-    return new Array(targetCount).fill(undefined) as unknown[];
+    return new Array<CellValue | undefined>(targetCount).fill(undefined);
   }
   if (sourceValues.length === 1) {
-    return new Array(targetCount).fill(sourceValues[0]) as unknown[];
+    return new Array<CellValue | undefined>(targetCount).fill(sourceValues[0]);
   }
   if (sourceValues.every((value) => typeof value === "number")) {
     const numbers = sourceValues as readonly number[];

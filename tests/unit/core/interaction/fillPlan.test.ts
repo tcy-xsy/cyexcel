@@ -6,10 +6,11 @@ import {
   type FillPlanSources
 } from "../../../../src/core/interaction";
 import type { CellRange } from "../../../../src/core/types";
+import type { CellValue } from "../../../../src/core/sheet/types";
 
 /** A grid addressed as `${row}:${column}`; missing entries read as undefined. */
 function gridSources(
-  cells: Readonly<Record<string, unknown>>,
+  cells: Readonly<Record<string, CellValue>>,
   pasteBlockedColumns: readonly number[] = []
 ): FillPlanSources {
   return {
@@ -120,7 +121,7 @@ describe("computeAutoFillDownTargetRow", () => {
     const cells = { "0:0": "a", "1:0": "b", "2:0": "c" };
     expect(
       computeAutoFillDownTargetRow(range(0, 1, 0, 1), bounds, (row, column) =>
-        (cells as Record<string, unknown>)[`${row}:${column}`]
+        (cells as Record<string, CellValue>)[`${row}:${column}`]
       )
     ).toBe(2);
   });
@@ -129,7 +130,7 @@ describe("computeAutoFillDownTargetRow", () => {
     const cells = { "0:1": "a", "1:1": "b" };
     expect(
       computeAutoFillDownTargetRow(range(0, 0, 0, 0), bounds, (row, column) =>
-        (cells as Record<string, unknown>)[`${row}:${column}`]
+        (cells as Record<string, CellValue>)[`${row}:${column}`]
       )
     ).toBe(1);
   });
@@ -138,7 +139,7 @@ describe("computeAutoFillDownTargetRow", () => {
     const cells = { "0:0": "a", "1:0": "b", "2:0": "", "3:0": "d" };
     expect(
       computeAutoFillDownTargetRow(range(0, 1, 0, 1), bounds, (row, column) =>
-        (cells as Record<string, unknown>)[`${row}:${column}`]
+        (cells as Record<string, CellValue>)[`${row}:${column}`]
       )
     ).toBe(1);
   });
@@ -147,7 +148,7 @@ describe("computeAutoFillDownTargetRow", () => {
     const cells = { "0:0": "a" };
     expect(
       computeAutoFillDownTargetRow(range(0, 1, 0, 1), bounds, (row, column) =>
-        (cells as Record<string, unknown>)[`${row}:${column}`]
+        (cells as Record<string, CellValue>)[`${row}:${column}`]
       )
     ).toBe(null);
   });

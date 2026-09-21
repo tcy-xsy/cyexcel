@@ -173,10 +173,12 @@ describe("resolveMergeCells", () => {
 });
 
 describe("buildMergeClearGrid", () => {
-  it("marks the anchor cell undefined and every other cell null", () => {
+  it("is undefined throughout — every cell in the range gets cleared", () => {
+    // 锚点不在这张网格的职责里：`stageMergeClear` 本来就把锚点排除在写入范围
+    // 之外，而 `CellValue` 收紧之后 `null` 也不再是"清空"的写法。
     expect(buildMergeClearGrid(range(0, 0, 1, 2))).toEqual([
-      [undefined, null, null],
-      [null, null, null]
+      [undefined, undefined, undefined],
+      [undefined, undefined, undefined]
     ]);
   });
 

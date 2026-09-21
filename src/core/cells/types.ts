@@ -2,6 +2,7 @@ import type { CellEditor } from "../editors";
 import type { DomPointerOwnership } from "../interaction/domPointerOwnership";
 import type { CellRect } from "../layout";
 import type { Canvas2DLike } from "../render";
+import type { CellValue } from "../sheet/types";
 
 /**
  * Encapsulates a value's display, parsing, comparison and editing behavior.
@@ -23,8 +24,13 @@ export interface SelectOption {
   readonly label?: string;
 }
 
-export interface CellType<T = unknown> {
-  format(value: T, context: CellFormatContext): string;
+/**
+ * `T` 的默认值是 `CellValue`（`string | number | boolean`），不是 `unknown`——
+ * 单元格能存的就是这三种（见 `sheet/types.ts` 的 `CellValue`），`parse()` 的返回值
+ * 因此也只能是它们之一。这条约束让"快照往返无损"与"导出 xlsx 是直译"从类型上成立。
+ */
+export interface CellType<T extends CellValue = CellValue> {
+  format(value: T | undefined, context: CellFormatContext): string;
   paint?(context: CellRenderContext<T>): void;
   parse?(text: string, context: CellFormatContext): T;
   compare?(left: T, right: T): number;
@@ -41,13 +47,13 @@ export interface CellType<T = unknown> {
    */
   readonly filterable?: boolean;
   createEditor?(context: CellFormatContext): CellEditor;
-  serialize?(value: T, context: CellFormatContext): string;
+  serialize?(value: T | undefined, context: CellFormatContext): string;
   /** Metadata only — does not itself select an editor. See doc/progress.md's editor-pluggability patch. */
   readonly options?: readonly SelectOption[];
 }
 
 /** A registrable named type; `extends` names a previously-registered type to inherit from. */
-export interface CellTypeDefinition<T = unknown> extends Partial<CellType<T>> {
+export interface CellTypeDefinition<T extends CellValue = CellValue> extends Partial<CellType<T>> {
   readonly extends?: string;
 }
 
@@ -57,15 +63,15 @@ export interface CellTypeDefinition<T = unknown> extends Partial<CellType<T>> {
  * "../render") to avoid a render <-> cells dependency cycle — see the Step 8
  * plan's "关键设计决策 3". Exposes nothing that could mutate the Store.
  */
-export interface CellRenderContext<T = unknown> {
+export interface CellRenderContext<T extends CellValue = CellValue> {
   readonly ctx: Canvas2DLike;
   readonly rect: CellRect;
   readonly row: number;
   readonly column: RuntimeColumn;
-  readonly value: T;
+  readonly value: T | undefined;
 }
 
-export interface CellHitTestContext<T = unknown> extends CellRenderContext<T> {
+export interface CellHitTestContext<T extends CellValue = CellValue> extends CellRenderContext<T> {
   readonly point: { readonly x: number; readonly y: number };
 }
 
@@ -75,31 +81,31 @@ export interface CellHitTestContext<T = unknown> extends CellRenderContext<T> {
  * pre-written test). Not the full action set implied by later Hook targets
  * (sort/filter/menu); those get added when the step that needs them lands.
  */
-export type CellAction = { readonly type: "set-value"; readonly value: unknown } | { readonly type: "start-edit" };
+export type CellAction = { readonly type: "set-value"; readonly value: CellValue } | { readonly type: "start-edit" };
 
-export interface CanvasCellRenderer<T = unknown> {
+export interface CanvasCellRenderer<T extends CellValue = CellValue> {
   readonly kind: "canvas";
   paint(context: CellRenderContext<T>): void;
   hitTest?(context: CellHitTestContext<T>): CellAction | void;
 }
 
-export interface DomCellContext<T = unknown> {
+export interface DomCellContext<T extends CellValue = CellValue> {
   readonly row: number;
   readonly column: RuntimeColumn;
-  readonly value: T;
+  readonly value: T | undefined;
   readonly rect: CellRect;
   readonly actions: {
     readonly commit: (value: T) => void;
   };
 }
 
-export interface DomCellRenderer<T = unknown> {
+export interface DomCellRenderer<T extends CellValue = CellValue> {
   mount(container: HTMLElement, context: DomCellContext<T>): void;
   update(context: DomCellContext<T>): void;
   destroy(): void;
 }
 
-export interface DomCellRendererFactory<T = unknown> {
+export interface DomCellRendererFactory<T extends CellValue = CellValue> {
   readonly kind: "dom";
   /** Terminal ownership for events retargeted to the mounted host, including closed-shadow events. */
   readonly pointerOwnership: DomPointerOwnership;
@@ -220,7 +226,7 @@ export interface ColumnClipboardPolicy {
  * `HeaderDefinition` type from `../headers` would be a real import cycle.
  * `../headers/types.ts` re-exports these for anyone browsing that module.
  */
-export interface ColumnDefinition<T = unknown> {
+export interface ColumnDefinition<T extends CellValue = CellValue> {
   /*
    * 没有 `id`，也没有 `field`——列在这个模型里没有身份（ADR 0004 §3.8.2）。
    * 一列**就是**它的下标：公开 API 本来就全是下标制（`getCell(row, column)`、
@@ -284,7 +290,7 @@ export interface ColumnDefinition<T = unknown> {
  * The resolved, cached output of ColumnManager's merge chain. Never
  * re-merged during painting — see ColumnManager.
  */
-export interface RuntimeColumn<T = unknown> extends CellType<T> {
+export interface RuntimeColumn<T extends CellValue = CellValue> extends CellType<T> {
   readonly width: number;
   readonly typeName: string;
   readonly renderer?: CanvasCellRenderer<T> | DomCellRendererFactory<T>;

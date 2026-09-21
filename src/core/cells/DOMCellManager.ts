@@ -2,13 +2,14 @@ import type { SceneCellFragment, SceneSnapshot } from "../scene";
 import { declareDomPointerOwnership } from "../interaction/domPointerOwnership";
 import type { CellRange } from "../types";
 import type { DomCellContext, DomCellRenderer, DomCellRendererFactory, RuntimeColumn } from "./types";
+import type { CellValue } from "../sheet/types";
 
 export interface DOMCellManagerOptions {
   /** Overlay element DOM-rendered cells mount into; must already be connected to the document. */
   readonly container: HTMLElement;
   readonly getColumn: (column: number) => RuntimeColumn;
-  readonly getCellValue: (row: number, column: number) => unknown;
-  readonly commitValue: (row: number, column: number, value: unknown) => void;
+  readonly getCellValue: (row: number, column: number) => CellValue | undefined;
+  readonly commitValue: (row: number, column: number, value: CellValue) => void;
   /** Injected for Node testability (mirrors RenderScheduler's frameScheduler / EditorManager's editorFactory precedent). Defaults to a real `<div>`. */
   readonly createHost?: () => HTMLElement;
   /**
@@ -64,8 +65,8 @@ function cellKey(row: number, column: number): string {
 export class DOMCellManager {
   readonly #container: HTMLElement;
   readonly #getColumn: (column: number) => RuntimeColumn;
-  readonly #getCellValue: (row: number, column: number) => unknown;
-  readonly #commitValue: (row: number, column: number, value: unknown) => void;
+  readonly #getCellValue: (row: number, column: number) => CellValue | undefined;
+  readonly #commitValue: (row: number, column: number, value: CellValue) => void;
   readonly #createHost: () => HTMLElement;
   readonly #getMergesInRange: DOMCellManagerOptions["getMergesInRange"];
 
@@ -263,7 +264,7 @@ export class DOMCellManager {
       value: this.#getCellValue(binding.row, binding.column),
       rect,
       actions: Object.freeze({
-        commit: (value: unknown) => {
+        commit: (value: CellValue) => {
           if (binding.active) {
             this.#commitValue(binding.row, binding.column, value);
           }

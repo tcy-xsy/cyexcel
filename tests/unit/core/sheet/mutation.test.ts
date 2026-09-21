@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { isStructuralSheetMutation, type SheetMutation } from "../../../../src/core/sheet/mutation";
+import { CellValueType } from "../../../../src/core/sheet/types";
 
 describe("SheetMutation — 格子", () => {
   it("set-cell 带的是记录，不是裸值", () => {
-    const m: SheetMutation = { type: "set-cell", row: 0, column: 0, record: { v: 1, t: "money" } };
-    expect(m.record?.t).toBe("money");
+    const m = {
+      type: "set-cell",
+      row: 0,
+      column: 0,
+      record: { v: 1, t: CellValueType.NUMBER }
+    } satisfies SheetMutation;
+    expect(m.record.t).toBe(CellValueType.NUMBER);
   });
 
   it("set-cell 的 record 可以是 undefined，表示删格", () => {
-    const m: SheetMutation = { type: "set-cell", row: 0, column: 0, record: undefined };
+    const m = { type: "set-cell", row: 0, column: 0, record: undefined } satisfies SheetMutation;
     expect(m.record).toBeUndefined();
   });
 

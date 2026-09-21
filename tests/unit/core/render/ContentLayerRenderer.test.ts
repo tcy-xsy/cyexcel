@@ -11,6 +11,7 @@ import { SceneSnapshot } from "../../../../src/core/scene";
 import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
 import { mergesIntersectingRange } from "../../../../src/core/sheet/merges";
 import { RecordingCanvasContext } from "../../../helpers/RecordingCanvasContext";
+import type { CellValue } from "../../../../src/core/sheet/types";
 
 function createLayout(rowCount: number, columnCount: number): LayoutEngine {
   return new LayoutEngine({
@@ -90,14 +91,15 @@ describe("ContentLayerRenderer.paintContent — dirty regions", () => {
     expect(fillTextCalls[0]?.args[0]).toBe("2:3");
   });
 
-  it("draws an empty string for the default painter when the value is null or undefined", () => {
+  it("draws an empty string for the default painter when the cell is empty", () => {
+    // 空格子只有 `undefined` 一种形态：`CellValue` 里没有 `null`，未占用的格子
+    // 在 `cellData` 里干脆不存在（sheet/types.ts 不变量 1）。
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(1, 2);
-    const values: Record<number, unknown> = { 0: undefined, 1: null };
     const renderer = createContentRenderer({
       ctx,
       layout,
-      getCellValue: (_row, column) => values[column]
+      getCellValue: () => undefined
     });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 20 });
 
@@ -584,7 +586,7 @@ describe("ContentLayerRenderer — merged cells", () => {
   it("paints a merged cell once as a single spanning rect using the anchor's value, skipping covered cells", () => {
     const ctx = new RecordingCanvasContext();
     const layout = createLayout(3, 2); // rowHeight 20, columnWidths [50, 50]
-    const values: Record<string, unknown> = {
+    const values: Record<string, CellValue> = {
       "0,0": "Anchor",
       "1,0": "ShouldNeverPaint",
       "0,1": "0:1",

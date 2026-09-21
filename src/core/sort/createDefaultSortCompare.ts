@@ -1,3 +1,4 @@
+import type { CellValue } from "../sheet/types";
 /**
  * The comparator `sortByColumn()` sorts with.
  *
@@ -21,8 +22,8 @@
  */
 export function createDefaultSortCompare(
   direction: "asc" | "desc",
-  compareDefined?: (left: unknown, right: unknown) => number
-): (left: unknown, right: unknown) => number {
+  compareDefined?: (left: CellValue, right: CellValue) => number
+): (left: CellValue | undefined, right: CellValue | undefined) => number {
   // Cancels the `* sign` that computeSortOrder applies for "desc".
   const undoDirection = direction === "desc" ? -1 : 1;
   return (left, right) => {

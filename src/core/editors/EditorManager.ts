@@ -3,6 +3,7 @@ import type { SceneSnapshot } from "../scene";
 import type { CellRange } from "../types";
 import type { CellEditor, CellEditorFactory } from "./CellEditor";
 import { createTextCellEditor } from "./TextCellEditor";
+import type { CellValue } from "../sheet/types";
 
 export interface EditorManagerOptions {
   /** DOM node editors mount into; must already be connected to the document. */
@@ -10,11 +11,11 @@ export interface EditorManagerOptions {
   readonly getScene: () => SceneSnapshot;
   /** Resolves the merged range (if any) owning a cell — the editor overlay spans the whole merge. */
   readonly findMergeAt?: (row: number, column: number) => CellRange | undefined;
-  readonly getCellValue: (row: number, column: number) => unknown;
+  readonly getCellValue: (row: number, column: number) => CellValue | undefined;
   readonly commitValue: (
     row: number,
     column: number,
-    value: unknown
+    value: CellValue
   ) => void | Promise<void>;
   readonly editorFactory?: CellEditorFactory;
   /**
@@ -25,7 +26,7 @@ export interface EditorManagerOptions {
    */
   readonly resolveEditor?: (row: number, column: number) => CellEditor | undefined;
   /** Text-editor-only initial value, e.g. from the column's CellType.serialize(). */
-  readonly serializeCellValue?: (row: number, column: number, value: unknown) => string;
+  readonly serializeCellValue?: (row: number, column: number, value: CellValue | undefined) => string;
   readonly onEditStart?: (row: number, column: number) => void;
   readonly onEditCommit?: (row: number, column: number) => void;
   readonly onEditCancel?: (row: number, column: number) => void;
@@ -57,15 +58,15 @@ export class EditorManager {
   readonly #container: HTMLElement;
   readonly #getScene: () => SceneSnapshot;
   readonly #findMergeAt: ((row: number, column: number) => CellRange | undefined) | undefined;
-  readonly #getCellValue: (row: number, column: number) => unknown;
+  readonly #getCellValue: (row: number, column: number) => CellValue | undefined;
   readonly #commitValue: (
     row: number,
     column: number,
-    value: unknown
+    value: CellValue
   ) => void | Promise<void>;
   readonly #editorFactory: CellEditorFactory;
   readonly #resolveEditor: ((row: number, column: number) => CellEditor | undefined) | undefined;
-  readonly #serializeCellValue: ((row: number, column: number, value: unknown) => string) | undefined;
+  readonly #serializeCellValue: ((row: number, column: number, value: CellValue | undefined) => string) | undefined;
   readonly #onEditStart: ((row: number, column: number) => void) | undefined;
   readonly #onEditCommit: ((row: number, column: number) => void) | undefined;
   readonly #onEditCancel: ((row: number, column: number) => void) | undefined;
