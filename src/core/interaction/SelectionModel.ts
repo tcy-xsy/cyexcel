@@ -127,8 +127,17 @@ function clampRange(range: CellRange, bounds: SelectionBounds): CellRange {
 export class SelectionModel {
   #root: SelectionRoot;
 
-  constructor(bounds: SelectionBounds) {
+  /**
+   * 选区变了就叫一声。工具栏（Step 25）的按钮高亮要跟着选区走，而"选区变了"这件事
+   * 此前没有任何出口——`CyExcelCore` 里十六处调用 `invalidateSelection()` 只是让
+   * 画布重绘，不构成一个可订阅的事实。放在这里而不是在那十六处各发一次，是因为
+   * 这里是 `#root` 唯一能被改的地方，漏不掉。
+   */
+  #onChange: (() => void) | undefined;
+
+  constructor(bounds: SelectionBounds, onChange?: () => void) {
     validateBounds(bounds);
+    this.#onChange = onChange;
     this.#root = freezeRoot({
       bounds,
       kind: "cell",
@@ -212,7 +221,16 @@ export class SelectionModel {
   }
 
   replaceRoot(root: SelectionRoot): void {
-    this.#root = root;
+    this.#setRoot(root);
+  }
+
+  /** `#root` 的唯一写入口：只有真的换了对象才通知，省掉一串重复的空刷新。 */
+  #setRoot(next: SelectionRoot): void {
+    if (next === this.#root) {
+      return;
+    }
+    this.#root = next;
+    this.#onChange?.();
   }
 
   get snapshot(): SelectionSnapshot {
@@ -333,6 +351,6 @@ export class SelectionModel {
     active: CellPosition,
     otherRanges: readonly CellRange[]
   ): void {
-    this.#root = freezeRoot({ bounds: this.#root.bounds, kind, anchor, active, otherRanges });
+    this.#setRoot(freezeRoot({ bounds: this.#root.bounds, kind, anchor, active, otherRanges }));
   }
 }

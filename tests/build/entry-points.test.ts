@@ -52,6 +52,22 @@ describe("package.json exports — ESM", () => {
     );
     expect(stdout.trim()).toBe("function");
   });
+
+  it("resolves \"cyexcel/toolbar\" and exposes createToolbar", async () => {
+    const { stdout } = await runNode(
+      'import("cyexcel/toolbar").then(m => console.log(typeof m.createToolbar))'
+    );
+    expect(stdout.trim()).toBe("function");
+  });
+
+  it("importing the toolbar entry in Node touches no DOM — it only defines functions", async () => {
+    // 工具栏整个是 DOM 代码，但**模块顶层**不许碰 DOM：碰了的话 SSR 场景下光是
+    // import 就会炸。真正的 document 调用全在 createToolbar() 的函数体里。
+    const { stdout } = await runNode(
+      'import("cyexcel/toolbar").then(() => console.log("imported"))'
+    );
+    expect(stdout.trim()).toBe("imported");
+  });
 });
 
 describe("package.json exports — CJS/require", () => {

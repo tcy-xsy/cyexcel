@@ -17,6 +17,7 @@ export default [
       index: "src/index.ts",
       core: "src/core/index.ts",
       register: "src/register.ts",
+      toolbar: "src/toolbar.ts",
       "clipboard-worker": "src/core/clipboard/worker/serializeWorker.ts"
     },
     output: {

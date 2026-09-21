@@ -14,6 +14,9 @@ const entries = [
   { label: "cyexcel (aggregate)", file: "index.js" },
   { label: "cyexcel/core", file: "core.js" },
   { label: "cyexcel/register", file: "register.js" },
+  // 工具栏是显式引入的可选模块：这一行存在的意义是让"不 import 就不进包"看得见
+  // ——它有自己的体积，而 core.js 的体积里不含它（Step 25 退出条件）。
+  { label: "cyexcel/toolbar", file: "toolbar.js" },
   { label: "cyexcel (UMD/CJS)", file: "cyexcel.umd.cjs" }
 ];
 

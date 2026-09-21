@@ -1003,10 +1003,15 @@ export class CyExcelCore {
     });
     initialization.defer(() => this.#mutationIntents.dispose());
 
-    this.#selectionModel = new SelectionModel({
-      rowCount: initialDimensions.rowCount,
-      columnCount: this.#columns.length
-    });
+    this.#selectionModel = new SelectionModel(
+      {
+        rowCount: initialDimensions.rowCount,
+        columnCount: this.#columns.length
+      },
+      // 选区变化对外是一个事件（Step 25）：工具栏按钮的高亮、禁用都跟着它走。
+      // 发的是快照而不是"你自己去读 sheet.selection"——订阅者拿到的就是当时那一份。
+      () => this.#events.emit("selection-change", this.#selectionModel.snapshot)
+    );
     this.#interactionFrames = new InteractionFrameProvider({
       revisionGate: this.#store.coordinator.revisionGate,
       intentQueue: this.#mutationIntents,

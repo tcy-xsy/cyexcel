@@ -23,6 +23,10 @@
       "types": "./dist/types/register.d.ts",
       "import": "./dist/register.js",
       "require": "./dist/cyexcel.umd.cjs"
+    },
+    "./toolbar": {
+      "types": "./dist/types/toolbar.d.ts",
+      "import": "./dist/toolbar.js"
     }
   },
   "files": [
