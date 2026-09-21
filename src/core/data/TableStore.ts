@@ -15,6 +15,9 @@ import { changesForSheetMutation, type SheetAxisSpace } from "../sheet/patches";
 import type { SheetModel } from "../sheet/SheetModel";
 import { createSheetPlanningResources } from "../sheet/planning";
 import type { CellRange, Patch } from "../types";
+import { CellStyleMutation } from "../mutations/CellStyleMutation";
+import { StyleRegistry } from "../style/StyleRegistry";
+import type { CellStylePatch } from "../style/styleKey";
 import { assertValidCoordinate, assertValidRange } from "../validation";
 import type { ChangeSet } from "./changes";
 
@@ -125,11 +128,34 @@ function unionSpace(before: SheetAxisSpace, after: SheetAxisSpace): SheetAxisSpa
 export class TableStore {
   readonly #sheet: SheetModel;
   readonly #coordinator: MutationCoordinator;
+  readonly #styles: StyleRegistry;
   #nextDirectTransactionId = 1;
 
-  constructor(sheet: SheetModel, coordinator = new MutationCoordinator()) {
+  constructor(
+    sheet: SheetModel,
+    coordinator = new MutationCoordinator(),
+    styles: StyleRegistry = new StyleRegistry()
+  ) {
     this.#sheet = sheet;
     this.#coordinator = coordinator;
+    this.#styles = styles;
+  }
+
+  /**
+   * workbook 级样式表。写样式的变更要靠它 intern（ADR 0004 §3.4：存储层只有 id）。
+   * 缺省造一个空表，是为了让只测数据层的既有用例不必关心样式。
+   */
+  get styles(): StyleRegistry {
+    return this.#styles;
+  }
+
+  /**
+   * 一片区域改样式（合并语义，`null` 清键）。区域退化成单格时补丁是 `cell-style`，
+   * 否则是 `range-style`——由 `CellStyleMutation` 自己判断。
+   */
+  createSetStyleMutation(range: CellRange, patch: CellStylePatch): Mutation {
+    assertValidRange(range);
+    return new CellStyleMutation(this.#sheet, this.#styles, range, patch);
   }
 
   get version(): number {

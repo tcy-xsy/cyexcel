@@ -44,11 +44,38 @@ export function changesForSheetMutation(
   space: SheetAxisSpace
 ): readonly Patch[] {
   switch (mutation.type) {
-    case "set-cell":
-      return [{ type: "cell-value", row: mutation.row, column: mutation.column }];
+    // `changed` 缺省是 "value"（见 `CellWriteKind`）：既有调用方行为不变。
+    // "both" 产两条补丁而不是挑一条——值和样式确实都变了，让消费者各自决定
+    // 关心哪一条，比在这里替它们挑一条更诚实。
+    case "set-cell": {
+      const { row, column } = mutation;
+      switch (mutation.changed ?? "value") {
+        case "value":
+          return [{ type: "cell-value", row, column }];
+        case "style":
+          return [{ type: "cell-style", row, column }];
+        case "both":
+          return [
+            { type: "cell-value", row, column },
+            { type: "cell-style", row, column }
+          ];
+      }
+    }
 
-    case "set-range":
-      return [{ type: "range-value", range: mutation.range }];
+    case "set-range": {
+      const { range } = mutation;
+      switch (mutation.changed ?? "value") {
+        case "value":
+          return [{ type: "range-value", range }];
+        case "style":
+          return [{ type: "range-style", range }];
+        case "both":
+          return [
+            { type: "range-value", range },
+            { type: "range-style", range }
+          ];
+      }
+    }
 
     case "insert-rows":
       return [

@@ -33,7 +33,9 @@ export const CyExcelErrorCode = {
   PluginRuntimeNotReady: "plugin-runtime-not-ready",
   PluginDisposed: "plugin-disposed",
   MergeOverlapsExistingMerge: "merge-overlaps-existing-merge",
-  MergeSpansMoveBoundary: "merge-spans-move-boundary"
+  MergeSpansMoveBoundary: "merge-spans-move-boundary",
+  /** 设置样式时 numFmt pattern 不合法（Step 24）。在设置时抛，不等到渲染。 */
+  InvalidNumberFormat: "invalid-number-format"
 } as const;
 
 export type CyExcelErrorCode =

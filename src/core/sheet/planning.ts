@@ -31,6 +31,10 @@ export function createSheetPlanningResources(
       assertOwned(source);
       return transaction.prepareMutation(mutation);
     },
+    readRecord: (source, row, column) => {
+      assertOwned(source);
+      return transaction.getRecord(row, column);
+    },
     readRowMeta: (source, row) => {
       assertOwned(source);
       return transaction.getRowMeta(row);

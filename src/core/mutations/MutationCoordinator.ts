@@ -85,6 +85,7 @@ export class MutationCoordinator {
       baseRevision,
       model: resources.model,
       prepareData: resources.prepareData,
+      readRecord: resources.readRecord,
       readRowMeta: resources.readRowMeta,
       readColumnMeta: resources.readColumnMeta,
       roots: this.#createRootDraftRegistry()
@@ -272,6 +273,7 @@ export class MutationCoordinator {
         merges: () => []
       },
       prepareData: unsupported,
+      readRecord: unsupported,
       readRowMeta: unsupported,
       readColumnMeta: unsupported,
       dispose: () => {}

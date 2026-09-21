@@ -57,6 +57,7 @@ function snapshotChange(change: SemanticChange): SemanticChange {
       return Object.freeze({ ...change, order: change.order.slice() });
     case "cell-value":
     case "cell-style":
+    case "range-style":
     case "row-structure":
     case "column-structure":
     case "column-layout":
@@ -155,6 +156,7 @@ export function compileDirtySet(changes: readonly SemanticChange[]): DirtySet {
         }
         break;
       case "range-value":
+      case "range-style":
         domCells = true;
         if (content !== "full") {
           regions.push(Object.freeze({ range: change.range }));

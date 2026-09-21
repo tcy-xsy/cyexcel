@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      numfmt:
+        specifier: 3.2.6
+        version: 3.2.6
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1
@@ -860,6 +864,9 @@ packages:
 
   natural-compare@1.4.0:
     resolution: {integrity: sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==}
+
+  numfmt@3.2.6:
+    resolution: {integrity: sha512-MXc2KP3j+2usdHTY5/ENUc2S+3BRF/cJqnR6RHeq6LBqKoIZOAQ62DQw974nnaZOencbfkmkTPyTmMnlkCpjzg==}
 
   obug@2.1.4:
     resolution: {integrity: sha512-4a+OsYv9UktOJKE+l1A4OufDgdRF9PifWj+tJnHURo/P+WOxpG4GzUFL9qCalmWauao6ogiG+QvnCovwPoyAWA==}
@@ -1825,6 +1832,8 @@ snapshots:
   nanoid@3.3.17: {}
 
   natural-compare@1.4.0: {}
+
+  numfmt@3.2.6: {}
 
   obug@2.1.4: {}
 

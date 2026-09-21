@@ -215,6 +215,31 @@ export class SheetModel {
     }
   }
 
+  /**
+   * 这张表当前引用到的全部样式 id——格子的 `s` 加上列默认样式的 `s`。
+   *
+   * 存盘时用它剔除无人引用的样式条目（`StyleRegistry.toJSON(usedIds)`），这是样式
+   * 表唯一的回收时机：不做引用计数的代价就是要有这么一次全扫，而它 O(占用格)、
+   * 只在存盘时发生、不可能算错。
+   */
+  usedStyleIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const [, bucket] of this.#matrix.rows()) {
+      for (const key of Object.keys(bucket)) {
+        const id = (bucket[Number(key)] as CellRecord).s;
+        if (id !== undefined) {
+          ids.add(id);
+        }
+      }
+    }
+    for (const meta of Object.values(this.#columnData.read())) {
+      if (meta?.s !== undefined) {
+        ids.add(meta.s);
+      }
+    }
+    return ids;
+  }
+
   /** 只改值，保留该格已有的 `t`/`s`/`f`/`si`。 */
   setCell(row: number, column: number, value: unknown): void {
     const existing = this.#matrix.get(row, column);

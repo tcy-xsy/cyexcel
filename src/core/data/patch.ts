@@ -19,8 +19,9 @@ function patchKey(patch: KeyedPatch): string {
     case "cell-style":
       return `${patch.type}:${patch.row}:${patch.column}`;
     case "range-value":
+    case "range-style":
       return [
-        "range-value",
+        patch.type,
         patch.range.startRow,
         patch.range.startColumn,
         patch.range.endRow,

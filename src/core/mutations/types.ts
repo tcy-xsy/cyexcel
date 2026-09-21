@@ -3,7 +3,7 @@ import type { ChangeSet } from "../data/changes";
 import type { SheetMutation } from "../sheet/mutation";
 import type { SheetModel } from "../sheet/SheetModel";
 import type { PreparedSheetMutation } from "../sheet/SheetTransaction";
-import type { ColumnMeta, RowMeta } from "../sheet/types";
+import type { CellRecord, ColumnMeta, RowMeta } from "../sheet/types";
 import type { CellRange, Patch } from "../types";
 
 export type MutationCoordinatorState =
@@ -41,6 +41,13 @@ export interface MutationPrepareContext {
    * 没有并进 `TransactionReadView`：那个接口是公开 API（`check:public-api` 盯着），
    * 而且有别的实现方；这里沿用 `SheetTransaction.getRecord` 的做法，在读视图之外多开。
    */
+  /**
+   * 影子上的完整记录。存在理由与 `readRowMeta` 完全一样，只是换了一张表：
+   * `set-cell` 载的是整条 `CellRecord`，所以一条只改样式的变更要保住这一格已有的
+   * `v`/`t`/`f`/`si`，就得先读到它；而**必须读影子**——同一个事务里先写值再改样式
+   * 的两条变更，第二条若读活模型就会拿到没被第一条更新过的旧记录，把刚写的值盖掉。
+   */
+  readRecord(source: SheetModel, row: number, column: number): CellRecord | undefined;
   readRowMeta(source: SheetModel, row: number): RowMeta | undefined;
   readColumnMeta(source: SheetModel, column: number): ColumnMeta | undefined;
   readonly roots: MutationRootDraftRegistry;
@@ -55,6 +62,7 @@ export interface MutationRootDraftRegistry {
 export interface MutationPlanningResources {
   readonly model: TransactionReadView;
   readonly prepareData: MutationPrepareContext["prepareData"];
+  readonly readRecord: MutationPrepareContext["readRecord"];
   readonly readRowMeta: MutationPrepareContext["readRowMeta"];
   readonly readColumnMeta: MutationPrepareContext["readColumnMeta"];
   dispose(): void;

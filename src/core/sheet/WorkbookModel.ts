@@ -7,6 +7,8 @@ import {
 } from "./resources";
 import { assertValidWorkbookSnapshot } from "./serialize";
 import { SheetModel, type SheetModelOptions } from "./SheetModel";
+import { StyleRegistry } from "../style/StyleRegistry";
+import type { CellStyle } from "../style/types";
 import type { IndexedTable } from "./IndexedTable";
 import type { ResourceEntry, WorkbookSnapshot } from "./types";
 import { SNAPSHOT_VERSION } from "./types";
@@ -53,12 +55,21 @@ export class WorkbookModel {
    * 变成按种类分组，不再等于 `s.resources`，round trip 就不成立了。
    */
   readonly #resourceOrder: string[] = [];
-  /** 本阶段不透明透传，没有 setter，故 readonly（字段集属 Step 24，spec §10） */
-  readonly #styles: Readonly<Record<string, unknown>>;
+  /**
+   * workbook 级样式表（ADR 0004 §3.4）。Step 24 之前这里是一份不透明透传的
+   * `Record<string, unknown>`，只保证快照往返；现在它有字段集、有 intern，
+   * 是真正的去重表。
+   */
+  readonly #styles: StyleRegistry;
 
-  private constructor(sheet: SheetModel, styles: Readonly<Record<string, unknown>>) {
+  private constructor(sheet: SheetModel, styles: Readonly<Record<string, CellStyle>>) {
     this.#sheet = sheet;
-    this.#styles = styles;
+    this.#styles = new StyleRegistry(styles);
+  }
+
+  /** 样式表本身。写样式的 Command 需要它来 intern。 */
+  styles(): StyleRegistry {
+    return this.#styles;
   }
 
   static createEmpty(options: WorkbookModelOptions = {}): WorkbookModel {
@@ -190,7 +201,9 @@ export class WorkbookModel {
       version: SNAPSHOT_VERSION,
       sheetOrder: [sheetSnapshot.id],
       sheets: { [sheetSnapshot.id]: sheetSnapshot },
-      styles: { ...this.#styles },
+      // 传 usedIds：存盘是样式表唯一的回收时机，没有任何格子或列引用的条目
+      // 不写进快照（见 StyleRegistry 的类注释——不做引用计数的代价就在这里还）。
+      styles: this.#styles.toJSON(this.#sheet.usedStyleIds()),
       resources
     };
   }

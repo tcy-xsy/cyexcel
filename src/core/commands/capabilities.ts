@@ -2,6 +2,7 @@ import type { ColumnDefinition } from "../cells/types";
 import type { LayoutRootAction } from "../mutations/LayoutRootMutation";
 import type { Mutation } from "../mutations/types";
 import type { CellRange } from "../types";
+import type { CellStylePatch } from "../style/styleKey";
 import type {
   RowHeightCommandProvenance,
   SetRowHeightUpdate
@@ -10,6 +11,8 @@ import type {
 export interface DataCommandMutationFactory {
   createSetCell(row: number, column: number, value: unknown): Mutation;
   createSetRange(range: CellRange, values: readonly (readonly unknown[])[]): Mutation;
+  /** 一片区域改样式（合并语义）。Step 24。 */
+  createSetStyle(range: CellRange, patch: CellStylePatch): Mutation;
   createSetMerges(merges: readonly CellRange[]): Mutation;
   createInsertRows(start: number, rows: readonly (readonly unknown[])[]): Mutation;
   createDeleteRows(start: number, count: number): Mutation;

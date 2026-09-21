@@ -348,10 +348,29 @@ describe("WrapMeasurementService.invalidateFor", () => {
   });
 
   it("leaves the cache alone when nothing in the list touches it", () => {
+    // 合并区变化不改变任何一行里文字要占多高，所以不该丢测量结果。
+    // （这条原本用的是 `cell-style`——Step 24 之前它是个从未被产出过的占位变体；
+    // 现在样式改动会让测量失效，见下面两条。）
+    const harness = measuredHarness();
+    const before = harness.service.measuredRowCount;
+    harness.service.invalidateFor([{ type: "merge-layout" }]);
+    expect(harness.service.measuredRowCount).toBe(before);
+  });
+
+  it("forgets the row when its style changed — 改字号会改变文字占的高度", () => {
     const harness = measuredHarness();
     const before = harness.service.measuredRowCount;
     harness.service.invalidateFor([{ type: "cell-style", row: 0, column: 0 }]);
-    expect(harness.service.measuredRowCount).toBe(before);
+    expect(harness.service.measuredRowCount).toBe(before - 1);
+  });
+
+  it("forgets the whole range when a range's style changed", () => {
+    const harness = measuredHarness();
+    const before = harness.service.measuredRowCount;
+    harness.service.invalidateFor([
+      { type: "range-style", range: { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 } }
+    ]);
+    expect(harness.service.measuredRowCount).toBe(before - 2);
   });
 });
 

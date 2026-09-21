@@ -1,4 +1,5 @@
 import type { CellRange } from "../types";
+import type { CellStyle } from "../style/types";
 
 /**
  * # 别名规则（模块级，一条规则推出四条形态）
@@ -135,8 +136,8 @@ export interface WorkbookSnapshot {
   readonly version: number;
   readonly sheetOrder: readonly string[];
   readonly sheets: Readonly<Record<string, SheetSnapshot>>;
-  /** workbook 级样式去重表 */
-  readonly styles: Readonly<Record<string, unknown>>;
+  /** workbook 级样式去重表（字段集见 `style/types.ts`，ADR 0004 §3.4） */
+  readonly styles: Readonly<Record<string, CellStyle>>;
   readonly resources: readonly ResourceEntry[];
 }
 

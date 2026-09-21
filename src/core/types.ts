@@ -44,6 +44,12 @@ export type Patch =
   | { readonly type: "cell-value"; readonly row: number; readonly column: number }
   | { readonly type: "cell-style"; readonly row: number; readonly column: number }
   | { readonly type: "range-value"; readonly range: CellRange }
+  /**
+   * 一个区域的样式变了。与 `range-value` 的下游处理一致（同一片重绘），分开只是
+   * 为了让"这次改的是样式不是值"这件事在补丁里说得出来——消费者据此可以做不同的
+   * 决定，比如将来公式重算只需要盯 `*-value`。
+   */
+  | { readonly type: "range-style"; readonly range: CellRange }
   | {
       readonly type: "row-structure";
       readonly operation: "insert" | "delete" | "move";

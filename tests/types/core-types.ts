@@ -32,7 +32,8 @@ function describeChange(value: SemanticChange): string {
     case "cell-style":
       return `${value.type}:${value.row}:${value.column}`;
     case "range-value":
-      return `range-value:${value.range.startRow}`;
+    case "range-style":
+      return `${value.type}:${value.range.startRow}`;
     case "row-structure":
       return `row-structure:${value.operation}:${value.start}:${value.count}`;
     case "column-structure":

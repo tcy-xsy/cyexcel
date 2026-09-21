@@ -30,6 +30,7 @@ import { checkBeforeRowsChange } from "../commands/checkBeforeRowsChange";
 import type { ColumnDefinition } from "../cells/types";
 import { createGridStructurePayload } from "./GridStructureOwner";
 import type { GridStructureOwner } from "./GridStructureOwner";
+import type { CellStylePatch } from "../style/styleKey";
 
 const STANDALONE_COMMAND_HOOKS: HookRegistry = {
   beforeCommand: BEFORE_COMMAND_HOOK,
@@ -71,6 +72,10 @@ export class TableDataCommandMutationFactory implements DataCommandMutationFacto
 
   createSetRange(range: CellRange, values: readonly (readonly unknown[])[]): Mutation {
     return this.#store.createSetRangeMutation(range, values);
+  }
+
+  createSetStyle(range: CellRange, patch: CellStylePatch): Mutation {
+    return this.#store.createSetStyleMutation(range, patch);
   }
 
   createSetMerges(merges: readonly CellRange[]): Mutation {

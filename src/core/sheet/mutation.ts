@@ -65,9 +65,33 @@ export type SideTableEntries = Readonly<Record<string, readonly unknown[]>>;
  * 写活模型，`MutationCoordinator` 的"prepare 期不得触碰活状态"当场破掉。列宽/列
  * 隐藏是同一根轴上的同一件事，所以两个成员一起加。
  */
+/**
+ * 一条写记录的 mutation 改的是值、样式，还是两者。
+ *
+ * **只影响它产出哪种 `Patch`，不影响 `apply`/`invert`**——那两处看的是整条
+ * `CellRecord`，而样式只是 record 的 `s` 字段，整条替换本来就把它带上了。
+ * 加这个字段是因为 `changesForSheetMutation` 只拿得到 mutation、看不到旧 record，
+ * 光靠 mutation 本身判断不出这次写是为了改值还是改样式，而 Step 24 要求样式改动
+ * 产出真正的 `cell-style` 补丁而不是一律报成 `cell-value`。
+ *
+ * 缺省是 `"value"`：既有调用方一个字都不用改，行为不变。
+ */
+export type CellWriteKind = "value" | "style" | "both";
+
 export type SheetMutation =
-  | { readonly type: "set-cell"; readonly row: number; readonly column: number; readonly record: CellRecord | undefined }
-  | { readonly type: "set-range"; readonly range: CellRange; readonly records: readonly (readonly (CellRecord | undefined)[])[] }
+  | {
+      readonly type: "set-cell";
+      readonly row: number;
+      readonly column: number;
+      readonly record: CellRecord | undefined;
+      readonly changed?: CellWriteKind;
+    }
+  | {
+      readonly type: "set-range";
+      readonly range: CellRange;
+      readonly records: readonly (readonly (CellRecord | undefined)[])[];
+      readonly changed?: CellWriteKind;
+    }
   | { readonly type: "insert-rows"; readonly start: number; readonly rows: readonly RowCells[] }
   | { readonly type: "delete-rows"; readonly start: number; readonly count: number }
   | {
