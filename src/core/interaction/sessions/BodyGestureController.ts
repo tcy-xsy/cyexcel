@@ -32,7 +32,7 @@ export interface BodyGestureControllerOptions {
   readonly fillHandleController: FillHandleController;
   readonly captureTarget: PointerCaptureTarget;
   /** Focused on pointer-down so keyboard input follows the grid. */
-  readonly focusTarget: { focus(): void };
+  readonly focusTarget: { focus(options?: FocusOptions): void };
   /**
    * Runs `run` against a freshly captured interaction frame, or returns
    * `undefined` when no frame could be acquired. Frame acquisition, the read
@@ -100,7 +100,7 @@ export class BodyGestureController {
       return false;
     }
     event.preventDefault();
-    this.#options.focusTarget.focus();
+    this.#options.focusTarget.focus({ preventScroll: true });
     this.#begin("fill", event, frame.structureVersion);
     return true;
   }
@@ -123,7 +123,7 @@ export class BodyGestureController {
       button: event.button,
       ctrlOrMeta: event.ctrlKey || event.metaKey
     });
-    this.#options.focusTarget.focus();
+    this.#options.focusTarget.focus({ preventScroll: true });
 
     if (event.button === 0) {
       this.#begin("selection", event, structureVersion);

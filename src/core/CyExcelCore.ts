@@ -895,7 +895,7 @@ export class CyExcelCore {
     this.#contextMenuService = new ContextMenuService({
       container: dom.menuLayer,
       hooks: this.#hooks,
-      restoreFocus: () => this.#contentCanvas.focus(),
+      restoreFocus: () => this.#contentCanvas.focus({ preventScroll: true }),
       // Keeps a menu opened near the right/bottom edge fully within the
       // visible scroller instead of overflowing into (and being silently
       // clipped, including its click handling, by) the scroller's own
@@ -1331,11 +1331,11 @@ export class CyExcelCore {
         // focus to document.body once it's gone. Without reclaiming focus
         // here, #handleKeyDown (bound to contentCanvas) stops receiving any
         // further Enter/arrow-key events after the very first edit cycle.
-        this.#contentCanvas.focus();
+        this.#contentCanvas.focus({ preventScroll: true });
       },
       onEditCancel: () => {
         this.#renderScheduler.invalidateSelection();
-        this.#contentCanvas.focus();
+        this.#contentCanvas.focus({ preventScroll: true });
       }
     });
     initialization.defer(() => this.#editorManager.dispose());
@@ -3106,7 +3106,7 @@ export class CyExcelCore {
     }
 
     event.preventDefault();
-    this.#contentCanvas.focus();
+    this.#contentCanvas.focus({ preventScroll: true });
     this.#headerGestures.begin(kind, event, frame.structureVersion);
     if (kind === "column-resize") {
       this.#headerCanvas.style.cursor = "col-resize";
@@ -3213,7 +3213,7 @@ export class CyExcelCore {
       this.#events.emit("header-action", payload);
     });
     event.preventDefault();
-    this.#contentCanvas.focus();
+    this.#contentCanvas.focus({ preventScroll: true });
     return handleInput(undefined);
   }
 
@@ -3276,7 +3276,7 @@ export class CyExcelCore {
       return declineInput();
     }
     this.#renderScheduler.invalidateSelection();
-    this.#contentCanvas.focus();
+    this.#contentCanvas.focus({ preventScroll: true });
     if (gestureKind && event.button === 0 && this.#headerSelectionController.dragging) {
       event.preventDefault();
       this.#headerGestures.begin(gestureKind, event, frame.structureVersion);
@@ -3307,7 +3307,7 @@ export class CyExcelCore {
     }
 
     event.preventDefault();
-    this.#contentCanvas.focus();
+    this.#contentCanvas.focus({ preventScroll: true });
     document.body.style.cursor = "grabbing";
     this.#headerGestures.begin("row-reorder", event, frame.structureVersion);
     return handleInput(undefined);
