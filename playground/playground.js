@@ -4,7 +4,7 @@ import {
   rowsToWorkbookSnapshot
 } from "/src/core/index.ts";
 // 开箱即用的入口：createSheet 默认装上工具栏与编辑栏，高度布局由 core 负责。
-import { createSheet } from "/src/createSheet.ts";
+import { createWorkbook } from "/src/createWorkbook.ts";
 
 const PRODUCTS = [
   "工业温度传感器",
@@ -165,6 +165,7 @@ const mergeFormResult = document.getElementById("mergeFormResult");
 const metricConstruct = document.getElementById("metricConstruct");
 const metricFps = document.getElementById("metricFps");
 
+let workbook = null;
 let core = null;
 let currentRowCount = 0;
 let statusBarDefaultText = "";
@@ -205,8 +206,9 @@ function rebuild() {
   overscanRowsInput.value = String(config.overscanRows);
   overscanColumnsInput.value = String(config.overscanColumns);
 
-  if (core) {
-    core.dispose();
+  if (workbook) {
+    workbook.dispose();
+    workbook = null;
     core = null;
   }
   if (statusBarErrorTimeoutId !== null) {
@@ -237,7 +239,7 @@ function rebuild() {
   }));
 
   const start = performance.now();
-  core = createSheet(sheetMount, {
+  workbook = createWorkbook(sheetMount, {
     columns: columnConfigs,
     // ADR 0004 §3.2：入口只吃一份快照。对象数组在这里导进稀疏矩阵，导完这
     // 一遍之后 `rows` 与表格再无联系——改表格不会改到它，改它也不会改表格。
@@ -257,6 +259,8 @@ function rebuild() {
     plugins: [createBasicContextMenuPlugin()]
   });
   const elapsed = performance.now() - start;
+
+  core = workbook.getActiveSheet();
 
   registerPlaygroundShortcuts(core);
 

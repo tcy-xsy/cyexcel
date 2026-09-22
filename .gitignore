@@ -1,5 +1,6 @@
 coverage/
 dist/
+dist-docs/
 node_modules/
 playwright-report/
 blob-report/

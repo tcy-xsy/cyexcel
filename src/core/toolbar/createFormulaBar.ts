@@ -56,9 +56,14 @@ export function createFormulaBar(sheet: CyExcelCore, container: HTMLElement): Fo
   function refresh(): void {
     const { range } = sheet.selection;
     nameBox.value = rangeToA1(range);
-    const value = sheet.getCell(range.startRow, range.startColumn);
+    const hasActiveCell =
+      range.startRow < sheet.getRowCount() &&
+      range.startColumn < sheet.getColumnCount();
+    const value = hasActiveCell
+      ? sheet.getCell(range.startRow, range.startColumn)
+      : undefined;
     input.value = value === null || value === undefined ? "" : String(value);
-    editing = { row: range.startRow, column: range.startColumn };
+    editing = hasActiveCell ? { row: range.startRow, column: range.startColumn } : null;
   }
 
   function commit(): void {

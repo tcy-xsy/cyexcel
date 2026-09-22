@@ -6,6 +6,7 @@ import type { ToolbarItem, ToolbarSchema } from "./types";
 import * as icons from "./icons";
 import { applyBorderPreset, borderPanel, colorPanel, filterPanel } from "./panels";
 import { findReplaceDialog } from "./dialogs";
+import { exportSheetToExcel } from "./exportExcel";
 
 /**
  * toggle 一个布尔样式键：整片选区已经全是真就清掉，否则全部设上。
@@ -350,6 +351,18 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     label: "查找和替换",
     tooltip: "查找和替换",
     dialog: (ctx, body, close) => findReplaceDialog(body, close, ctx)
+  },
+  {
+    id: "export-excel",
+    group: "data",
+    order: 50,
+    type: "button",
+    icon: icons.exportExcel,
+    label: "导出 Excel",
+    tooltip: "导出当前 Sheet 的已用区域（.xlsx）",
+    run: async (ctx) => {
+      await exportSheetToExcel(ctx.sheet, {}, (row, column) => ctx.styleOf(row, column));
+    }
   },
 
   // ---- structure ----

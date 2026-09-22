@@ -23,6 +23,12 @@ export {
 } from "./element/defineCyExcel";
 
 export { createSheet, type CreateSheetOptions } from "./createSheet";
+export {
+  createWorkbook,
+  type CreateWorkbookOptions,
+  type WorkbookHandle,
+  type WorkbookSheetOptions
+} from "./createWorkbook";
 
 // 工具栏与编辑栏也从根入口出去：用 createSheet() 的人多半还想改 schema 或单独挂一条。
 export {

@@ -12,10 +12,14 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "noEmit": true,
+    "paths": {
+      "@cyexcel/*": ["./src/*"]
+    },
     "types": ["node"]
   },
   "include": [
     "src/**/*.ts",
+    "docs-site/**/*.ts",
     "tests/**/*.ts",
     "*.config.ts"
   ],

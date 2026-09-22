@@ -63,7 +63,13 @@ import { buildCopyHtml, CopyStyleCache, styleAt, type CopiedStyles } from "./cli
 import { assertValidCoordinate, assertValidRange } from "./validation";
 import type { CellStylePatch } from "./style/styleKey";
 import { STYLE_KEYS, type CellStyle } from "./style/types";
-import { WorkbookModel, type SheetModel, type WorkbookSnapshot } from "./sheet";
+import {
+  DEFAULT_BLANK_COLUMNS,
+  DEFAULT_BLANK_ROWS,
+  WorkbookModel,
+  type SheetModel,
+  type WorkbookSnapshot
+} from "./sheet";
 import { expandRangeForMerges, findMergeAt, mergesIntersectingRange } from "./sheet/merges";
 import type { CellEditorFactory } from "./editors";
 import { EditorManager } from "./editors";
@@ -537,7 +543,8 @@ function createBrowserClipboardIO(): ClipboardIO {
  * 永久的导入器（§3.2；xlsx 导入将来落在同一个位置）。入口只认快照这一种形态，
  * 于是「装载」与「把外部数据翻译成格子」是两件分开的事，各自可测。
  *
- * 空表的列数取 `columns.length` 而不是 0：坐标空间是派生的
+ * 空表是 Excel 风格的默认工作区：默认 1000 行；列数取 `columns.length`
+ * 而不是 0：坐标空间是派生的
  * （`maxOccupied + 1 + blank`），一张没有任何格子的表若不把列数记进
  * `blankColumns`，`columnCount()` 会答 0，紧接着的
  * `validateCyExcelCoreDataDimensions` 就会把「没给数据」当成配置错误拒掉。
@@ -550,8 +557,27 @@ function buildWorkbook(
     return WorkbookModel.fromSnapshot(options.snapshot);
   }
   return WorkbookModel.createEmpty({
-    sheet: { blankRows: 0, blankColumns: columns.length }
+    sheet: { blankRows: DEFAULT_BLANK_ROWS, blankColumns: columns.length }
   });
+}
+
+/** Derives the coordinate-space column count when a snapshot is used without column configs. */
+function snapshotColumnCount(snapshot: WorkbookSnapshot): number {
+  let columnCount = 0;
+  for (const sheetId of snapshot.sheetOrder) {
+    const sheet = snapshot.sheets[sheetId];
+    if (!sheet) {
+      continue;
+    }
+    let occupiedColumns = 0;
+    for (const rowRecord of Object.values(sheet.cellData)) {
+      for (const columnText of Object.keys(rowRecord)) {
+        occupiedColumns = Math.max(occupiedColumns, Number(columnText) + 1);
+      }
+    }
+    columnCount = Math.max(columnCount, occupiedColumns + sheet.blankColumns);
+  }
+  return columnCount;
 }
 
 /**
@@ -758,7 +784,15 @@ export class CyExcelCore {
     // column change would silently resize/reorder the caller's own
     // `options.columns` array.
     // （`options.snapshot` 不需要同样的保护：它只被读一遍装进存储模型。）
-    this.#columns = snapshotColumnDefinitions(options.columns ?? []);
+    this.#columns = snapshotColumnDefinitions(
+      options.columns ??
+        Array.from(
+          { length: options.snapshot === undefined
+              ? DEFAULT_BLANK_COLUMNS
+              : snapshotColumnCount(options.snapshot) },
+          () => ({})
+        )
+    );
     this.#scrollCommitPolicy = options.scrollCommitPolicy ?? "commit";
     this.#overscanRows = options.overscanRows ?? 0;
     this.#overscanColumns = options.overscanColumns ?? 0;
@@ -1476,6 +1510,21 @@ export class CyExcelCore {
 
   getCell(row: number, column: number): unknown {
     return this.#store.getCell(row, column);
+  }
+
+  /** Coordinate-space row count, including trailing blank rows. */
+  getRowCount(): number {
+    return this.#sheet.rowCount();
+  }
+
+  /** Coordinate-space column count, including trailing blank columns. */
+  getColumnCount(): number {
+    return this.#sheet.columnCount();
+  }
+
+  /** Number of rows that actually contain cells, excluding trailing blank rows. */
+  getUsedRowCount(): number {
+    return this.#sheet.occupiedRowCount();
   }
 
   getColumn(column: number): RuntimeColumn {

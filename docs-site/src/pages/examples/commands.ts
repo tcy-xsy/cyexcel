@@ -1,0 +1,62 @@
+import { createSheet } from "@cyexcel/createSheet";
+import { columns, snapshot } from "../../demo/data";
+import {
+  actionButton,
+  codeBlock,
+  demoBlock,
+  pageHeader,
+  paragraph,
+  section
+} from "../../components/doc";
+
+export default function commandsExamplePage(root: HTMLElement): () => void {
+  root.append(
+    pageHeader("EXAMPLES", "编辑与历史", "setCell() 会进入 Command 层，undo() 和 redo() 不需要单独实现。")
+  );
+
+  const intro = section("提交可撤销命令");
+  intro.body.append(
+    paragraph("所有单元格写入都经过命令层。调用方只表达意图，不需要手工维护历史栈。")
+  );
+  root.append(intro.root);
+  root.append(
+    codeBlock(`sheet.setCell(0, 1, "已确认订单");
+sheet.undo();
+sheet.redo();`)
+  );
+
+  const writeCell = actionButton("写入第 1 行第 2 列", () => {
+    sheet.setCell(0, 1, "已确认订单");
+    log.textContent = `第 1 行第 2 列已写入，当前值：${String(sheet.getCell(0, 1))}`;
+  });
+  const undo = actionButton("撤销", () => {
+    sheet.undo();
+    log.textContent = `已撤销，当前值：${String(sheet.getCell(0, 1))}`;
+  });
+  const redo = actionButton("重做", () => {
+    sheet.redo();
+    log.textContent = `已重做，当前值：${String(sheet.getCell(0, 1))}`;
+  });
+
+  const demo = demoBlock({
+    title: "撤销与重做",
+    description: "先写入一格，然后用撤销和重做观察值的变化。",
+    actions: [writeCell, undo, redo]
+  });
+  root.append(demo.root);
+  if (demo.log === undefined) {
+    throw new Error("demo log missing");
+  }
+  const log = demo.log;
+
+  demo.mount.classList.add("with-toolbar");
+  const sheet = createSheet(demo.mount, {
+    columns,
+    snapshot,
+    headerHeight: 28,
+    rowHeaderWidth: 48,
+    rowHeight: 30
+  });
+
+  return () => sheet.dispose();
+}

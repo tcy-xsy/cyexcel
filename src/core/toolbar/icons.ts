@@ -42,6 +42,7 @@ export const sortAsc = wrap('<path d="M7 20V4"/><path d="m3 8 4-4 4 4"/><path d=
 export const sortDesc = wrap('<path d="M7 4v16"/><path d="m3 16 4 4 4-4"/><path d="M14 7h3"/><path d="M14 12h5"/><path d="M14 17h7"/>');
 export const filter = wrap('<path d="M3 5h18l-7 8v6l-4 2v-8z"/>');
 export const find = wrap('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>');
+export const exportExcel = wrap('<path d="M12 3v11"/><path d="m8 10 4 4 4-4"/><path d="M5 20h14"/>');
 
 export const merge = wrap('<rect x="3" y="5" width="18" height="14" rx="1"/><path d="M9 5v14"/><path d="M15 5v14"/><path d="M7 12h10"/>');
 export const unmerge = wrap('<rect x="3" y="5" width="18" height="14" rx="1"/><path d="M12 5v14"/>');
