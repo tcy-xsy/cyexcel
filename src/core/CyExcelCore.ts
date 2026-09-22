@@ -2229,9 +2229,14 @@ export class CyExcelCore {
    * that already returns a properly-typed value (e.g. a boolean from a
    * checkbox) passes straight through unchanged.
    */
-  #parseEditedValue(row: number, column: number, value: CellValue): CellValue {
+  #parseEditedValue(row: number, column: number, value: CellValue | undefined): CellValue | undefined {
     if (typeof value !== "string") {
       return value;
+    }
+    // An empty editor/paste cell means "clear this cell" for every column
+    // type; otherwise a numeric column would coerce "" to 0.
+    if (value.trim() === "") {
+      return undefined;
     }
     const runtimeColumn = this.#columnManager.getColumn(column);
     return runtimeColumn.parse ? runtimeColumn.parse(value, { row, column: runtimeColumn }) : value;

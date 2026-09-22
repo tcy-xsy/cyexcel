@@ -31,6 +31,12 @@ describe("builtin cell types — number", () => {
     expect(type.parse?.("42", ctx)).toBe(42);
   });
 
+  it("treats empty text as an empty cell instead of zero", () => {
+    const type = registry().resolve("number");
+    expect(type.parse?.("", ctx)).toBeUndefined();
+    expect(type.parse?.("   ", ctx)).toBeUndefined();
+  });
+
   it("compares numerically", () => {
     const type = registry().resolve("number");
     expect(type.compare?.(1, 2)).toBeLessThan(0);

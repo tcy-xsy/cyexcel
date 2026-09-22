@@ -36,7 +36,8 @@ export function registerBuiltinCellTypes(registry: CellTypeRegistry): void {
 
   registry.register("number", {
     format: (value) => (typeof value === "number" && Number.isFinite(value) ? String(value) : ""),
-    parse: (text) => Number(text),
+    // Editing an empty cell must clear it, not coerce the empty string to 0.
+    parse: (text) => (text.trim() === "" ? undefined : Number(text)),
     compare: (left, right) => (left as number) - (right as number)
   });
 

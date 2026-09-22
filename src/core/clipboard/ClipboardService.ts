@@ -22,7 +22,7 @@ export interface ClipboardServiceOptions {
   readonly getColumn: (column: number) => RuntimeColumn;
   readonly getRowCount: () => number;
   readonly getColumnCount: () => number;
-  readonly parseValue: (row: number, column: number, text: string) => CellValue;
+  readonly parseValue: (row: number, column: number, text: string) => CellValue | undefined;
   readonly getSelectionRange: () => CellRange;
   readonly getStoreVersion: () => number;
   /** Expected to be a single Command execution (e.g. one SetRangeCommand), so one paste = one transaction = one History entry. */

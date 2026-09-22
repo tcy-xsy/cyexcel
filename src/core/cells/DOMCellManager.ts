@@ -9,7 +9,7 @@ export interface DOMCellManagerOptions {
   readonly container: HTMLElement;
   readonly getColumn: (column: number) => RuntimeColumn;
   readonly getCellValue: (row: number, column: number) => CellValue | undefined;
-  readonly commitValue: (row: number, column: number, value: CellValue) => void;
+  readonly commitValue: (row: number, column: number, value: CellValue | undefined) => void;
   /** Injected for Node testability (mirrors RenderScheduler's frameScheduler / EditorManager's editorFactory precedent). Defaults to a real `<div>`. */
   readonly createHost?: () => HTMLElement;
   /**
@@ -66,7 +66,7 @@ export class DOMCellManager {
   readonly #container: HTMLElement;
   readonly #getColumn: (column: number) => RuntimeColumn;
   readonly #getCellValue: (row: number, column: number) => CellValue | undefined;
-  readonly #commitValue: (row: number, column: number, value: CellValue) => void;
+  readonly #commitValue: (row: number, column: number, value: CellValue | undefined) => void;
   readonly #createHost: () => HTMLElement;
   readonly #getMergesInRange: DOMCellManagerOptions["getMergesInRange"];
 

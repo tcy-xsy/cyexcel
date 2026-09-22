@@ -272,6 +272,15 @@ describe("ClipboardService.paste", () => {
     expect(s.store.getCell(0, 1)).toBe(30);
   });
 
+  it("clears a number cell when pasting an empty value", async () => {
+    const s = setup();
+    const { service } = makeService(s);
+
+    await service.paste({ range: { startRow: 0, startColumn: 1, endRow: 0, endColumn: 1 }, text: "" });
+
+    expect(s.store.getCell(0, 1)).toBeUndefined();
+  });
+
   it("pastes a multi-row multi-column TSV block starting at the given anchor", async () => {
     const s = setup();
     const { service } = makeService(s);

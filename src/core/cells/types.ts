@@ -32,7 +32,7 @@ export interface SelectOption {
 export interface CellType<T extends CellValue = CellValue> {
   format(value: T | undefined, context: CellFormatContext): string;
   paint?(context: CellRenderContext<T>): void;
-  parse?(text: string, context: CellFormatContext): T;
+  parse?(text: string, context: CellFormatContext): T | undefined;
   compare?(left: T, right: T): number;
   /**
    * Whether values of this type have a meaningful order at all. Defaults to

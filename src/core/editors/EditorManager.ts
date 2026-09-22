@@ -15,7 +15,7 @@ export interface EditorManagerOptions {
   readonly commitValue: (
     row: number,
     column: number,
-    value: CellValue
+    value: CellValue | undefined
   ) => void | Promise<void>;
   readonly editorFactory?: CellEditorFactory;
   /**
@@ -62,7 +62,7 @@ export class EditorManager {
   readonly #commitValue: (
     row: number,
     column: number,
-    value: CellValue
+    value: CellValue | undefined
   ) => void | Promise<void>;
   readonly #editorFactory: CellEditorFactory;
   readonly #resolveEditor: ((row: number, column: number) => CellEditor | undefined) | undefined;
