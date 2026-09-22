@@ -4,6 +4,10 @@ export { parseA1, rangeToA1, toA1 } from "./a1Notation";
 export { defaultToolbarSchema } from "./schema";
 export { createDialog, type DialogHandle, type DialogOptions } from "./createDialog";
 export { findReplaceDialog } from "./dialogs";
+export {
+  exportSheetToExcel,
+  type ExcelExportOptions
+} from "./exportExcel";
 export { commonValue, everyCellHas, resolveItemState, MAX_PROBED_CELLS } from "./state";
 export {
   TOOLBAR_GROUPS,

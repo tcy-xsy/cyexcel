@@ -11,6 +11,14 @@ import { DEFAULT_CYEXCEL_TAG_NAME, defineCyExcel } from "./element/defineCyExcel
 
 export * from "./core";
 export { DEFAULT_CYEXCEL_TAG_NAME, defineCyExcel };
+export { createSheet, type CreateSheetOptions } from "./createSheet";
+export {
+  createWorkbook,
+  type CreateWorkbookOptions,
+  type WorkbookHandle,
+  type WorkbookSheetOptions
+} from "./createWorkbook";
+export * from "./core/toolbar";
 
 if (typeof globalThis.customElements !== "undefined") {
   defineCyExcel();

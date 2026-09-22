@@ -142,6 +142,8 @@ export function createToolbar(
     layer.style.left = `${options.anchorRect.left}px`;
     layer.style.top = `${options.anchorRect.bottom}px`;
     const disposeContent = options.fill(layer);
+    const closePanel = (): void => closeLayer();
+    layer.addEventListener("cyx-toolbar-close", closePanel);
     document.body.append(layer);
     // 量一次再往回收：靠右的按钮（"更多"就在最右）弹出的面板会越过视口边缘；
     // 项多的面板（溢出菜单）也可能顶破视口底边。与 tooltip 同一套收边做法。
@@ -173,6 +175,7 @@ export function createToolbar(
     closeOpenLayer = () => {
       document.removeEventListener("mousedown", onPointerDown, true);
       document.removeEventListener("keydown", onKeyDown, true);
+      layer.removeEventListener("cyx-toolbar-close", closePanel);
       disposeContent();
       layer.remove();
     };

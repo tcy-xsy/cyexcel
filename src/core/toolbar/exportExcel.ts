@@ -1,9 +1,11 @@
 import type { CyExcelCore } from "../CyExcelCore";
 import type { BorderSide, CellStyle } from "../style/types";
 
-interface ExcelExportOptions {
+export interface ExcelExportOptions {
   readonly fileName?: string;
   readonly includeHeaders?: boolean;
+  /** Return the XLSX Blob instead of triggering a browser download. */
+  readonly download?: boolean;
 }
 
 interface ExcelFont {
@@ -427,7 +429,7 @@ export async function exportSheetToExcel(
   sheet: CyExcelCore,
   options: ExcelExportOptions = {},
   styleOf?: (row: number, column: number) => CellStyle | undefined
-): Promise<void> {
+): Promise<void | Blob> {
   const rowCount = Math.max(sheet.getUsedRowCount(), 1);
   const columnCount = sheet.getColumnCount();
   if (rowCount <= 0 || columnCount <= 0) {
@@ -564,5 +566,10 @@ export async function exportSheetToExcel(
     }
   ];
 
-  download(zipFiles(files), options.fileName ?? `cyexcel-export-${Date.now()}.xlsx`);
+  const blob = zipFiles(files);
+  if (options.download === false) {
+    return blob;
+  }
+
+  download(blob, options.fileName ?? `cyexcel-export-${Date.now()}.xlsx`);
 }

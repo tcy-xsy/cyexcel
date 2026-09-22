@@ -369,10 +369,25 @@ export const panelRow: Style = {
 
 export const panelStatus: Style = { padding: "2px 8px", fontSize: "12px", color: "#6b7280" };
 
+export const colorPanel: Style = {
+  minWidth: "138px",
+  display: "flex",
+  flexDirection: "column",
+  gap: "5px"
+};
+
+export const panelSectionLabel: Style = {
+  padding: "0 2px",
+  color: "#6b7280",
+  fontSize: "11px",
+  lineHeight: "15px",
+  userSelect: "none"
+};
+
 export const swatchGrid: Style = {
   display: "grid",
-  gridTemplateColumns: "repeat(5, 20px)",
-  gap: "4px",
+  gridTemplateColumns: "repeat(5, 22px)",
+  gap: "5px",
   padding: "2px"
 };
 
@@ -390,12 +405,57 @@ export const panelActionCurrent: Style = {
 };
 
 export const swatch: Style = {
-  width: "20px",
-  height: "20px",
+  width: "22px",
+  height: "22px",
   border: `1px solid ${COLORS.border}`,
   borderRadius: "3px",
   cursor: "pointer",
   padding: "0"
+};
+
+export const customColorRow: Style = {
+  display: "flex",
+  alignItems: "center",
+  gap: "5px",
+  padding: "2px"
+};
+
+export const customColorPicker: Style = {
+  flex: "0 0 auto",
+  width: "26px",
+  height: "26px",
+  padding: "1px",
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: "3px",
+  background: COLORS.surface,
+  cursor: "pointer"
+};
+
+export const customColorInput: Style = {
+  flex: "1 1 auto",
+  minWidth: "58px",
+  height: "26px",
+  padding: "0 6px",
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: "3px",
+  background: COLORS.surface,
+  color: COLORS.text,
+  fontSize: "12px",
+  outline: "none"
+};
+
+export const customColorApply: Style = {
+  flex: "0 0 auto",
+  width: "auto",
+  height: "26px",
+  padding: "0 8px",
+  border: `1px solid ${COLORS.border}`,
+  borderRadius: "3px",
+  background: COLORS.surface,
+  color: COLORS.text,
+  fontSize: "12px",
+  textAlign: "center",
+  cursor: "pointer"
 };
 
 /**

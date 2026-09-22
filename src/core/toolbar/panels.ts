@@ -14,11 +14,100 @@ import { el } from "./dom";
  * 所以刻意写得薄：没有分支逻辑，所有判断都在 `state.ts` 那边。
  */
 
-/** 十个常用色 + 一个"无"。不做取色器——那是宿主的活，`setRangeStyle` 接受任意 CSS 颜色串。 */
-const SWATCHES = [
-  "#111827", "#ef4444", "#f97316", "#eab308", "#22c55e",
-  "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899", "#ffffff"
-];
+/** 常用主题色按行分组，保证同一行是同一色相的深浅变化。 */
+const THEME_COLORS: readonly { readonly label: string; readonly color: string }[] = Object.freeze([
+  { label: "墨黑", color: "#111827" },
+  { label: "灰", color: "#4b5563" },
+  { label: "浅灰", color: "#9ca3af" },
+  { label: "纸白", color: "#f8fafc" },
+  { label: "白", color: "#ffffff" },
+  { label: "红", color: "#dc2626" },
+  { label: "橙", color: "#ea580c" },
+  { label: "琥珀", color: "#d97706" },
+  { label: "绿", color: "#16a34a" },
+  { label: "青", color: "#0891b2" },
+  { label: "蓝", color: "#2563eb" },
+  { label: "靛蓝", color: "#4f46e5" },
+  { label: "紫", color: "#7c3aed" },
+  { label: "粉", color: "#db2777" },
+  { label: "棕", color: "#92400e" },
+  { label: "浅红", color: "#fca5a5" },
+  { label: "浅橙", color: "#fdba74" },
+  { label: "浅琥珀", color: "#fcd34d" },
+  { label: "浅绿", color: "#86efac" },
+  { label: "浅蓝", color: "#93c5fd" }
+]);
+
+const RECENT_COLOR_LIMIT = 10;
+let recentColors: string[] = [];
+
+function rememberColor(color: string): void {
+  recentColors = [color, ...recentColors.filter(item => item !== color)]
+    .slice(0, RECENT_COLOR_LIMIT);
+}
+
+function cssColorToHex(value: string): string | undefined {
+  const source = value.trim();
+  if (/^#[0-9a-f]{6}$/i.test(source)) return source.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(source)) {
+    return `#${[...source.slice(1)].map(char => char + char).join("")}`.toLowerCase();
+  }
+
+  const probe = document.createElement("span");
+  probe.style.position = "absolute";
+  probe.style.left = "-9999px";
+  probe.style.color = source;
+  if (!probe.style.color) return undefined;
+
+  document.body.append(probe);
+  const computed = getComputedStyle(probe).color;
+  probe.remove();
+  const match = /^rgba?\((\d+), (\d+), (\d+)(?:, 1)?\)$/i.exec(computed);
+  if (!match) return undefined;
+
+  return `#${match.slice(1, 4)
+    .map(channel => Number(channel).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function createSwatch(
+  color: string,
+  label: string,
+  current: string | undefined,
+  onPick: (color: string) => void
+): HTMLButtonElement {
+  const button = el("button", "cyx-toolbar-swatch");
+  button.type = "button";
+  styles.apply(button, styles.swatch);
+  button.style.background = color;
+  button.title = `${label} ${color}`;
+  button.setAttribute("aria-label", `${label} ${color}`);
+  if (current !== undefined && cssColorToHex(current) === color) {
+    button.dataset.current = "true";
+    styles.apply(button, styles.swatchCurrent);
+  }
+  const paintState = (hovered: boolean): void => {
+    if (button.dataset.current === "true") {
+      button.style.boxShadow = "";
+      styles.apply(button, styles.swatchCurrent);
+      return;
+    }
+    if (!hovered) button.style.outline = "";
+    button.style.boxShadow = hovered ? `0 0 0 2px ${styles.COLORS.hover}` : "";
+  };
+  button.addEventListener("mouseenter", () => paintState(true));
+  button.addEventListener("mouseleave", () => paintState(false));
+  button.addEventListener("focus", () => paintState(true));
+  button.addEventListener("blur", () => paintState(false));
+  button.addEventListener("click", () => onPick(color));
+  return button;
+}
+
+function closePanel(host: HTMLElement): void {
+  window.setTimeout(() => {
+    host.dispatchEvent(new CustomEvent("cyx-toolbar-close"));
+  }, 0);
+}
 
 export function colorPanel(
   host: HTMLElement,
@@ -29,27 +118,41 @@ export function colorPanel(
     onChosen?: (value: string) => void;
   }
 ): () => void {
+  const current = options.current === undefined ? undefined : cssColorToHex(options.current);
+  const pick = (color: string): void => {
+    rememberColor(color);
+    options.onChosen?.(color);
+    options.onPick(color);
+    closePanel(host);
+  };
+
+  const root = el("div", "cyx-toolbar-color-panel");
+  styles.apply(root, styles.colorPanel);
+  const sectionLabel = (text: string): HTMLElement => {
+    const label = el("div", "cyx-toolbar-panel-label", text);
+    styles.apply(label, styles.panelSectionLabel);
+    return label;
+  };
+
+  if (recentColors.length > 0) {
+    root.append(sectionLabel("最近使用"));
+    const recentGrid = el("div", "cyx-toolbar-swatches");
+    styles.apply(recentGrid, styles.swatchGrid);
+    for (const color of recentColors) {
+      recentGrid.append(createSwatch(color, "最近颜色", current, pick));
+    }
+    root.append(recentGrid);
+  }
+
+  root.append(sectionLabel("常用颜色"));
   const grid = el("div", "cyx-toolbar-swatches");
   styles.apply(grid, styles.swatchGrid);
-  for (const color of SWATCHES) {
-    const button = el("button", "cyx-toolbar-swatch");
-    button.type = "button";
-    styles.apply(button, styles.swatch);
-    button.style.background = color;
-    button.setAttribute("aria-label", color);
-    if (options.current === color) {
-      button.dataset.current = "true";
-      // 必须连内联样式一起写：这个模块没有 stylesheet（见 styles.ts 顶部），
-      // `[data-current]` 选不中任何东西，只设 dataset 的话高亮根本不出现——
-      // "当前这片选区是什么颜色"于是永远看不见。dataset 留着给宿主换皮肤用。
-      styles.apply(button, styles.swatchCurrent);
-    }
-    button.addEventListener("click", () => {
-      options.onChosen?.(color);
-      options.onPick(color);
-    });
-    grid.append(button);
+  for (const themeColor of THEME_COLORS) {
+    grid.append(createSwatch(themeColor.color, themeColor.label, current, pick));
   }
+
+  root.append(sectionLabel("自定义"), createCustomColor(current, pick));
+
   const clear = el("button", "cyx-toolbar-panel-action", "无颜色");
   clear.type = "button";
   styles.apply(clear, styles.panelAction);
@@ -59,12 +162,61 @@ export function colorPanel(
     clear.dataset.current = "true";
     styles.apply(clear, styles.panelActionCurrent);
   }
-  clear.addEventListener("click", () => options.onPick(null));
+  clear.addEventListener("click", () => {
+    options.onPick(null);
+    closePanel(host);
+  });
 
-  host.append(grid, clear);
+  root.append(clear);
+  host.append(root);
   return () => {
     host.replaceChildren();
   };
+}
+
+function createCustomColor(current: string | undefined, onPick: (color: string) => void): HTMLElement {
+  const row = el("div", "cyx-toolbar-custom-color");
+  styles.apply(row, styles.customColorRow);
+
+  const picker = document.createElement("input");
+  picker.type = "color";
+  picker.value = current ?? "#111827";
+  picker.setAttribute("aria-label", "打开取色器");
+  styles.apply(picker, styles.customColorPicker);
+  picker.addEventListener("change", () => onPick(picker.value));
+
+  const input = el("input", "cyx-toolbar-panel-input");
+  styles.apply(input, styles.customColorInput);
+  input.type = "text";
+  input.spellcheck = false;
+  input.placeholder = "#1D4ED8";
+  input.setAttribute("aria-label", "十六进制颜色");
+
+  const apply = el("button", "cyx-toolbar-panel-action", "应用");
+  apply.type = "button";
+  styles.apply(apply, styles.customColorApply);
+  const submit = (): void => {
+    const color = cssColorToHex(input.value);
+    if (color === undefined) {
+      input.setAttribute("aria-invalid", "true");
+      input.style.borderColor = "#dc2626";
+      input.focus();
+      return;
+    }
+    input.removeAttribute("aria-invalid");
+    input.style.borderColor = "";
+    onPick(color);
+  };
+  apply.addEventListener("click", submit);
+  input.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submit();
+    }
+  });
+
+  row.append(picker, input, apply);
+  return row;
 }
 
 const BORDER_SIDE: BorderSide = { color: "#111827", width: 1 };
@@ -157,4 +309,3 @@ export function filterPanel(host: HTMLElement, ctx: ToolbarContext): () => void 
     host.replaceChildren();
   };
 }
-
