@@ -29,14 +29,16 @@ export type { CellRange, Command, Disposer } from "./types";
  * 存储层的公开面：模型、快照与导入器。
  *
  * 替代了原来导出的 `DataSource` / `ArrayDataSource` 一族——调用方不再替换数据层
- * （ADR 0004 §3.2），而是交一份快照进来。
+ * （ADR 0004 §3.2），而是把 Excel 式矩阵或对象数组先导入为一份快照。
  */
 export {
+  matrixToWorkbookSnapshot,
   rowsToWorkbookSnapshot,
   SheetModel,
   WorkbookModel,
   type CellRecord,
   type ImportRow,
+  type MatrixToWorkbookSnapshotOptions,
   type RowsToWorkbookSnapshotOptions,
   type SheetSnapshot,
   type WorkbookSnapshot

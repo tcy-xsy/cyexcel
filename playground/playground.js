@@ -1,7 +1,7 @@
 import {
   CyExcelError,
   createBasicContextMenuPlugin,
-  rowsToWorkbookSnapshot
+  matrixToWorkbookSnapshot
 } from "/src/core/index.ts";
 // 开箱即用的入口：createSheet 默认装上工具栏与编辑栏，高度布局由 core 负责。
 import { createWorkbook } from "/src/createWorkbook.ts";
@@ -65,45 +65,28 @@ function buildRow(index) {
     { length: tagCount },
     (_unused, tagIndex) => TAG_POOL[(index + tagIndex) % TAG_POOL.length]
   );
-  return {
-    sku: `CY-${String(index + 1).padStart(6, "0")}`,
-    name: PRODUCTS[index % PRODUCTS.length],
+  return [
+    `CY-${String(index + 1).padStart(6, "0")}`,
+    PRODUCTS[index % PRODUCTS.length],
     price,
     quantity,
-    region: REGIONS[index % REGIONS.length],
-    inStock: index % 4 !== 0,
+    REGIONS[index % REGIONS.length],
+    index % 4 !== 0,
     // 格子里只能放 string | number | boolean（对齐 Excel/xlsx 的 CellValue），
     // 所以这三列不再塞 Date / 数组 / 对象：日期给 ISO 串，标签和元数据先摊平成
     // 文本。要让日期列变成"序列号 + 日期 numFmt"（真正的 Excel 表示），得给这
     // 一列刷一个 numFmt——那是按格写样式，一百万行的 demo 里代价太大，留待列级
     // 样式有了之后再接。
-    restockedAt: isoDate(2026, 1, 1 + (index % 365)),
-    status: STATUSES[index % STATUSES.length],
-    tags: tags.join("、"),
-    meta: `CY-${index + 1} / W${(index % 5) + 1}`
-  };
+    isoDate(2026, 1, 1 + (index % 365)),
+    STATUSES[index % STATUSES.length],
+    tags.join("、"),
+    `CY-${index + 1} / W${(index % 5) + 1}`
+  ];
 }
 
 function buildRows(count) {
   return Array.from({ length: count }, (_unused, index) => buildRow(index));
 }
-
-/**
- * 第 i 个字段就是第 i 列——导入那一刻的参数，不是列配置的一部分
- * （ADR 0004 §3.2、§4.5）。顺序必须与 COLUMNS 一致。
- */
-const FIELDS = [
-  "sku",
-  "name",
-  "price",
-  "quantity",
-  "region",
-  "inStock",
-  "restockedAt",
-  "status",
-  "tags",
-  "meta"
-];
 
 function clampNumber(value, min, max, fallback) {
   if (!Number.isFinite(value)) {
@@ -241,9 +224,9 @@ function rebuild() {
   const start = performance.now();
   workbook = createWorkbook(sheetMount, {
     columns: columnConfigs,
-    // ADR 0004 §3.2：入口只吃一份快照。对象数组在这里导进稀疏矩阵，导完这
+    // ADR 0004 §3.2：入口只吃一份快照。二维数组在这里导进稀疏矩阵，导完这
     // 一遍之后 `rows` 与表格再无联系——改表格不会改到它，改它也不会改表格。
-    snapshot: rowsToWorkbookSnapshot(rows, FIELDS),
+    snapshot: matrixToWorkbookSnapshot(rows),
     rowHeight: config.rowHeight,
     overscanRows: config.overscanRows,
     overscanColumns: config.overscanColumns,

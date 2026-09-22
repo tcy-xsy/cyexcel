@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  matrixToWorkbookSnapshot,
   rowValuesToCells,
   rowsToWorkbookSnapshot,
   valueToRecord
@@ -139,5 +140,57 @@ describe("rowsToWorkbookSnapshot — 产出的是一份合法快照", () => {
     const sheet = sheetOf(rowsToWorkbookSnapshot(rows, ["sku"]));
     sheet.setCell(0, 0, "改过了");
     expect(rows[0]?.sku).toBe("s1");
+  });
+});
+
+describe("matrixToWorkbookSnapshot — Excel 式二维数组", () => {
+  it("row/column 下标直接落到单元格坐标", () => {
+    const sheet = sheetOf(matrixToWorkbookSnapshot([
+      ["A1", "B1"],
+      ["A2", "B2"]
+    ]));
+
+    expect(sheet.getCell(0, 0)).toBe("A1");
+    expect(sheet.getCell(0, 1)).toBe("B1");
+    expect(sheet.getCell(1, 0)).toBe("A2");
+    expect(sheet.getCell(1, 1)).toBe("B2");
+  });
+
+  it("保留空行、空列和锯齿数组的位置", () => {
+    const sheet = sheetOf(matrixToWorkbookSnapshot([
+      ["A1", undefined, "C1"],
+      [],
+      [null, "B3"]
+    ]));
+
+    expect(sheet.rowCount()).toBe(3);
+    expect(sheet.columnCount()).toBe(3);
+    expect(sheet.getRecord(1, 0)).toBeUndefined();
+    expect(sheet.getCell(2, 0)).toBeUndefined();
+    expect(sheet.getCell(2, 1)).toBe("B3");
+  });
+
+  it("`0` / `\"\"` / `false` 是值，`null` / `undefined` 是空格", () => {
+    const sheet = sheetOf(matrixToWorkbookSnapshot([[0, "", false, null, undefined]]));
+
+    expect(sheet.getCell(0, 0)).toBe(0);
+    expect(sheet.getCell(0, 1)).toBe("");
+    expect(sheet.getCell(0, 2)).toBe(false);
+    expect(sheet.getCell(0, 3)).toBeUndefined();
+    expect(sheet.getCell(0, 4)).toBeUndefined();
+  });
+
+  it("额外 blank 保持工作区大小，sheet 选项原样透传", () => {
+    const snapshot = matrixToWorkbookSnapshot([["A1"]], {
+      blankRows: 9,
+      blankColumns: 2,
+      id: "s",
+      name: "Matrix"
+    });
+    const sheet = sheetOf(snapshot);
+
+    expect(sheet.rowCount()).toBe(10);
+    expect(sheet.columnCount()).toBe(3);
+    expect(snapshot.sheets["s"]?.name).toBe("Matrix");
   });
 });

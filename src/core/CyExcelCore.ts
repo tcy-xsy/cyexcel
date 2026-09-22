@@ -182,16 +182,16 @@ export interface CyExcelCoreOptions {
    * 初始数据，**一份快照**（ADR 0004 §3.1「模型即快照」）。省略就是一张
    * 0 行 × `columns.length` 列的空表。
    *
-   * 对象数组走导入器，它是入口之外的独立设施（§3.2）：
+   * Excel 式二维数组或对象数组走导入器，它们是入口之外的独立设施（§3.2）：
    *
    * ```ts
    * new CyExcelCore(container, {
    *   columns,
-   *   snapshot: rowsToWorkbookSnapshot(rows, ["sku", "name", "price"])
+   *   snapshot: matrixToWorkbookSnapshot([["A1", "B1"], ["A2", "B2"]])
    * });
    * ```
    *
-   * **`fields` 是导入的参数，不是列配置的字段**——数据长什么形状是数据自己的
+   * **矩阵导入不需要 fields；fields 只是对象数组导入的参数**——数据长什么形状是数据自己的
    * 事实（ADR §4.5 否决了拿 `field` 当数据格式开关），列配置只管宽度、类型这些
    * 展示属性。第 `i` 个字段就是第 `i` 列。
    *
@@ -539,8 +539,8 @@ function createBrowserClipboardIO(): ClipboardIO {
 /**
  * 从入口的 `snapshot` 装载存储模型，没给就建一张空表（ADR 0004 §3.1）。
  *
- * **入口不再吃对象数组**：那条路是 `rowsToWorkbookSnapshot`，一个独立的、
- * 永久的导入器（§3.2；xlsx 导入将来落在同一个位置）。入口只认快照这一种形态，
+ * **入口不再吃裸数据数组**：那条路是 `matrixToWorkbookSnapshot` / `rowsToWorkbookSnapshot`，
+ * 独立且永久的导入器（§3.2；xlsx 导入将来落在同一个位置）。入口只认快照这一种形态，
  * 于是「装载」与「把外部数据翻译成格子」是两件分开的事，各自可测。
  *
  * 空表是 Excel 风格的默认工作区：默认 1000 行；列数取 `columns.length`

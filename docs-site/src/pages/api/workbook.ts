@@ -1,6 +1,6 @@
 import { createWorkbook } from "@cyexcel/createWorkbook";
-import { columns, rows, fields } from "../../demo/data";
-import { rowsToWorkbookSnapshot } from "@cyexcel/core";
+import { columns, rows } from "../../demo/data";
+import { matrixToWorkbookSnapshot } from "@cyexcel/core";
 import { apiTable, codeBlock, demoBlock, pageHeader, section } from "../../components/doc";
 
 export default function workbookApiPage(root: HTMLElement): () => void {
@@ -52,7 +52,7 @@ export default function workbookApiPage(root: HTMLElement): () => void {
       {
         name: "订单",
         columns,
-        snapshot: rowsToWorkbookSnapshot(rows, fields),
+        snapshot: matrixToWorkbookSnapshot(rows),
         headerHeight: 28,
         rowHeaderWidth: 48
       },

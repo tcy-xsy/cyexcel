@@ -1,4 +1,4 @@
-import { CyExcelCore, rowsToWorkbookSnapshot } from "../../dist/core.js";
+import { CyExcelCore, matrixToWorkbookSnapshot } from "../../dist/core.js";
 
 /** A CanvasCellRenderer: paints directly on the shared content canvas, and hitTest() turns a click into a CellAction the core translates into a Command. */
 const clicksRenderer = {
@@ -50,18 +50,15 @@ const columns = [
   { width: 160, header: "Active", renderer: activeRendererFactory }
 ];
 
-/** The i-th field is the i-th column — a parameter of the import, not of `columns`. */
-const fields = ["name", "clicks", "active"];
-
-const data = Array.from({ length: 100 }, (_unused, index) => ({
-  name: `Item ${index}`,
-  clicks: 0,
-  active: index % 2 === 0
-}));
+const data = Array.from({ length: 100 }, (_unused, index) => [
+  `Item ${index}`,
+  0,
+  index % 2 === 0
+]);
 
 new CyExcelCore(document.getElementById("sheet"), {
   columns,
-  snapshot: rowsToWorkbookSnapshot(data, fields),
+  snapshot: matrixToWorkbookSnapshot(data),
   rowHeight: 26,
   headerHeight: 28
 });

@@ -11,11 +11,10 @@ export default function basicExamplePage(root: HTMLElement): () => void {
   );
   root.append(intro.root);
   root.append(
-    codeBlock(`import { CyExcelCore, rowsToWorkbookSnapshot } from "cyexcel/core";
+    codeBlock(`import { CyExcelCore, matrixToWorkbookSnapshot } from "cyexcel/core";
 
 const sheet = createSheet(document.querySelector("#sheet"), {
-  columns,
-  snapshot: rowsToWorkbookSnapshot(rows, fields),
+  snapshot: matrixToWorkbookSnapshot(rows),
   headerHeight: 28,
   rowHeaderWidth: 48
 });`)

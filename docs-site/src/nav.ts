@@ -50,7 +50,7 @@ export const navGroups: readonly NavGroup[] = [
     links: [
       { label: "createSheet()", route: "/api/create-sheet", module: createSheetApiPage },
       { label: "CyExcelCore", route: "/api/core", module: coreApiPage },
-      { label: "rowsToWorkbookSnapshot()", route: "/api/snapshot", module: snapshotApiPage },
+      { label: "matrixToWorkbookSnapshot()", route: "/api/snapshot", module: snapshotApiPage },
       { label: "createWorkbook()", route: "/api/workbook", module: workbookApiPage }
     ]
   },

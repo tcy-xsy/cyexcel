@@ -14,7 +14,7 @@ export default function quickStartPage(root: HTMLElement): () => void {
     pageHeader(
       "QUICK START",
       "快速开始",
-      "三步接入：安装包、把对象数组导成快照、把快照交给表格组件。"
+      "三步接入：安装包、把 Excel 式二维数组导成快照、把快照交给表格组件。"
     )
   );
 
@@ -26,27 +26,20 @@ export default function quickStartPage(root: HTMLElement): () => void {
   const create = section("创建表格");
   create.body.append(
     paragraph("最直接的入口是 createSheet()，它会同时挂上工具栏和编辑栏。"),
-    paragraph("数据不是通过数组直接绑定进组件，而是先导入成一份 WorkbookSnapshot。")
+    paragraph("数据不是通过二维数组直接绑定进组件，而是先导入成一份 WorkbookSnapshot。")
   );
   root.append(create.root);
   root.append(
     codeBlock(`import { createSheet } from "cyexcel";
-import { rowsToWorkbookSnapshot } from "cyexcel/core";
+import { matrixToWorkbookSnapshot } from "cyexcel/core";
 
 const rows = [
-  { sku: "CY-100001", name: "工业温度传感器", price: 128 },
-  { sku: "CY-100002", name: "便携标签打印机", price: 465 }
-];
-
-const columns = [
-  { width: 130, header: "SKU", sortable: false, filterable: false },
-  { width: 220, header: "名称", sortable: false, filterable: false },
-  { width: 100, header: "价格", sortable: false, filterable: false }
+  ["CY-100001", "工业温度传感器", 128],
+  ["CY-100002", "便携标签打印机", 465]
 ];
 
 const sheet = createSheet(document.querySelector("#sheet"), {
-  columns,
-  snapshot: rowsToWorkbookSnapshot(rows, ["sku", "name", "price"]),
+  snapshot: matrixToWorkbookSnapshot(rows),
   headerHeight: 28,
   rowHeaderWidth: 48
 });`)
@@ -54,7 +47,7 @@ const sheet = createSheet(document.querySelector("#sheet"), {
 
   root.append(
     callout(
-      "columns 的下标和 fields 的下标一一对应。导入之后，表格只使用 (row, column) 坐标；外部数据对象不会再被写回。"
+      "row i / column j 直接落到单元格 (i, j)；没有自定义表头时默认显示 A/B/C。导入后外部数组不会再被写回。"
     )
   );
 

@@ -23,6 +23,13 @@ export interface RowsToWorkbookSnapshotOptions extends SheetModelOptions {
   readonly blankColumns?: number;
 }
 
+export interface MatrixToWorkbookSnapshotOptions extends SheetModelOptions {
+  /** Extra blank rows retained after the matrix. Defaults to 0. */
+  readonly blankRows?: number;
+  /** Extra blank columns retained after the widest matrix row. Defaults to 0. */
+  readonly blankColumns?: number;
+}
+
 /**
  * 一个值变成一条记录，`undefined` 变成"没有这个格子"。
  *
@@ -124,5 +131,65 @@ export function rowsToWorkbookSnapshot(
       }
     }
   }
+  return workbook.toSnapshot();
+}
+
+/**
+ * Excel-style `CellValue[][]` -> workbook snapshot. This is the preferred
+ * import when data has no field names: row i / column j stays at cell (i, j).
+ *
+ * The snapshot's coordinate space is `matrix.length + blankRows` by
+ * `max(row.length) + blankColumns`, so empty and ragged rows keep their
+ * positions instead of being collapsed by the sparse storage. `null` and
+ * `undefined` mean an unoccupied cell; `""`, `0`, and `false` are values.
+ */
+export function matrixToWorkbookSnapshot(
+  matrix: readonly (readonly (CellValue | null | undefined)[])[],
+  options: MatrixToWorkbookSnapshotOptions = {}
+): WorkbookSnapshot {
+  const {
+    blankRows: extraBlankRows = 0,
+    blankColumns: extraBlankColumns = 0,
+    ...sheetOptions
+  } = options;
+
+  const rowCount = matrix.length;
+  const columnCount = matrix.reduce(
+    (widest, row) => Math.max(widest, row?.length ?? 0),
+    0
+  );
+  let occupiedRows = 0;
+  let occupiedColumns = 0;
+  for (let row = 0; row < rowCount; row += 1) {
+    const values = matrix[row];
+    for (let column = 0; column < (values?.length ?? 0); column += 1) {
+      if (values?.[column] !== null && values?.[column] !== undefined) {
+        occupiedRows = row + 1;
+        occupiedColumns = Math.max(occupiedColumns, column + 1);
+      }
+    }
+  }
+
+  const workbook = WorkbookModel.createEmpty({
+    sheet: {
+      ...sheetOptions,
+      blankRows: (rowCount - occupiedRows) + extraBlankRows,
+      blankColumns: (columnCount - occupiedColumns) + extraBlankColumns
+    }
+  });
+  const sheet = workbook.sheet();
+
+  for (let row = 0; row < rowCount; row += 1) {
+    const values = matrix[row];
+    if (!values) continue;
+
+    for (let column = 0; column < values.length; column += 1) {
+      const record = valueToRecord(values[column]);
+      if (record !== undefined) {
+        sheet.setRecord(row, column, record);
+      }
+    }
+  }
+
   return workbook.toSnapshot();
 }

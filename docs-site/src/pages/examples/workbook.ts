@@ -2,11 +2,10 @@ import { createWorkbook } from "@cyexcel/createWorkbook";
 import {
   columns,
   rows,
-  fields,
   summaryColumns,
   summarySnapshot
 } from "../../demo/data";
-import { rowsToWorkbookSnapshot } from "@cyexcel/core";
+import { matrixToWorkbookSnapshot } from "@cyexcel/core";
 import { demoBlock, pageHeader, paragraph, section, codeBlock } from "../../components/doc";
 
 export default function workbookExamplePage(root: HTMLElement): () => void {
@@ -48,7 +47,7 @@ workbook.getActiveSheet().insertRows(0, 1);`)
       {
         name: "订单明细",
         columns,
-        snapshot: rowsToWorkbookSnapshot(rows, fields),
+        snapshot: matrixToWorkbookSnapshot(rows),
         headerHeight: 28,
         rowHeaderWidth: 48
       },

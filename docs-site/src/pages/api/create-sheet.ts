@@ -25,7 +25,7 @@ export default function createSheetApiPage(root: HTMLElement): () => void {
       { name: "options.toolbar", type: "boolean | ToolbarOptions", description: "默认 true。传 false 关闭工具栏，传对象可替换或追加 schema。" },
       { name: "options.formulaBar", type: "boolean", description: "默认 true。控制名称框和公式内容框。" },
       { name: "options.columns", type: "CyExcelColumnConfig[]", description: "列显示配置。下标即列身份。" },
-      { name: "options.snapshot", type: "WorkbookSnapshot", description: "初始数据快照，由 rowsToWorkbookSnapshot() 创建。" }
+      { name: "options.snapshot", type: "WorkbookSnapshot", description: "初始数据快照，推荐由 matrixToWorkbookSnapshot() 创建。" }
     ])
   );
 

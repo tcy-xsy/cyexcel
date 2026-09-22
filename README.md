@@ -19,35 +19,29 @@ npm install cyexcel
 ## Quick start
 
 ```ts
-import { CyExcelCore, rowsToWorkbookSnapshot } from "cyexcel/core";
+import { CyExcelCore, matrixToWorkbookSnapshot } from "cyexcel/core";
 
-const columns = [
-  { id: "sku", field: "sku", width: 140, header: "SKU" },
-  { id: "name", field: "name", width: 240, header: "Name" },
-  { id: "price", field: "price", width: 100, type: "number", header: "Price" }
-];
-
-// The i-th field is the i-th column — a parameter of the import, not of
-// `columns`. It's the only place field names are ever consulted.
-const fields = ["sku", "name", "price"];
-
+// Row i, column j becomes cell (i, j). With no explicit headers, cyexcel
+// uses Excel-style A/B/C column letters.
 const data = [
-  { sku: "A100", name: "Widget", price: 9.99 },
-  { sku: "A101", name: "Gadget", price: 14.5 }
+  ["A100", "Widget", 9.99],
+  ["A101", "Gadget", 14.5]
 ];
 
 const sheet = new CyExcelCore(document.querySelector("#sheet"), {
-  columns,
-  snapshot: rowsToWorkbookSnapshot(data, fields)
+  snapshot: matrixToWorkbookSnapshot(data)
 });
 
 sheet.setCell(0, 2, 12.99); // one undoable Command
 sheet.undo();
 ```
 
-`rowsToWorkbookSnapshot` is a one-shot import, not a binding: once the sheet is
+`matrixToWorkbookSnapshot` is a one-shot import, not a binding: once the sheet is
 constructed, `data` and the sheet share nothing. Editing a cell never writes
 back into your array, and mutating your array never shows up in the table.
+
+If your source data is a list of objects, `rowsToWorkbookSnapshot(objects,
+fields)` remains available as the field-mapped importer.
 
 `CyExcelCore` paints into whatever container element you give it — there's no
 required Web Component wrapper. See `examples/` for this same pattern wired

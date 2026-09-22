@@ -113,8 +113,8 @@ function validateRowHeights(options: CyExcelCoreOptions): void {
 }
 
 /**
- * `snapshot` 是唯一的数据入口了（ADR 0004 §3.2：数据层不可替换，对象数组走
- * 独立的 `rowsToWorkbookSnapshot`）。
+ * `snapshot` 是唯一的数据入口了（ADR 0004 §3.2：数据层不可替换，Excel 式二维
+ * 数组和对象数组分别走 `matrixToWorkbookSnapshot` / `rowsToWorkbookSnapshot`）。
  *
  * 这里只查最外一层的形状，内部结构交给 `assertValidWorkbookSnapshot`——那是
  * 快照格式自己的门禁，它同时守着「从磁盘读回来的快照」这条路，不该在入口再抄
@@ -134,7 +134,7 @@ function validateSnapshotShape(options: CyExcelCoreOptions): void {
     throw invalidOption(
       "snapshot",
       options.snapshot,
-      "expected a WorkbookSnapshot — build one from rows with rowsToWorkbookSnapshot()"
+      "expected a WorkbookSnapshot — build one with matrixToWorkbookSnapshot() or rowsToWorkbookSnapshot()"
     );
   }
 }

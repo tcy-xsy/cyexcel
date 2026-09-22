@@ -65,7 +65,7 @@ columnCount = maxOccupiedColumn + 1 + blankColumns`)
 
   root.append(
     callout(
-      "rowsToWorkbookSnapshot() 是一次性导入。之后改外部 rows 不会影响表格；表格编辑也不会写回外部对象。"
+      "matrixToWorkbookSnapshot() 是一次性导入。之后改外部 rows 不会影响表格；表格编辑也不会写回外部数组。"
     )
   );
 }

@@ -1,20 +1,12 @@
 import React, { useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import { CyExcelCore, rowsToWorkbookSnapshot } from "../../dist/core.js";
+import { CyExcelCore, matrixToWorkbookSnapshot } from "../../dist/core.js";
 
-const columns = [
-  { width: 140, header: "SKU" },
-  { width: 240, header: "Name" },
-  { width: 100, type: "number", header: "Price" }
-];
-
-/** The i-th field is the i-th column — a parameter of the import, not of `columns`. */
-const fields = ["sku", "name", "price"];
-
+// No explicit headers means Excel-style A/B/C column letters.
 const data = [
-  { sku: "A100", name: "Widget", price: 9.99 },
-  { sku: "A101", name: "Gadget", price: 14.5 },
-  { sku: "A102", name: "Doohickey", price: 3.25 }
+  ["A100", "Widget", 9.99],
+  ["A101", "Gadget", 14.5],
+  ["A102", "Doohickey", 3.25]
 ];
 
 function CyExcelSheet() {
@@ -25,8 +17,7 @@ function CyExcelSheet() {
     // not a binding: React re-renders never flow back into it, and edits made
     // in the sheet never touch `data`.
     const sheet = new CyExcelCore(hostRef.current, {
-      columns,
-      snapshot: rowsToWorkbookSnapshot(data, fields)
+      snapshot: matrixToWorkbookSnapshot(data)
     });
     return () => sheet.dispose();
   }, []);

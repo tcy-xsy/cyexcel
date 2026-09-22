@@ -63,9 +63,11 @@ export { SheetTransaction, type PreparedSheetMutation } from "./SheetTransaction
 export { createSheetPlanningResources } from "./planning";
 export { changesForSheetMutation, type SheetAxisSpace } from "./patches";
 export {
+  matrixToWorkbookSnapshot,
   rowValuesToCells,
   rowsToWorkbookSnapshot,
   valueToRecord,
   type ImportRow,
+  type MatrixToWorkbookSnapshotOptions,
   type RowsToWorkbookSnapshotOptions
 } from "./import";

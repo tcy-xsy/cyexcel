@@ -32,25 +32,17 @@
     <!-- No bundler, no module system — just the UMD bundle built by `pnpm build`. -->
     <script src="../../dist/cyexcel.umd.cjs"></script>
     <script>
-      var columns = [
-        { width: 140, header: "SKU" },
-        { width: 240, header: "Name" },
-        { width: 100, type: "number", header: "Price" }
-      ];
-      // The i-th field is the i-th column — a parameter of the import, not of
-      // the column config.
-      var fields = ["sku", "name", "price"];
+      // No columns means Excel-style A/B/C headers.
       var data = [
-        { sku: "A100", name: "Widget", price: 9.99 },
-        { sku: "A101", name: "Gadget", price: 14.5 },
-        { sku: "A102", name: "Doohickey", price: 3.25 }
+        ["A100", "Widget", 9.99],
+        ["A101", "Gadget", 14.5],
+        ["A102", "Doohickey", 3.25]
       ];
 
       // The sheet takes a snapshot, not a row array — the importer is on the
       // same global, so a plain <script> tag can still load data.
       new CyExcel.CyExcelCore(document.getElementById("sheet"), {
-        columns: columns,
-        snapshot: CyExcel.rowsToWorkbookSnapshot(data, fields)
+        snapshot: CyExcel.matrixToWorkbookSnapshot(data)
       });
     </script>
   </body>
