@@ -24,6 +24,10 @@ export interface Canvas2DLike {
   lineTo(x: number, y: number): void;
   closePath(): void;
   fill(): void;
+  /** Circles/rounded marks — image-cell placeholders (cells/imageCellRenderer.ts) use it for a small icon glyph. */
+  arc(x: number, y: number, radius: number, startAngle: number, endAngle: number): void;
+  /** Image-cell rendering only (cells/imageCellRenderer.ts) — draws a decoded HTMLImageElement scaled into a rect. */
+  drawImage(image: CanvasImageSource, dx: number, dy: number, dWidth: number, dHeight: number): void;
   /** 描边当前路径。单元格边框用它画直线（`strokeRect` 画不了单独一条边）。 */
   stroke(): void;
   scale(x: number, y: number): void;

@@ -8,6 +8,8 @@ export {
   type RuntimeColumnRoot
 } from "./ColumnManager";
 export { createColumnAwarePainter } from "./createColumnAwarePainter";
+export { detectLinkUrl } from "./linkDetection";
+export { createImageCellRenderer, type ImageCellRendererOptions } from "./imageCellRenderer";
 export { snapshotColumnDefinitions } from "./columnSnapshot";
 export { DOMCellManager, type DOMCellManagerOptions } from "./DOMCellManager";
 export type {

@@ -8,6 +8,8 @@
 
 export const GRID_LINE_COLOR = "#e2e5ea";
 export const TEXT_COLOR = "#111827";
+/** Auto-detected URL/email cells (see cells/linkDetection.ts) — the standard web hyperlink blue. */
+export const LINK_COLOR = "#1a73e8";
 export const CELL_PADDING = 4;
 /**
  * 字号与字体分开导出，是为了让每格样式能覆盖其中一半（Step 24）。

@@ -1,8 +1,9 @@
 import type { CellPaintContext, CellPainter } from "../render";
-import { CELL_LINE_HEIGHT } from "../render/theme";
+import { CELL_LINE_HEIGHT, LINK_COLOR } from "../render/theme";
 import { formatCellText } from "../style/formatCellText";
 import { resolveDrawStyle, type DrawStyle } from "../style/resolveDrawStyle";
 import { wrapText } from "../render/textWrap";
+import { detectLinkUrl } from "./linkDetection";
 import type { CellRenderContext, RuntimeColumn } from "./types";
 
 /**
@@ -70,7 +71,13 @@ function drawFormattedText(context: CellPaintContext, column: RuntimeColumn): vo
   const { ctx, rect, row, value, style } = context;
   // 样式的 numFmt 优先，没有才退回列的 CellType.format（Step 24 的向后兼容路径）。
   const text = formatCellText(value, style, () => column.format(value, { row, column }));
-  const draw = resolveDrawStyle(style);
+  const baseDraw = resolveDrawStyle(style);
+  // Excel-style autolink: a cell whose whole display text is a URL/email
+  // paints blue+underlined regardless of its own style — CyExcelCore's
+  // #routeBodyLinkFallback() is what makes clicking it actually navigate.
+  const draw: DrawStyle = detectLinkUrl(text) === undefined
+    ? baseDraw
+    : { ...baseDraw, color: LINK_COLOR, underline: true };
   ctx.fillStyle = draw.color;
   ctx.font = draw.font;
   ctx.textBaseline = "middle";

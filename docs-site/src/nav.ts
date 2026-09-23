@@ -4,6 +4,7 @@ import quickStartPage from "./pages/quick-start";
 import basicExamplePage from "./pages/examples/basic";
 import commandsExamplePage from "./pages/examples/commands";
 import stylesExamplePage from "./pages/examples/styles";
+import linksAndImagesExamplePage from "./pages/examples/links-and-images";
 import searchExamplePage from "./pages/examples/search";
 import toolbarExamplePage from "./pages/examples/toolbar";
 import workbookExamplePage from "./pages/examples/workbook";
@@ -39,6 +40,7 @@ export const navGroups: readonly NavGroup[] = [
       { label: "基础表格", route: "/examples/basic", module: basicExamplePage },
       { label: "编辑与历史", route: "/examples/commands", module: commandsExamplePage },
       { label: "样式与格式", route: "/examples/styles", module: stylesExamplePage },
+      { label: "链接与图片单元格", route: "/examples/links-and-images", module: linksAndImagesExamplePage },
       { label: "查找与替换", route: "/examples/search", module: searchExamplePage },
       { label: "工具栏", route: "/examples/toolbar", module: toolbarExamplePage },
       { label: "多 Sheet 工作簿", route: "/examples/workbook", module: workbookExamplePage },

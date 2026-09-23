@@ -4,6 +4,7 @@ import {
   DEFAULT_COLUMN_WIDTH,
   DOMCellManager,
   createColumnAwarePainter,
+  detectLinkUrl,
   registerBuiltinCellTypes,
   snapshotColumnDefinitions,
   type CellTypeDefinition,
@@ -131,6 +132,7 @@ import {
   ViewportManager,
   SurfaceHost,
   clientPoint,
+  type SceneCellHit,
   type SurfacePoint,
   type SurfaceId,
   type SurfaceSetSnapshot
@@ -2715,7 +2717,7 @@ export class CyExcelCore {
     const column = this.#columnManager.getColumn(hit.cell.column);
     const renderer = column.renderer;
     if (!renderer || renderer.kind !== "canvas" || !renderer.hitTest) {
-      return declineInput();
+      return this.#routeBodyLinkFallback(hit, column);
     }
     let action;
     try {
@@ -2751,6 +2753,31 @@ export class CyExcelCore {
         this.#editorManager.startEdit(cell.row, cell.column);
       }
     });
+    return handleInput(undefined);
+  }
+
+  /**
+   * Cells with no custom renderer never reach a `hitTest()` call, but a
+   * plain text cell whose full value auto-linkifies (see
+   * `createColumnAwarePainter.ts`'s `drawFormattedText()` and
+   * `cells/linkDetection.ts`) still needs click-to-open. Any point inside
+   * such a cell counts as a hit — this deliberately doesn't replicate
+   * `drawFormattedText()`'s exact text metrics just to require clicking the
+   * underlined text itself; see doc/progress.md's Step 26 entry.
+   */
+  #routeBodyLinkFallback(hit: SceneCellHit, column: RuntimeColumn) {
+    if (column.renderer) {
+      return declineInput();
+    }
+    const value = this.#store.getCell(hit.cell.row, hit.cell.column);
+    const text = this.#getCellDisplayText(hit.cell.row, hit.cell.column, value);
+    const url = detectLinkUrl(text);
+    if (!url) {
+      return declineInput();
+    }
+    if (typeof window !== "undefined") {
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
     return handleInput(undefined);
   }
 

@@ -85,6 +85,14 @@ export class RecordingCanvasContext implements Canvas2DLike {
     this.calls.push({ method: "fill", args: [] });
   }
 
+  arc(x: number, y: number, radius: number, startAngle: number, endAngle: number): void {
+    this.calls.push({ method: "arc", args: [x, y, radius, startAngle, endAngle] });
+  }
+
+  drawImage(image: CanvasImageSource, dx: number, dy: number, dWidth: number, dHeight: number): void {
+    this.calls.push({ method: "drawImage", args: [image, dx, dy, dWidth, dHeight] });
+  }
+
   stroke(): void {
     this.calls.push({ method: "stroke", args: [] });
   }

@@ -1,6 +1,7 @@
 import {
   CyExcelError,
   createBasicContextMenuPlugin,
+  createImageCellRenderer,
   matrixToWorkbookSnapshot
 } from "/src/core/index.ts";
 // 开箱即用的入口：createSheet 默认装上工具栏与编辑栏，高度布局由 core 负责。
@@ -48,13 +49,39 @@ const COLUMNS = [
   { width: 130 },
   { width: 110 },
   { width: 220 },
-  { width: 240 }
+  { width: 240 },
+  // Step 26：这两列不再是"值本身就是文本"——最后一列敲进去的是纯文本 URL，格子
+  // 里没有任何配置让它变成链接，靠的是默认绘制路径自己认出"整格内容就是一个
+  // URL"然后画成蓝色下划线、点击在新标签页打开（core/cells/linkDetection.ts +
+  // CyExcelCore 的 #routeBodyLinkFallback）。图片列反过来是显式的：列配了
+  // `renderer: createImageCellRenderer()`，格子里放的 URL/data URI 被当图片画出
+  // 来，不会因为文本"看起来像图片"就自动生效——两条机制刻意不对称，见 Step 26
+  // 的 progress.md 条目。
+  { width: 220 },
+  { width: 64, renderer: createImageCellRenderer() }
 ];
 
 /** `yyyy-mm-dd`，按墙上时钟算，不绕 `Date`（那会按 UTC 解析再按本地读，差一天）。 */
 function isoDate(year, month, dayOfYear) {
   const date = new Date(Date.UTC(year, month - 1, dayOfYear));
   return date.toISOString().slice(0, 10);
+}
+
+const AVATAR_COLORS = ["#f97316", "#3b82f6", "#10b981", "#a855f7", "#ef4444", "#0ea5e9", "#eab308"];
+
+/**
+ * 一个纯本地生成的 data: URI 小图标（按行号选色 + 取产品名首字），不依赖任何外部
+ * 图片服务——playground 离线也能演示图片单元格，不会因为没有网络而只看到占位图。
+ */
+function productIconDataUri(index) {
+  const color = AVATAR_COLORS[index % AVATAR_COLORS.length];
+  const letter = PRODUCTS[index % PRODUCTS.length].charAt(0);
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">` +
+    `<rect width="64" height="64" rx="12" fill="${color}"/>` +
+    `<text x="32" y="42" font-size="26" text-anchor="middle" fill="#fff" font-family="sans-serif">${letter}</text>` +
+    `</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
 function buildRow(index) {
@@ -80,7 +107,10 @@ function buildRow(index) {
     isoDate(2026, 1, 1 + (index % 365)),
     STATUSES[index % STATUSES.length],
     tags.join("、"),
-    `CY-${index + 1} / W${(index % 5) + 1}`
+    `CY-${index + 1} / W${(index % 5) + 1}`,
+    // 整格就是一个 URL——不需要任何配置，默认绘制路径会自己认出来并画成链接。
+    `https://www.cyexcel.example/products/CY-${String(index + 1).padStart(6, "0")}`,
+    productIconDataUri(index)
   ];
 }
 

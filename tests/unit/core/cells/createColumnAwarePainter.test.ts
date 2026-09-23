@@ -197,3 +197,29 @@ describe("createColumnAwarePainter — error isolation through ContentLayerRende
     expect(fillTextCalls.map((call) => call.args[0])).toEqual(["x", "still-fine"]);
   });
 });
+
+describe("createColumnAwarePainter — auto-linkified text", () => {
+  it("paints a cell whose full value is a URL in link color with an underline", () => {
+    const ctx = new RecordingCanvasContext();
+    const column = textColumn({ format: (value) => String(value) });
+    const painter = createColumnAwarePainter(() => [column]);
+
+    painter({ ctx, rect, row: 0, column: 0, value: "https://example.com" });
+
+    const fillStyleCalls = ctx.calls.filter((call) => call.method === "set:fillStyle");
+    expect(fillStyleCalls.at(-1)?.args[0]).toBe("#1a73e8");
+    expect(ctx.calls.some((call) => call.method === "stroke")).toBe(true);
+  });
+
+  it("does not linkify ordinary text", () => {
+    const ctx = new RecordingCanvasContext();
+    const column = textColumn({ format: (value) => String(value) });
+    const painter = createColumnAwarePainter(() => [column]);
+
+    painter({ ctx, rect, row: 0, column: 0, value: "工业温度传感器" });
+
+    const fillStyleCalls = ctx.calls.filter((call) => call.method === "set:fillStyle");
+    expect(fillStyleCalls.at(-1)?.args[0]).not.toBe("#1a73e8");
+    expect(ctx.calls.some((call) => call.method === "stroke")).toBe(false);
+  });
+});

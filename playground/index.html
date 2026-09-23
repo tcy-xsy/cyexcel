@@ -139,6 +139,11 @@
                 <code>true</code>，关掉它的意思变成"这一列干脆没有标题"。参考 Univer
                 的 <code>customizeColumnHeader()</code>：字母和自定义标题同一行二选一，
                 不是字母行 + 标题行两行堆叠</li>
+              <li>倒数第二列（官网）没有任何配置——敲一个整格都是 URL 的文本，就会自动画成
+                蓝色下划线的链接，点击在新标签页打开；最后一列（图片）反过来是显式配置的
+                <code>renderer: createImageCellRenderer()</code>，格子里的 URL/data URI 会被
+                当图片画出来。两者刻意不对称：链接是"看起来像就自动生效"，图片必须显式声明
+                （Step 26）</li>
             </ul>
           </section>
 

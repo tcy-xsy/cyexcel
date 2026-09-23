@@ -30,3 +30,4 @@ export {
   type CanvasTransformContext
 } from "./CanvasSurface";
 export { wrapText, computeWrappedCellHeight } from "./textWrap";
+export { ImageCache, sharedImageCache, type ImageCacheEntry } from "./ImageCache";
