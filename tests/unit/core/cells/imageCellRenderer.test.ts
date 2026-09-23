@@ -94,7 +94,7 @@ describe("createImageCellRenderer", () => {
     expect(ctx.calls).toHaveLength(0);
   });
 
-  it("resolveUrl lets a multi-value cell (e.g. a newline-joined gallery list) pick one URL to draw", async () => {
+  it("resolveUrl lets a multi-value cell pick one URL to draw", async () => {
     const ctx = new RecordingCanvasContext();
     const cache = new ImageCache();
     const renderer = createImageCellRenderer({

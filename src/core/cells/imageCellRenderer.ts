@@ -10,9 +10,9 @@ export interface ImageCellRendererOptions {
   /**
    * Derives the URL to load/draw from the cell's raw value. Defaults to
    * using the value as-is — override it when a cell's value isn't a bare
-   * URL, e.g. a newline-joined gallery list (`"https://a\nhttps://b"`)
-   * where only the first image should render as the cell's thumbnail. A
-   * `undefined` return paints nothing (same as an empty cell).
+   * URL, e.g. a multi-image gallery field, so only one image renders as the
+   * cell's thumbnail. A `undefined` return paints nothing (same as an empty
+   * cell).
    */
   readonly resolveUrl?: (value: string) => string | undefined;
 }
