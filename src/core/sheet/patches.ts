@@ -46,16 +46,21 @@ export function changesForSheetMutation(
   switch (mutation.type) {
     // `changed` 缺省是 "value"（见 `CellWriteKind`）：既有调用方行为不变。
     // "both" 产两条补丁而不是挑一条——值和样式确实都变了，让消费者各自决定
-    // 关心哪一条，比在这里替它们挑一条更诚实。
+    // 关心哪一条，比在这里替它们挑一条更诚实。"image" 只在 set-cell 上出现
+    // （`CellWriteKind` 的文档已经说明 set-range 从不产出它），因此 set-range
+    // 分支不处理它。
     case "set-cell": {
       const { row, column } = mutation;
       const kind = mutation.changed ?? "value";
       const patches: Patch[] = [];
-      if (kind !== "style") {
+      if (kind === "value" || kind === "both") {
         patches.push({ type: "cell-value", row, column });
       }
-      if (kind !== "value") {
+      if (kind === "style" || kind === "both") {
         patches.push({ type: "cell-style", row, column });
+      }
+      if (kind === "image") {
+        patches.push({ type: "cell-image", row, column });
       }
       return patches;
     }

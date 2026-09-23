@@ -20,13 +20,19 @@ function productIconDataUri(index: number): string {
 const columns = [
   { width: 200, header: "产品", sortable: false, filterable: false },
   { width: 260, header: "官网", sortable: false, filterable: false },
-  { width: 72, header: "图片", sortable: false, filterable: false, renderer: createImageCellRenderer() }
+  { width: 72, header: "图片（列配置）", sortable: false, filterable: false, renderer: createImageCellRenderer() },
+  { width: 72, header: "图片（单元格）", sortable: false, filterable: false }
 ];
 
 const rows = PRODUCTS.map((name, index) => [
   name,
   `https://www.cyexcel.example/products/CY-${String(index + 1).padStart(6, "0")}`,
-  productIconDataUri(index)
+  productIconDataUri(index),
+  // undefined，不是 ""——这一格在导入时压根不占用（matrixToWorkbookSnapshot 的
+  // 口径：null/undefined 是"没有这一格"，"" 是一个真实的空字符串值）。图片单元格
+  // 就该是"没有 v，只有 img"，跟 Univer 的 insertCellImageByUrl() 只设 p/t、
+  // 从不设 v 是同一回事，见下面 setCellImage() 的调用。
+  undefined
 ]);
 
 export default function linksAndImagesExamplePage(root: HTMLElement): () => void {
@@ -34,7 +40,7 @@ export default function linksAndImagesExamplePage(root: HTMLElement): () => void
     pageHeader(
       "EXAMPLES",
       "链接与图片单元格",
-      "两条刻意不对称的机制：链接是看起来像就自动生效，图片必须显式声明。"
+      "三条刻意不对称的机制：链接是看起来像就自动生效，图片（列配置）必须显式声明整列，图片（单元格）则是某一格自己决定要不要显示。"
     )
   );
 
@@ -51,12 +57,13 @@ export default function linksAndImagesExamplePage(root: HTMLElement): () => void
   root.append(codeBlock(`sheet.setCell(row, column, "https://www.cyexcel.example/products/CY-000001");
 // 不用配 renderer，也不用声明列类型——整格是 URL 就自动画成链接、可点击打开。`));
 
-  const imageSection = section("图片单元格");
+  const imageSection = section("图片单元格（列配置）");
   imageSection.body.append(
     paragraph(
       "图片则相反：必须显式把 createImageCellRenderer() 配到列的 renderer 上，那一列的值（" +
         "http(s) URL 或 data: URI）才会被当图片画出来，等比缩放、居中，不会裁切。不会因为文本 " +
-        "“看起来像图片”（比如以 .png 结尾）就自动生效——那样会和普通链接文本冲突。"
+        "“看起来像图片”（比如以 .png 结尾）就自动生效——那样会和普通链接文本冲突。" +
+        "这条路径适合“整列本来就是图片字段”的批量场景（比如从业务系统导入的商品图库列）。"
     )
   );
   root.append(imageSection.root);
@@ -68,9 +75,31 @@ const columns = [
 ];
 sheet.setCell(row, column, "https://example.com/avatar.png");`));
 
+  const cellImageSection = section("图片单元格（单元格级）");
+  cellImageSection.body.append(
+    paragraph(
+      "Excel、Univer 的图片单元格是这一格自己的属性，不是列的属性——同一列里，有的格是文字、" +
+        "有的格是图片，互不干扰。cyexcel 用 setCellImage()/getCellImage() 表达同样的心智模型：" +
+        "列上什么 renderer 都不用配，直接对某一格调用 setCellImage() 就够了，图片会优先于该列" +
+        "其他任何渲染方式画出来。清空图片传 undefined 即可，不影响这一格的值（v）与样式（s）。"
+    )
+  );
+  root.append(cellImageSection.root);
+  root.append(codeBlock(`const columns = [
+  { width: 72, header: "图片" }
+  // 不需要配 renderer——这一列其余格照常显示文字
+];
+
+// 只有这一格显示图片，同一列的其他格不受影响
+sheet.setCellImage(row, column, "https://example.com/avatar.png");
+// 清空
+sheet.setCellImage(row, column, undefined);`));
+
   const demo = demoBlock({
-    title: "两列的实际效果",
-    description: "“官网”列的每一格都是纯文本 URL；“图片”列配了 createImageCellRenderer()。"
+    title: "三列的实际效果",
+    description:
+      "“官网”列是纯文本 URL；“图片（列配置）”列配了 createImageCellRenderer()；" +
+      "“图片（单元格）”列什么 renderer 都没配，只有第 1、3 行用 setCellImage() 单独设了图片。"
   });
   root.append(demo.root);
 
@@ -81,6 +110,8 @@ sheet.setCell(row, column, "https://example.com/avatar.png");`));
     rowHeaderWidth: 48,
     rowHeight: 40
   });
+  sheet.setCellImage(0, 3, productIconDataUri(0));
+  sheet.setCellImage(2, 3, productIconDataUri(2));
 
   return () => sheet.dispose();
 }

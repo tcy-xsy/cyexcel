@@ -17,6 +17,7 @@ import type { SheetModel } from "../sheet/SheetModel";
 import { createSheetPlanningResources } from "../sheet/planning";
 import type { CellRange, Patch } from "../types";
 import { CellStyleMutation } from "../mutations/CellStyleMutation";
+import { CellImageMutation } from "../mutations/CellImageMutation";
 import { StyleRegistry } from "../style/StyleRegistry";
 import type { CellStylePatch } from "../style/styleKey";
 import { assertValidCoordinate, assertValidRange } from "../validation";
@@ -159,6 +160,12 @@ export class TableStore {
   createSetStyleMutation(range: CellRange, patch: CellStylePatch): Mutation {
     assertValidRange(range);
     return new CellStyleMutation(this.#sheet, this.#styles, range, patch);
+  }
+
+  /** 单格设置/清空图片 URL——与 `v`/`s` 独立，单元格级，不依赖列配置。 */
+  createSetCellImageMutation(row: number, column: number, url: string | undefined): Mutation {
+    assertValidCoordinate(row, column);
+    return new CellImageMutation(this.#sheet, row, column, url);
   }
 
 

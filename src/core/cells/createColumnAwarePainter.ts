@@ -4,7 +4,15 @@ import { formatCellText } from "../style/formatCellText";
 import { resolveDrawStyle, type DrawStyle } from "../style/resolveDrawStyle";
 import { wrapText } from "../render/textWrap";
 import { detectLinkUrl } from "./linkDetection";
+import { createImageCellRenderer } from "./imageCellRenderer";
 import type { CellRenderContext, RuntimeColumn } from "./types";
+
+/**
+ * 单元格级图片的默认画法——不传 `resolveUrl`，因为 `CellRecord.img` 本来就是
+ * 解析好的 URL，不需要再从值里剥一次。跟列级 `createImageCellRenderer()` 共用
+ * 同一套 `drawContained`/`drawPlaceholder`/`ImageCache` 逻辑，不重新实现一份。
+ */
+const cellImageRenderer = createImageCellRenderer();
 
 /**
  * 文字的起点 x 与 `textAlign` 要一起定：Canvas 的 `textAlign` 决定的是"给定的 x
@@ -130,6 +138,20 @@ export function createColumnAwarePainter(getColumns: () => readonly RuntimeColum
     const columns = getColumns();
     const column = columns[context.column];
     if (!column) {
+      return;
+    }
+
+    // 单元格级图片优先于列配置——这一格自己决定要不要显示图片（Excel/Univer 的
+    // 心智模型），跟列上配的是文字类型、DOM renderer 还是别的 canvas renderer
+    // 都无关。见 CellRecord.img 的文档。
+    if (context.image !== undefined) {
+      cellImageRenderer.paint({
+        ctx: context.ctx,
+        rect: context.rect,
+        row: context.row,
+        column,
+        value: context.image
+      });
       return;
     }
 

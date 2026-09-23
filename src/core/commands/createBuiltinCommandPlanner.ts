@@ -17,6 +17,7 @@ import type { ReorderRowsCommand } from "./ReorderRowsCommand";
 import type { ResizeColumnCommand } from "./ResizeColumnCommand";
 import type { ResizeRowCommand } from "./ResizeRowCommand";
 import type { SetCellCommand } from "./SetCellCommand";
+import type { SetCellImageCommand } from "./SetCellImageCommand";
 import type { SetRangeCommand } from "./SetRangeCommand";
 import type { SetStyleCommand } from "./SetStyleCommand";
 import type { SetRowHeightsCommand } from "./SetRowHeightsCommand";
@@ -96,6 +97,10 @@ export function createBuiltinCommandPlanner(options: BuiltinCommandPlannerOption
   registry.register<SetCellCommand>({
     type: "set-cell",
     plan: ({ row, column, value }, context) => context.stage(options.data.createSetCell(row, column, value))
+  });
+  registry.register<SetCellImageCommand>({
+    type: "set-cell-image",
+    plan: ({ row, column, url }, context) => context.stage(options.data.createSetCellImage(row, column, url))
   });
   registry.register<SetRangeCommand>({
     type: "set-range",

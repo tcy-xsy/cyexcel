@@ -64,6 +64,18 @@ export interface CellRecord {
   readonly f?: string;
   /** 共享公式 id */
   readonly si?: string;
+  /**
+   * 这一格的图片 URL（http(s) 或 `data:`）。与 `v` 独立——单元格可以同时有 `img` 和
+   * 自己的 `v`（比如 `v` 是这张图的说明文字），也可以只有 `img` 没有 `v`。
+   *
+   * 这是"图片是不是这一格的内容"的单元格级开关，不依赖列配置：一列里任何一格都能
+   * 单独设 `img`，跟这一列有没有配 `renderer: createImageCellRenderer()` 无关——
+   * 两者是并存的两条路径，列级 renderer 面向整列都是图片字段的批量场景。
+   *
+   * 不参与 xlsx 导出（`exportExcel.ts` 只读 `v`），与 `f` 目前的处境一致，是已知
+   * 缺口而不是这次改动引入的新问题。
+   */
+  readonly img?: string;
 }
 
 /**

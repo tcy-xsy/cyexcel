@@ -27,6 +27,12 @@ export interface CellPaintContext {
    * 接管了绘制的 renderer 去套字体或底色。
    */
   readonly style?: CellStyle;
+  /**
+   * 这一格的图片 URL，没有则 `undefined`。跟 `style` 一样是给 painter（自定义
+   * 或内置）用的信息，画不画是 painter 自己的事——`createColumnAwarePainter`
+   * 拿到它会让图片优先于列配置画出来。
+   */
+  readonly image?: string;
 }
 
 /**
@@ -43,6 +49,8 @@ export interface ContentLayerRendererOptions {
   readonly getCellValue: (row: number, column: number) => CellValue | undefined;
   /** 与 getCellValue 对称：渲染层继续不认识 SheetModel，样式也从回调进来。 */
   readonly getCellStyle?: (row: number, column: number) => CellStyle | undefined;
+  /** 与 getCellStyle 同样的理由：单元格级图片也从回调进来，不认识 SheetModel。 */
+  readonly getCellImage?: (row: number, column: number) => string | undefined;
   readonly painter?: CellPainter;
   readonly onError?: (error: unknown, cell: { row: number; column: number }) => void;
   /** Throw immediately if a painter returns a thenable. Default: true. */
@@ -98,6 +106,7 @@ export class ContentLayerRenderer {
   readonly #getScene: () => SceneSnapshot;
   readonly #getCellValue: (row: number, column: number) => CellValue | undefined;
   readonly #getCellStyle: ((row: number, column: number) => CellStyle | undefined) | undefined;
+  readonly #getCellImage: ((row: number, column: number) => string | undefined) | undefined;
   readonly #painter: CellPainter;
   readonly #onError:
     | ((error: unknown, cell: { row: number; column: number }) => void)
@@ -111,6 +120,7 @@ export class ContentLayerRenderer {
     this.#getScene = options.getScene;
     this.#getCellValue = options.getCellValue;
     this.#getCellStyle = options.getCellStyle;
+    this.#getCellImage = options.getCellImage;
     this.#painter = options.painter ?? defaultPainter;
     this.#onError = options.onError;
     this.#checkSyncRenderers = options.checkSyncRenderers ?? true;
@@ -252,6 +262,7 @@ export class ContentLayerRenderer {
 
     const value = this.#getCellValue(row, column);
     const style = this.#getCellStyle?.(row, column);
+    const image = this.#getCellImage?.(row, column);
     // 背景在文字之前：Canvas 是后画的盖先画的，顺序反了底色会把字糊掉。
     // 放在 painter 之外，所以自定义 renderer 不必自己记得画底色。
     if (style?.background !== undefined) {
@@ -264,7 +275,8 @@ export class ContentLayerRenderer {
       row,
       column,
       value,
-      ...(style !== undefined ? { style } : {})
+      ...(style !== undefined ? { style } : {}),
+      ...(image !== undefined ? { image } : {})
     };
 
     // Isolated in its own save/restore so a painter (built-in default or a

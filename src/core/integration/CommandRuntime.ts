@@ -71,6 +71,10 @@ export class TableDataCommandMutationFactory implements DataCommandMutationFacto
     return this.#store.createSetCellMutation(row, column, value);
   }
 
+  createSetCellImage(row: number, column: number, url: string | undefined): Mutation {
+    return this.#store.createSetCellImageMutation(row, column, url);
+  }
+
   createSetRange(range: CellRange, values: readonly (readonly (CellValue | null | undefined)[])[]): Mutation {
     return this.#store.createSetRangeMutation(range, values);
   }

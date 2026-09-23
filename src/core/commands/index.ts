@@ -1,4 +1,5 @@
 export { SetCellCommand, type SetCellCommandParams } from "./SetCellCommand";
+export { SetCellImageCommand, type SetCellImageCommandParams } from "./SetCellImageCommand";
 export { dispatchCellAction, type CellActionDispatch } from "./dispatchCellAction";
 export { SetRangeCommand, type SetRangeCommandParams } from "./SetRangeCommand";
 export { SetStyleCommand, type SetStyleCommandParams } from "./SetStyleCommand";

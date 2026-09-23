@@ -58,7 +58,12 @@ const COLUMNS = [
   // 来，不会因为文本"看起来像图片"就自动生效——两条机制刻意不对称，见 Step 26
   // 的 progress.md 条目。
   { width: 220 },
-  { width: 64, renderer: createImageCellRenderer() }
+  { width: 64, renderer: createImageCellRenderer() },
+  // 单元格级图片：这一列什么 renderer 都不配（普通文字列），图片是不是显示由
+  // 这一格自己决定——`setCellImage()` 写在下面 renderRows() 里，只对部分行调用，
+  // 演示"同一列里有的格是图片、有的格是空白"，而不是整列统一配置。这跟上面那列
+  // 的列级 `createImageCellRenderer()` 是两条并存的路径，见 setCellImage 的文档。
+  { width: 64 }
 ];
 
 /** `yyyy-mm-dd`，按墙上时钟算，不绕 `Date`（那会按 UTC 解析再按本地读，差一天）。 */

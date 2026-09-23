@@ -75,8 +75,12 @@ export type SideTableEntries = Readonly<Record<string, readonly unknown[]>>;
  * 产出真正的 `cell-style` 补丁而不是一律报成 `cell-value`。
  *
  * 缺省是 `"value"`：既有调用方一个字都不用改，行为不变。
+ *
+ * `"image"` 只对 `set-cell` 有意义（`CellImageMutation` 一格一格地暂存，从不产出
+ * `set-range` 形状的写入）——`"both"` 因此维持原义，只指"值和样式都变了"，不包含
+ * 图片。
  */
-export type CellWriteKind = "value" | "style" | "both";
+export type CellWriteKind = "value" | "style" | "image" | "both";
 
 export type SheetMutation =
   | {

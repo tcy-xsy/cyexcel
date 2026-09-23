@@ -30,6 +30,7 @@ function describeChange(value: SemanticChange): string {
   switch (value.type) {
     case "cell-value":
     case "cell-style":
+    case "cell-image":
       return `${value.type}:${value.row}:${value.column}`;
     case "range-value":
     case "range-style":

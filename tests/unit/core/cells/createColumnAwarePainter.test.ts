@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createColumnAwarePainter } from "../../../../src/core/cells";
 import type { CanvasCellRenderer, RuntimeColumn } from "../../../../src/core/cells";
@@ -223,3 +223,73 @@ describe("createColumnAwarePainter — auto-linkified text", () => {
     expect(ctx.calls.some((call) => call.method === "stroke")).toBe(false);
   });
 });
+
+describe("createColumnAwarePainter — cell-level image (context.image)", () => {
+  // createImageCellRenderer() needs a global `Image` to construct — this
+  // environment runs under Node, not jsdom, so it must be stubbed (same
+  // stub as imageCellRenderer.test.ts).
+  class FakeImage {
+    width = 10;
+    height = 10;
+    onload: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    #src = "";
+    set src(value: string) {
+      this.#src = value;
+    }
+    get src(): string {
+      return this.#src;
+    }
+  }
+
+  beforeEach(() => {
+    vi.stubGlobal("Image", FakeImage);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("paints the cell's own image instead of the column's default text formatting", () => {
+    const ctx = new RecordingCanvasContext();
+    const column = textColumn({ format: () => "should-not-appear" });
+    const painter = createColumnAwarePainter(() => [column]);
+
+    painter({ ctx, rect, row: 0, column: 0, value: "not-a-url", image: "https://example.com/a.png" });
+
+    expect(ctx.calls.filter((call) => call.method === "fillText")).toHaveLength(0);
+    // Placeholder (or the decoded image) always fills a rect — the image path
+    // ran, the text path didn't.
+    expect(ctx.calls.some((call) => call.method === "fillRect")).toBe(true);
+  });
+
+  it("takes priority over the column's own canvas renderer — the cell decides, not the column", () => {
+    const ctx = new RecordingCanvasContext();
+    const paintedWith: unknown[] = [];
+    const renderer: CanvasCellRenderer = {
+      kind: "canvas",
+      paint: (context) => {
+        paintedWith.push(context);
+      }
+    };
+    const column = textColumn({ renderer });
+    const painter = createColumnAwarePainter(() => [column]);
+
+    painter({ ctx, rect, row: 0, column: 0, value: "raw", image: "https://example.com/b.png" });
+
+    expect(paintedWith).toHaveLength(0);
+    expect(ctx.calls.some((call) => call.method === "fillRect")).toBe(true);
+  });
+
+  it("falls back to the column's normal dispatch when the cell has no image", () => {
+    const ctx = new RecordingCanvasContext();
+    const column = textColumn({ format: () => "plain-text" });
+    const painter = createColumnAwarePainter(() => [column]);
+
+    painter({ ctx, rect, row: 0, column: 0, value: "raw" });
+
+    const fillTextCalls = ctx.calls.filter((call) => call.method === "fillText");
+    expect(fillTextCalls.map((call) => call.args[0])).toEqual(["plain-text"]);
+  });
+});
+

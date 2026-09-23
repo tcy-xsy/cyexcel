@@ -25,6 +25,7 @@ import {
 } from "./clipboard";
 import {
   SetCellCommand,
+  SetCellImageCommand,
   SetRangeCommand,
   SetStyleCommand,
   MergeCellsCommand,
@@ -1007,6 +1008,7 @@ export class CyExcelCore {
       getScene: () => this.#scene,
       getCellValue: (row, column) => this.#store.getCell(row, column),
       getCellStyle: (row, column) => this.getCellStyle(row, column),
+      getCellImage: (row, column) => this.getCellImage(row, column),
       painter: createColumnAwarePainter(() => this.#columnManager.getColumns()),
       onError: (error, cell) =>
         this.#events.emit("error", { error, eventName: `finalize:canvas-cell:${cell.row}:${cell.column}` }),
@@ -1922,6 +1924,25 @@ export class CyExcelCore {
   setCellStyle(row: number, column: number, patch: CellStylePatch): void {
     assertValidCoordinate(row, column);
     this.setRangeStyle({ startRow: row, startColumn: column, endRow: row, endColumn: column }, patch);
+  }
+
+  /**
+   * 这一格的图片 URL，没有则 `undefined`。单元格级——跟这一列有没有配
+   * `renderer: createImageCellRenderer()` 无关，两条路径并存。
+   */
+  getCellImage(row: number, column: number): string | undefined {
+    return this.#sheet.getRecord(row, column)?.img;
+  }
+
+  /**
+   * 设置/清空这一格的图片（`undefined` 清空）。不需要列上配任何 renderer——
+   * 这一格自己决定要不要显示图片，跟 Excel/Univer 的单元格图片同一个心智模型。
+   */
+  setCellImage(row: number, column: number, url: string | undefined): void {
+    assertValidCoordinate(row, column);
+    this.#enqueueOrRunMutation(() => {
+      this.#applyCommandNow(new SetCellImageCommand(row, column, url));
+    });
   }
 
   /**

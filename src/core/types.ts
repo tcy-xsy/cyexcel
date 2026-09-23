@@ -43,6 +43,9 @@ export interface CommandContext {
 export type Patch =
   | { readonly type: "cell-value"; readonly row: number; readonly column: number }
   | { readonly type: "cell-style"; readonly row: number; readonly column: number }
+  /** 这一格的 `img` 变了（`CellImageMutation` 产出）。单格，没有 range 版本——见
+   *  `CellRecord.img` 的文档：图片写入目前只支持单格，没有批量 API。 */
+  | { readonly type: "cell-image"; readonly row: number; readonly column: number }
   | { readonly type: "range-value"; readonly range: CellRange }
   /**
    * 一个区域的样式变了。与 `range-value` 的下游处理一致（同一片重绘），分开只是

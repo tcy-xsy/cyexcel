@@ -14,6 +14,8 @@ export interface DataCommandMutationFactory {
   createSetRange(range: CellRange, values: readonly (readonly (CellValue | null | undefined)[])[]): Mutation;
   /** 一片区域改样式（合并语义）。Step 24。 */
   createSetStyle(range: CellRange, patch: CellStylePatch): Mutation;
+  /** 单格设置/清空图片 URL。与 `v`/`s` 独立——单元格级图片，不依赖列配置。 */
+  createSetCellImage(row: number, column: number, url: string | undefined): Mutation;
   createSetMerges(merges: readonly CellRange[]): Mutation;
   createInsertRows(start: number, rows: readonly (readonly (CellValue | null | undefined)[])[]): Mutation;
   createDeleteRows(start: number, count: number): Mutation;
