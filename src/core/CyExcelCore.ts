@@ -778,6 +778,17 @@ export class CyExcelCore {
    */
   #focusFromPointer = false;
   #disposed = false;
+  /** Top widgets (toolbar/formula bar) constructed from `options.topWidgets` — disposed alongside `this`. */
+  #topWidgetHandles: readonly TopWidgetHandle[] = [];
+  #topWidgetHost: HTMLDivElement | undefined;
+  /**
+   * SPA hosts frequently unmount the container without ever calling `dispose()` (no
+   * lifecycle hook wired up). The toolbar's dialogs/panels live on `document.body`,
+   * detached from `container`'s subtree, so nothing removes them when that happens —
+   * they'd float on screen forever. This watches for `container` leaving the document
+   * and disposes `this` on its behalf.
+   */
+  readonly #connectionObserver: MutationObserver | null;
 
   constructor(container: HTMLElement, options: CyExcelCoreOptions = {}) {
     validateCyExcelCoreOptions(options);
@@ -1420,11 +1431,29 @@ export class CyExcelCore {
     // 顶部部件必须**最后**创建：工具栏一构造就会读选区与样式来算按钮状态，
     // 放在前面会读到还没赋值的 #selectionModel。core 只给槽位与布局，部件本身
     // 从 options.topWidgets 注入，所以瘦核心不会 import 到工具栏代码。
+    this.#topWidgetHost = dom.topWidgetHost;
     if (dom.topWidgetHost !== undefined) {
+      const handles: TopWidgetHandle[] = [];
       for (const factory of topWidgetFactories) {
         const handle = factory(this, dom.topWidgetHost);
+        handles.push(handle);
         initialization.defer(() => handle.dispose());
       }
+      this.#topWidgetHandles = handles;
+    }
+
+    // 见 #connectionObserver 的注释：容器被摘掉却没人调 dispose() 时，替它收尾。
+    this.#connectionObserver =
+      typeof MutationObserver === "undefined"
+        ? null
+        : new MutationObserver(() => {
+            if (!container.isConnected) {
+              this.dispose();
+            }
+          });
+    if (this.#connectionObserver !== null) {
+      this.#connectionObserver.observe(document.body, { childList: true, subtree: true });
+      initialization.defer(() => this.#connectionObserver?.disconnect());
     }
 
     this.#pluginManager.activate();
@@ -2180,6 +2209,14 @@ export class CyExcelCore {
     this.#events.dispose();
     this.#shortcuts.dispose();
     this.#surfaceHost.dispose();
+    this.#connectionObserver?.disconnect();
+
+    // 工具栏/公式栏挂在 topWidgetHost 里，不在 #scroller 下面——之前只删 #scroller，
+    // 这些部件（连同它们挂在 document.body 上的对话框，比如查找替换）就一直留着。
+    for (const handle of this.#topWidgetHandles) {
+      handle.dispose();
+    }
+    this.#topWidgetHost?.remove();
 
     this.#scroller.remove();
   }
