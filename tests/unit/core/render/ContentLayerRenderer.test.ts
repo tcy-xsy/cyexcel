@@ -286,12 +286,13 @@ describe("ContentLayerRenderer — frozen rows/columns (Step 9)", () => {
     expect(methodCounts("save")).toBeGreaterThan(0);
     expect(methodCounts("save")).toBe(methodCounts("restore"));
     // One save/clip/restore per quadrant (region clipping) plus one
-    // additional save/restore per cell (state isolation between cells —
-    // see the "canvas state isolation" describe block below) — clip only
-    // happens at the quadrant level, so it's a strict subset of save.
-    expect(methodCounts("clip")).toBeGreaterThan(0);
-    expect(methodCounts("clip")).toBeLessThan(methodCounts("save"));
-    expect(methodCounts("save")).toBe(methodCounts("clip") + cellCount);
+    // save/clip/restore per cell (state isolation between cells, and the text is
+    // clipped to its own cell so it cannot spill past the cell's right edge — see
+    // the "canvas state isolation" and "text clipped to its cell" blocks below).
+    // Every save is clipped, so the counts are equal; the quadrant-level ones are
+    // what remains after subtracting one per cell.
+    expect(methodCounts("clip") - cellCount).toBeGreaterThan(0);
+    expect(methodCounts("save")).toBe(methodCounts("clip"));
   });
 
   it("degenerates to a single unclipped-by-freeze region when nothing is frozen (no regression)", () => {
@@ -307,10 +308,10 @@ describe("ContentLayerRenderer — frozen rows/columns (Step 9)", () => {
     renderer.paintContent({ kind: "full" });
 
     // Exactly one quadrant is non-empty when frozenRowCount/frozenColumnCount
-    // are both 0, so exactly one clip region is entered — "save" itself is
-    // no longer 1-to-1 with quadrants once per-cell isolation (below) is
-    // counted too, so this asserts on "clip" instead.
-    expect(ctx.calls.filter((call) => call.method === "clip")).toHaveLength(1);
+    // are both 0, so exactly one quadrant-level clip region is entered; every
+    // painted cell adds its own clip to its cell rect on top of that.
+    const cells = ctx.calls.filter((call) => call.method === "fillText").length;
+    expect(ctx.calls.filter((call) => call.method === "clip")).toHaveLength(1 + cells);
   });
 });
 
@@ -324,11 +325,11 @@ describe("ContentLayerRenderer — canvas state isolation between cells", () => 
     renderer.paintContent({ kind: "full" });
 
     // 3 cells, 1 quadrant: 1 save+clip+restore for the quadrant, plus one
-    // save+restore per cell.
+    // save+clip+restore per cell (the cell's clip is to its own rect).
     expect(ctx.calls.filter((call) => call.method === "fillText")).toHaveLength(3);
     expect(ctx.calls.filter((call) => call.method === "save")).toHaveLength(4);
     expect(ctx.calls.filter((call) => call.method === "restore")).toHaveLength(4);
-    expect(ctx.calls.filter((call) => call.method === "clip")).toHaveLength(1);
+    expect(ctx.calls.filter((call) => call.method === "clip")).toHaveLength(4);
   });
 
   it("does not let one cell's painter-modified ctx state leak into the next cell's default painting", () => {
@@ -1121,6 +1122,29 @@ describe("ContentLayerRenderer — dropdown display modes", () => {
     it("keeps save/restore balanced", () => {
       const { ctx } = render({ dropdown: { mode: "custom", color: "#4285f4" } });
       expect(ctx.calls.filter((c) => c.method === "save")).toHaveLength(ctx.calls.filter((c) => c.method === "restore").length);
+    });
+  });
+});
+
+describe("ContentLayerRenderer — text is clipped to its own cell", () => {
+  it("clips the painter to the cell rect before any text is drawn, so long text cannot spill out of the last column", () => {
+    const ctx = new RecordingCanvasContext();
+    const renderer = createContentRenderer({
+      ctx,
+      layout: createLayout(1, 2), // 每列 50 宽、20 高
+      getCellValue: () => "一段远远超过这个格子宽度的很长很长的文字"
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    // 每一格：在它自己的 fillText 之前，最近的一次裁剪就是这一格的矩形
+    const cellRects = [[0, 0, 50, 20], [50, 0, 50, 20]];
+    const texts = ctx.calls.map((call, index) => ({ call, index })).filter(({ call }) => call.method === "fillText");
+    expect(texts).toHaveLength(2);
+    texts.forEach(({ index }, i) => {
+      const clipAt = ctx.calls.slice(0, index).map((c) => c.method).lastIndexOf("clip");
+      expect(ctx.calls[clipAt - 1]).toMatchObject({ method: "rect", args: cellRects[i] });
     });
   });
 });

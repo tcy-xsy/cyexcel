@@ -322,12 +322,14 @@ export class ContentLayerRenderer {
       arrow && rect.width > DROPDOWN_ARROW_ZONE
         ? { x: rect.x, y: rect.y, width: rect.width - DROPDOWN_ARROW_ZONE, height: rect.height }
         : rect;
+    // 每个单元格的绘制都裁剪到它自己的矩形（list 单元格是扣掉箭头区之后的窄矩形）。
+    // 不裁剪的话，过长的文字会画出单元格右边界：中间的列看不出来，因为右邻格随后的
+    // `clearRect` 会盖掉溢出的部分，最后一列右边没有邻格，字就露在表格外面了。
+    // Excel 的规则是"右邻格为空才允许溢出"，这里没有实现，统一裁剪更可预期。
     const clipToPaintRect = (): void => {
-      if (paintRect !== rect) {
-        this.#ctx.beginPath();
-        this.#ctx.rect(paintRect.x, paintRect.y, paintRect.width, paintRect.height);
-        this.#ctx.clip();
-      }
+      this.#ctx.beginPath();
+      this.#ctx.rect(paintRect.x, paintRect.y, paintRect.width, paintRect.height);
+      this.#ctx.clip();
     };
     const context: CellPaintContext = {
       ctx: this.#ctx,
