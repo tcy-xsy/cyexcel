@@ -121,6 +121,40 @@
           </section>
 
           <section class="panel">
+            <h2>数据验证</h2>
+            <div class="cell-form">
+              <div class="field-grid">
+                <label>起始行 <input id="dvStartRow" type="number" min="0" value="0" /></label>
+                <label>起始列 <input id="dvStartColumn" type="number" min="0" value="0" /></label>
+                <label>结束行 <input id="dvEndRow" type="number" min="0" value="4" /></label>
+                <label>结束列 <input id="dvEndColumn" type="number" min="0" value="0" /></label>
+              </div>
+              <div class="field-grid">
+                <label>规则
+                  <select id="dvType">
+                    <option value="whole">整数（介于 值1 和 值2）</option>
+                    <option value="list">序列（逗号分隔）</option>
+                    <option value="date">日期（介于 值1 和 值2）</option>
+                    <option value="custom">自定义：偶数（registerDataValidator）</option>
+                  </select>
+                </label>
+                <label>值1 / 序列 <input id="dvValue1" type="text" value="1" /></label>
+                <label>值2 <input id="dvValue2" type="text" value="100" /></label>
+              </div>
+              <div class="cell-form-actions">
+                <button class="button primary" id="dvSetButton" type="button">设置规则</button>
+                <button class="button" id="dvClearButton" type="button">清除规则</button>
+                <button class="button" id="dvFindButton" type="button">找出无效格</button>
+              </div>
+            </div>
+            <p class="hint" id="dvResult">
+              调用 <code>core.setDataValidation()</code> / <code>clearDataValidation()</code> /
+              <code>findInvalidCells()</code>。规则随行列插入删除移动，可以撤销。一期还没有角标和
+              编辑器拦截，无效格用"找出无效格"列出；批量与程序写入本来就只标记不拦截。
+            </p>
+          </section>
+
+          <section class="panel">
             <h2>操作提示（真实交互）</h2>
             <ul class="hint-list">
               <li>点击 / 拖拽移动选中的单元格（会画出蓝色高亮框），用来决定双击 / Enter

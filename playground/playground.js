@@ -182,6 +182,17 @@ const mergeEndColumn = document.getElementById("mergeEndColumn");
 const mergeCellsButton = document.getElementById("mergeCellsButton");
 const unmergeCellsButton = document.getElementById("unmergeCellsButton");
 const mergeFormResult = document.getElementById("mergeFormResult");
+const dvStartRow = document.getElementById("dvStartRow");
+const dvStartColumn = document.getElementById("dvStartColumn");
+const dvEndRow = document.getElementById("dvEndRow");
+const dvEndColumn = document.getElementById("dvEndColumn");
+const dvType = document.getElementById("dvType");
+const dvValue1 = document.getElementById("dvValue1");
+const dvValue2 = document.getElementById("dvValue2");
+const dvSetButton = document.getElementById("dvSetButton");
+const dvClearButton = document.getElementById("dvClearButton");
+const dvFindButton = document.getElementById("dvFindButton");
+const dvResult = document.getElementById("dvResult");
 const metricConstruct = document.getElementById("metricConstruct");
 const metricFps = document.getElementById("metricFps");
 
@@ -408,6 +419,76 @@ cellImageFile.addEventListener("change", () => {
     cellImageFile.value = "";
   };
   reader.readAsDataURL(file);
+});
+
+/** Reads the four data-validation-form inputs into a CellRange. */
+function readDvRangeFromForm() {
+  return {
+    startRow: clampNumber(Number(dvStartRow.value), 0, Math.max(0, currentRowCount - 1), 0),
+    startColumn: clampNumber(Number(dvStartColumn.value), 0, COLUMNS.length - 1, 0),
+    endRow: clampNumber(Number(dvEndRow.value), 0, Math.max(0, currentRowCount - 1), 0),
+    endColumn: clampNumber(Number(dvEndColumn.value), 0, COLUMNS.length - 1, 0)
+  };
+}
+
+function buildDvRuleFromForm() {
+  const type = dvType.value;
+  if (type === "list") {
+    const items = dvValue1.value.split(",").map((item) => item.trim()).filter((item) => item !== "");
+    return { criteria: { type: "list", items }, errorMessage: `请从 ${items.join("、")} 中选择` };
+  }
+  if (type === "custom") {
+    // 校验函数按名字注册在实例上，不进快照；规则里只存 { type: "custom", name }
+    core.registerDataValidator("even", (value) =>
+      typeof value === "number" && value % 2 === 0 ? true : "需要偶数"
+    );
+    return { criteria: { type: "custom", name: "even" } };
+  }
+  const value1 = type === "date" ? dvValue1.value : Number(dvValue1.value);
+  const value2 = type === "date" ? dvValue2.value : Number(dvValue2.value);
+  return { criteria: { type, operator: "between", value1, value2 } };
+}
+
+dvSetButton.addEventListener("click", () => {
+  if (!core) {
+    return;
+  }
+  const range = readDvRangeFromForm();
+  try {
+    const id = core.setDataValidation(range, buildDvRuleFromForm());
+    dvResult.textContent =
+      `已设置规则 ${id}：(${range.startRow}, ${range.startColumn}) - (${range.endRow}, ${range.endColumn})，` +
+      "可以用撤销按钮回退；点「找出无效格」看现有数据是否合规";
+  } catch (error) {
+    if (error instanceof CyExcelError) {
+      dvResult.textContent = `设置失败：${error.code} — ${error.message}`;
+    } else {
+      throw error;
+    }
+  }
+});
+
+dvClearButton.addEventListener("click", () => {
+  if (!core) {
+    return;
+  }
+  const range = readDvRangeFromForm();
+  core.clearDataValidation(range);
+  dvResult.textContent =
+    `已清除 (${range.startRow}, ${range.startColumn}) - (${range.endRow}, ${range.endColumn}) 上的规则，可以撤销`;
+});
+
+dvFindButton.addEventListener("click", () => {
+  if (!core) {
+    return;
+  }
+  const invalid = core.findInvalidCells();
+  const rules = core.getDataValidations().length;
+  dvResult.textContent = invalid.length === 0
+    ? `${rules} 条规则，没有无效格`
+    : `${rules} 条规则，${invalid.length} 个无效格：` +
+      invalid.slice(0, 20).map(({ row, column }) => `(${row}, ${column})`).join(" ") +
+      (invalid.length > 20 ? " …" : "");
 });
 
 /** Reads the four merge-form inputs into a CellRange. */
