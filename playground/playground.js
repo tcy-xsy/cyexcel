@@ -173,6 +173,8 @@ const cellValue = document.getElementById("cellValue");
 const readCellButton = document.getElementById("readCellButton");
 const writeCellButton = document.getElementById("writeCellButton");
 const cellFormResult = document.getElementById("cellFormResult");
+const cellImageFile = document.getElementById("cellImageFile");
+const cellImageFormResult = document.getElementById("cellImageFormResult");
 const mergeStartRow = document.getElementById("mergeStartRow");
 const mergeStartColumn = document.getElementById("mergeStartColumn");
 const mergeEndRow = document.getElementById("mergeEndRow");
@@ -386,6 +388,26 @@ writeCellButton.addEventListener("click", () => {
   core.setCell(row, columnIndex, result.value);
   cellFormResult.textContent =
     `已写入 (${row}, ${columnIndex}) = ${JSON.stringify(result.value)}，可以用撤销按钮回退`;
+});
+
+cellImageFile.addEventListener("change", () => {
+  if (!core) {
+    return;
+  }
+  const file = cellImageFile.files?.[0];
+  if (!file) {
+    return;
+  }
+  const row = clampNumber(Number(cellRow.value), 0, Math.max(0, currentRowCount - 1), 0);
+  cellRow.value = String(row);
+  const columnIndex = Number(cellColumn.value);
+  const reader = new FileReader();
+  reader.onload = () => {
+    core.setCellImage(row, columnIndex, String(reader.result));
+    cellImageFormResult.textContent = `已写入 (${row}, ${columnIndex}) 的图片，可以用撤销按钮回退`;
+    cellImageFile.value = "";
+  };
+  reader.readAsDataURL(file);
 });
 
 /** Reads the four merge-form inputs into a CellRange. */

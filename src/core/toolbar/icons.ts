@@ -51,5 +51,7 @@ export const deleteRow = wrap('<rect x="3" y="12" width="18" height="8" rx="1"/>
 export const insertColumn = wrap('<rect x="12" y="3" width="8" height="18" rx="1"/><path d="M5 12h5"/><path d="M7.5 9.5v5"/>');
 export const deleteColumn = wrap('<rect x="12" y="3" width="8" height="18" rx="1"/><path d="M5 12h5"/>');
 export const hideColumn = wrap('<path d="M3 3l18 18"/><path d="M10.6 5.1A9 9 0 0 1 21 12a9 9 0 0 1-3 3.9"/><path d="M6.6 6.6A9 9 0 0 0 3 12a9 9 0 0 0 9 6 9 9 0 0 0 3.2-.6"/>');
+export const image = wrap('<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m3 16 5-5 4 4 3-3 6 6"/>');
+
 export const caretDown = wrap('<path d="m7 10 5 5 5-5"/>');
 export const more = wrap('<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>');

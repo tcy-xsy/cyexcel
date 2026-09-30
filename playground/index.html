@@ -89,6 +89,13 @@
               </div>
             </div>
             <p class="hint" id="cellFormResult">调用 <code>core.getCell()</code> / <code>core.setCell()</code>，直接命中真实 Store。</p>
+            <div class="cell-form">
+              <label>上传图片 <input id="cellImageFile" type="file" accept="image/*" /></label>
+            </div>
+            <p class="hint" id="cellImageFormResult">
+              调用 <code>core.setCellImage()</code>——只对上面这一格生效，不需要给这一列配
+              <code>renderer</code>；回退用撤销按钮。
+            </p>
           </section>
 
           <section class="panel">

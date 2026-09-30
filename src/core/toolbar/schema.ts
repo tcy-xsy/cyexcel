@@ -2,7 +2,7 @@ import { STYLE_KEYS, type CellStyle } from "../style/types";
 import { addDecimal, subtractDecimal } from "../style/numFmtDecimals";
 import { commonValue, everyCellHas } from "./state";
 import { DEFAULT_FONT_SIZE } from "../render/theme";
-import type { ToolbarItem, ToolbarSchema } from "./types";
+import type { ToolbarContext, ToolbarItem, ToolbarSchema } from "./types";
 import * as icons from "./icons";
 import { applyBorderPreset, borderPanel, colorPanel, filterPanel } from "./panels";
 import { findReplaceDialog } from "./dialogs";
@@ -90,6 +90,36 @@ const NUMBER_FORMATS = [
   { value: "yyyy-mm-dd", label: "日期" },
   { value: "yyyy-mm-dd hh:mm", label: "日期时间" }
 ] as const;
+
+/**
+ * 弹出系统文件选择器，把选中的图片读成 `data:` URI 写进当前格。用一次性 `<input>`
+ * 而不是常驻 DOM 节点——工具栏项没有专属挂载点，用完即扔最简单。
+ */
+function pickImageFile(ctx: ToolbarContext): Promise<void> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.style.display = "none";
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      input.remove();
+      if (!file) {
+        resolve();
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        ctx.sheet.setCellImage(ctx.range.startRow, ctx.range.startColumn, String(reader.result));
+        resolve();
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
+    });
+    document.body.appendChild(input);
+    input.click();
+  });
+}
 
 /**
  * 默认工具栏 schema。
@@ -435,6 +465,19 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     icon: icons.hideColumn,
     label: "隐藏列",
     run: (ctx) => ctx.sheet.hideColumn(ctx.range.startColumn)
+  },
+  {
+    id: "insert-image",
+    group: "structure",
+    order: 80,
+    type: "button",
+    icon: icons.image,
+    label: "插入图片",
+    tooltip: "上传本地图片到这一格（单元格级，不需要给列配 renderer）",
+    // 图片是单元格级的，选区必须是单格——跟 merge 反过来。
+    disabled: (ctx) =>
+      ctx.range.startRow !== ctx.range.endRow || ctx.range.startColumn !== ctx.range.endColumn,
+    run: (ctx) => pickImageFile(ctx)
   }
 ]);
 
