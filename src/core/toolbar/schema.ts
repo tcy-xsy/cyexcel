@@ -386,7 +386,7 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     id: "data-validation",
     group: "data",
     order: 45,
-    // 对话框：允许 / 数据 / 值 / 输入信息 / 错误警告，一屏放得下，也要能边开边看表格
+    // 对话框：允许 / 数据 / 值 / 显示方式 / 错误警告，一屏放得下，也要能边开边看表格
     type: "dialog",
     icon: icons.dataValidation,
     label: "数据验证",

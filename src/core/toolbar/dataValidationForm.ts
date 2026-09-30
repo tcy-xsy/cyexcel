@@ -28,8 +28,6 @@ export interface DataValidationFormState {
   errorStyle: ValidationErrorStyle;
   errorTitle: string;
   errorMessage: string;
-  promptTitle: string;
-  prompt: string;
 }
 
 export const ALLOW_OPTIONS: readonly { readonly value: AllowKind; readonly label: string }[] = [
@@ -60,9 +58,10 @@ export const RENDER_MODE_OPTIONS: readonly { readonly value: DataValidationRende
 ];
 
 export const ERROR_STYLE_OPTIONS: readonly { readonly value: ValidationErrorStyle; readonly label: string }[] = [
-  { value: "stop", label: "停止" },
-  { value: "warning", label: "警告" },
-  { value: "information", label: "信息" }
+  // 与 Univer 一致：只有停止级会拒绝输入；警告、信息放行，只把违规的格子标红
+  { value: "stop", label: "停止（拒绝输入）" },
+  { value: "warning", label: "警告（仅标记）" },
+  { value: "information", label: "信息（仅标记）" }
 ];
 
 export const DEFAULT_FORM: DataValidationFormState = Object.freeze({
@@ -75,9 +74,7 @@ export const DEFAULT_FORM: DataValidationFormState = Object.freeze({
   renderMode: "arrow",
   errorStyle: "stop",
   errorTitle: "",
-  errorMessage: "",
-  promptTitle: "",
-  prompt: ""
+  errorMessage: ""
 });
 
 /** 这个 `allow` 需要哪几个输入框。 */
@@ -199,9 +196,7 @@ export function ruleInputFromForm(form: DataValidationFormState): FormOutcome {
     allowBlank: form.allowBlank,
     errorStyle: form.errorStyle,
     ...(form.errorTitle !== "" ? { errorTitle: form.errorTitle } : {}),
-    ...(form.errorMessage !== "" ? { errorMessage: form.errorMessage } : {}),
-    ...(form.promptTitle !== "" ? { promptTitle: form.promptTitle } : {}),
-    ...(form.prompt !== "" ? { prompt: form.prompt } : {})
+    ...(form.errorMessage !== "" ? { errorMessage: form.errorMessage } : {})
   };
 
   if (form.allow === "list") {
@@ -288,9 +283,7 @@ export function formFromRule(rule: DataValidationRule | undefined): DataValidati
     renderMode: rule.renderMode ?? "arrow",
     errorStyle: rule.errorStyle ?? "stop",
     errorTitle: rule.errorTitle ?? "",
-    errorMessage: rule.errorMessage ?? "",
-    promptTitle: rule.promptTitle ?? "",
-    prompt: rule.prompt ?? ""
+    errorMessage: rule.errorMessage ?? ""
   } as const;
   const criteria = rule.criteria;
   switch (criteria.type) {

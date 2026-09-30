@@ -77,7 +77,7 @@ export default function coreApiPage(root: HTMLElement): void {
   );
   root.append(
     callout(
-      "只有编辑器提交会被规则拦截或提示；粘贴、填充、setCell() 只标记不拦截。" +
+      "只有编辑器提交、且规则是停止级时才会拒绝输入；粘贴、填充、setCell() 和警告、信息级只标记不拦截。" +
         "构造选项 dataValidation.showInvalidMarks: false 可关闭红色小三角。"
     )
   );

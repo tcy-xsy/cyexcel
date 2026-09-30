@@ -10,7 +10,7 @@ export { createDateCellEditor } from "./DateCellEditor";
 export { createSelectCellEditor, type SelectCellEditorOption } from "./SelectCellEditor";
 export { createTextAreaCellEditor, type TextAreaCellEditorOptions } from "./TextAreaCellEditor";
 export { EditorManager, type EditorManagerOptions } from "./EditorManager";
-export { createDomValidationPresenter } from "./ValidationBubble";
+export { createDomValidationPresenter } from "./ValidationDialog";
 export { visibleRectForRange } from "./visibleCellRect";
 export { ValidationHints, type ValidationHintsOptions } from "./ValidationHints";
 export {

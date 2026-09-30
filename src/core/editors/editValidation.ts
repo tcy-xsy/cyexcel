@@ -1,58 +1,50 @@
-import type { CellRect } from "../layout";
 import type { DataValidationResult } from "../sheet/validations";
 
 /**
  * 编辑器提交前的校验结论（数据验证设计稿 §7.1）。`EditorManager` 只认这个形状，
  * 不认识规则本身：规则怎么查、值怎么判是集成层（`CyExcelCore`）的事。
  *
- * - `accept`：照常提交。
- * - `reject`（停止）：不提交，编辑器、输入值和焦点都保留，弹出错误提示。
- * - `confirm`（警告）：弹出"仍要继续吗"，用户确认才提交，取消则回到编辑器。
- * - `notify`（信息）：先提交，再弹出提示。
+ * 与 Univer 一致，只有**停止**级（`errorStyle: "stop"`，默认）会拦：
+ * - `accept`：照常提交。违规但不是停止级的值也走这里——只会被标上红色小三角。
+ * - `reject`：不提交，弹出模态对话框说明原因；关掉之后回到编辑器，输入内容还在。
+ *
+ * 警告、信息两档不弹确认、也不提示：Univer 的拦截器只处理 `STOP`，其余直接放行。
  */
 export type EditValidationOutcome =
   | { readonly kind: "accept" }
   | {
-      readonly kind: "reject" | "confirm" | "notify";
+      readonly kind: "reject";
       readonly title?: string;
       readonly message: string;
     };
 
 export const ACCEPT: EditValidationOutcome = Object.freeze({ kind: "accept" });
 
-/** 把一次校验结果按规则的 `errorStyle` 翻成编辑器要执行的动作。 */
+/** 把一次校验结果按规则的 `errorStyle` 翻成编辑器要执行的动作：只有停止级拦。 */
 export function outcomeFromResult(result: DataValidationResult): EditValidationOutcome {
-  if (result.valid) {
+  if (result.valid || (result.errorStyle ?? "stop") !== "stop") {
     return ACCEPT;
   }
-  const kind = result.errorStyle === "warning" ? "confirm" : result.errorStyle === "information" ? "notify" : "reject";
   return {
-    kind,
+    kind: "reject",
     ...(result.title !== undefined ? { title: result.title } : {}),
     message: result.message ?? "输入的值不符合规则"
   };
 }
 
 export interface ValidationPresentRequest {
-  readonly kind: "reject" | "confirm" | "notify";
   readonly title?: string;
   readonly message: string;
-  /** 被编辑单元格的矩形（编辑层坐标系）；提示贴在它下面。 */
-  readonly rect: CellRect;
-  /** `confirm` 专用：用户选了"继续"。 */
-  readonly onContinue?: () => void;
-  /** `confirm` 专用：用户选了"取消"，回到编辑器。 */
-  readonly onCancel?: () => void;
+  /** 用户点了「确定」（或按了 Esc）。 */
+  readonly onClose: () => void;
 }
 
 /**
- * 提示怎么呈现不归 `EditorManager` 管——它只管什么时候要、要什么。默认实现是一个
- * DOM 气泡（`createDomValidationPresenter`），测试里换成假的就不需要 DOM。
+ * 拒绝输入时怎么呈现不归 `EditorManager` 管——它只管什么时候要、要什么。默认实现是一个
+ * 模态对话框（`createDomValidationPresenter`），测试里换成假的就不需要 DOM。
  */
 export interface ValidationPresenter {
   show(request: ValidationPresentRequest): void;
-  /** 编辑单元格的位置变了（滚动、缩放），提示跟着挪。 */
-  reposition(rect: CellRect): void;
   hide(): void;
   dispose(): void;
 }

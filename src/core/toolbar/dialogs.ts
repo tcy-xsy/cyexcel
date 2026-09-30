@@ -255,8 +255,6 @@ export function dataValidationDialog(
   const allowBlank = checkbox("忽略空值");
   const showDropDown = checkbox("提供下拉箭头");
   const renderMode = selectInput<DataValidationRenderMode>(RENDER_MODE_OPTIONS, "显示方式");
-  const promptTitle = textInput("可选", "输入信息标题");
-  const prompt = textInput("选中单元格时显示", "输入信息");
   const errorStyle = selectInput<ValidationErrorStyle>(ERROR_STYLE_OPTIONS, "错误样式");
   const errorTitle = textInput("可选", "出错警告标题");
   const errorMessage = textInput("留空使用默认文案", "出错警告信息");
@@ -293,9 +291,7 @@ export function dataValidationDialog(
     renderMode: renderMode.value as DataValidationRenderMode,
     errorStyle: errorStyle.value as ValidationErrorStyle,
     errorTitle: errorTitle.value,
-    errorMessage: errorMessage.value,
-    promptTitle: promptTitle.value,
-    prompt: prompt.value
+    errorMessage: errorMessage.value
   });
 
   /** 按当前的"允许"和"数据"显示或隐藏对应的输入框。 */
@@ -321,8 +317,6 @@ export function dataValidationDialog(
   errorStyle.value = state.errorStyle;
   errorTitle.value = state.errorTitle;
   errorMessage.value = state.errorMessage;
-  promptTitle.value = state.promptTitle;
-  prompt.value = state.prompt;
   refresh();
   allow.addEventListener("change", refresh);
   operator.addEventListener("change", refresh);
@@ -361,8 +355,6 @@ export function dataValidationDialog(
     value2Row,
     optionRow,
     renderModeRow,
-    field("输入标题", promptTitle),
-    field("输入信息", prompt),
     field("错误样式", errorStyle),
     field("错误标题", errorTitle),
     field("错误信息", errorMessage),

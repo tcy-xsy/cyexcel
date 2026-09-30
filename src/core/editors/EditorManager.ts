@@ -1,11 +1,10 @@
-import type { CellRect } from "../layout";
 import type { SceneSnapshot } from "../scene";
 import type { CellRange } from "../types";
 import type { CellEditor, CellEditorFactory } from "./CellEditor";
 import { createTextCellEditor } from "./TextCellEditor";
 import type { CellValue } from "../sheet/types";
 import { ACCEPT, type EditValidationOutcome, type ValidationPresenter } from "./editValidation";
-import { createDomValidationPresenter } from "./ValidationBubble";
+import { createDomValidationPresenter } from "./ValidationDialog";
 import { intersectRect } from "./visibleCellRect";
 
 export interface EditorManagerOptions {
@@ -35,12 +34,13 @@ export interface EditorManagerOptions {
   readonly onEditCancel?: (row: number, column: number) => void;
   /**
    * Called with the editor's value just before it is committed; the answer
-   * decides whether to commit, refuse, ask first, or commit and tell the user
-   * (数据验证设计稿 §7.1). Omitted means "always accept". Only this path is
+   * decides whether to commit or refuse (数据验证设计稿 §7.1). Only a
+   * stop-level rule refuses, like Univer — warning/information values commit
+   * and are merely marked. Omitted means "always accept". Only this path is
    * gated — paste, fill and `setCell()` mark invalid cells but never refuse.
    */
   readonly validateCommit?: (row: number, column: number, value: CellValue | undefined) => EditValidationOutcome;
-  /** How refusals/confirmations are shown. Defaults to a DOM bubble in `container`, created on first use. */
+  /** How a refusal is shown. Defaults to a modal dialog on `document.body`, created on first use. */
   readonly validationPresenter?: ValidationPresenter;
 }
 
@@ -48,8 +48,6 @@ interface ActiveEdit {
   readonly row: number;
   readonly column: number;
   readonly editor: CellEditor;
-  /** Latest cell rect, kept so the validation bubble can sit under the cell. */
-  rect: CellRect;
 }
 
 /**
@@ -78,8 +76,13 @@ export class EditorManager {
 
   #active: ActiveEdit | null = null;
   #composing = false;
-  /** A warning-level "continue anyway?" prompt is open: further commit attempts wait for its answer. */
-  #confirming = false;
+  /**
+   * The rejection dialog is open (or has just closed and focus is being handed back):
+   * further commit attempts are ignored. Opening it steals focus from the editor, and
+   * removing its focused OK button fires another `focusout`; both look like "clicked
+   * elsewhere" to `#handleFocusOut`, which would re-validate and pop the dialog again.
+   */
+  #dialogOpen = false;
 
   constructor(options: EditorManagerOptions) {
     this.#container = options.container;
@@ -97,7 +100,6 @@ export class EditorManager {
     this.#presenter = options.validationPresenter;
 
     this.#container.addEventListener("keydown", this.#handleKeyDown);
-    this.#container.addEventListener("input", this.#handleInput);
     this.#container.addEventListener("compositionstart", this.#handleCompositionStart);
     this.#container.addEventListener("compositionend", this.#handleCompositionEnd);
     this.#container.addEventListener("focusout", this.#handleFocusOut);
@@ -126,8 +128,6 @@ export class EditorManager {
       this.cancelEdit();
       return;
     }
-    active.rect = rect;
-    this.#presenter?.reposition(rect);
     active.editor.updateGeometry(Object.freeze(rect));
   }
 
@@ -154,7 +154,7 @@ export class EditorManager {
     editor.mount(this.#container, { row, column, initialValue, initialInput, initialText, rect });
     editor.focus();
 
-    this.#active = { row, column, editor, rect };
+    this.#active = { row, column, editor };
     this.#onEditStart?.(row, column);
   }
 
@@ -165,14 +165,14 @@ export class EditorManager {
     const { row, column, editor } = this.#active;
     this.#active = null;
     this.#composing = false;
-    this.#confirming = false;
+    this.#dialogOpen = false;
     this.#presenter?.hide();
     editor.destroy();
     this.#onEditCancel?.(row, column);
   }
 
   async commitEdit(): Promise<void> {
-    if (!this.#active || this.#confirming) {
+    if (!this.#active || this.#dialogOpen) {
       return;
     }
     const active = this.#active;
@@ -188,47 +188,31 @@ export class EditorManager {
     const outcome = this.#validateCommit?.(row, column, value) ?? ACCEPT;
 
     if (outcome.kind === "reject") {
-      // 停止：什么都不提交，编辑器、输入值和焦点原样留着，让用户改。
-      this.#present(active, outcome);
-      editor.focus();
-      return;
-    }
-
-    if (outcome.kind === "confirm") {
-      // 警告：等用户回答。回答之前再来的提交（比如失焦）都被 #confirming 挡掉。
-      this.#confirming = true;
-      this.#present(active, outcome, {
-        // **`#confirming` 必须撑过整个收尾，最后才复位。** 点的是气泡里的按钮，按钮此刻
-        // 持有焦点；`hide()` 把它从 DOM 里摘掉，浏览器随即发一次 `focusout`（`relatedTarget`
-        // 为空），`#handleFocusOut` 会把它当成"点到别处去了"而重新提交、重新校验、再弹出
-        // 同一个警告——看上去就是点了"继续/取消"毫无反应。所以先摘气泡、归还焦点，
-        // 这些动作触发的 `focusout` 都被 `#confirming` 挡掉，之后才复位。
-        onContinue: () => {
+      // 停止：什么都不提交，弹模态对话框说明原因；关掉之后回到编辑器，输入内容还在。
+      this.#dialogOpen = true;
+      this.#presenter ??= createDomValidationPresenter();
+      this.#presenter.show({
+        ...(outcome.title !== undefined ? { title: outcome.title } : {}),
+        message: outcome.message,
+        onClose: () => {
+          // **`#dialogOpen` 必须撑到最后才复位**：关对话框会把持有焦点的「确定」按钮摘掉，
+          // 浏览器随即发一次 `focusout`（`relatedTarget` 为空），先复位的话
+          // `#handleFocusOut` 会当成"点到别处去了"，重新校验、又弹出同一个对话框。
           this.#presenter?.hide();
-          void this.#finishCommit(active, value).finally(() => {
-            this.#confirming = false;
-          });
-        },
-        onCancel: () => {
-          this.#presenter?.hide();
-          editor.focus();
-          this.#confirming = false;
+          if (this.#active?.editor === editor) {
+            editor.focus();
+          }
+          this.#dialogOpen = false;
         }
       });
       return;
     }
 
     await this.#finishCommit(active, value);
-    if (outcome.kind === "notify") {
-      // 信息：先提交再说。编辑器已经销毁，提示只需要那一格的位置。
-      this.#present(active, outcome);
-    }
   }
 
   async #finishCommit(active: ActiveEdit, value: CellValue | undefined): Promise<void> {
     const { row, column, editor } = active;
-    // 之前那次被拒绝的提示，这次能提交说明用户已经改对了
-    this.#presenter?.hide();
     await this.#commitValue(row, column, value);
 
     // #active may have been cleared by a concurrent cancelEdit()/dispose()
@@ -241,21 +225,6 @@ export class EditorManager {
     }
   }
 
-  #present(
-    active: ActiveEdit,
-    outcome: Exclude<EditValidationOutcome, { readonly kind: "accept" }>,
-    handlers: { readonly onContinue?: () => void; readonly onCancel?: () => void } = {}
-  ): void {
-    this.#presenter ??= createDomValidationPresenter(this.#container);
-    this.#presenter.show({
-      kind: outcome.kind,
-      ...(outcome.title !== undefined ? { title: outcome.title } : {}),
-      message: outcome.message,
-      rect: active.rect,
-      ...handlers
-    });
-  }
-
   dispose(): void {
     if (this.#active) {
       const { row, column, editor } = this.#active;
@@ -264,10 +233,9 @@ export class EditorManager {
       editor.destroy();
       this.#onEditCancel?.(row, column);
     }
-    this.#confirming = false;
+    this.#dialogOpen = false;
     this.#presenter?.dispose();
     this.#container.removeEventListener("keydown", this.#handleKeyDown);
-    this.#container.removeEventListener("input", this.#handleInput);
     this.#container.removeEventListener("compositionstart", this.#handleCompositionStart);
     this.#container.removeEventListener("compositionend", this.#handleCompositionEnd);
     this.#container.removeEventListener("focusout", this.#handleFocusOut);
@@ -286,15 +254,6 @@ export class EditorManager {
       event.preventDefault();
       void this.commitEdit();
     }
-  };
-
-  /** 用户又改了内容：之前的拒绝/确认提示作废，下一次提交重新校验。 */
-  #handleInput = (): void => {
-    if (!this.#active) {
-      return;
-    }
-    this.#confirming = false;
-    this.#presenter?.hide();
   };
 
   #handleCompositionStart = (): void => {

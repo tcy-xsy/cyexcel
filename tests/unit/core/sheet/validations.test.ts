@@ -9,7 +9,7 @@ import {
   clearRanges,
   collectInvalidCells,
   describeCellDropdown,
-  describeCellHints,
+  describeDropdownItems,
   findRuleAt,
   intersectRanges,
   relocateValidationsForDelete,
@@ -451,29 +451,17 @@ describe("intersectRanges / collectInvalidCells", () => {
   });
 });
 
-describe("describeCellHints", () => {
+describe("describeDropdownItems", () => {
   const cell = [range(0, 0, 0, 0)];
 
-  it("lists the drop-down items for a list rule, unless showDropDown is false", () => {
+  it("lists the items of a list rule, unless showDropDown is false", () => {
     const rule: DataValidationRule = { id: "l", ranges: cell, criteria: { type: "list", items: ["a", "b"] } };
-    expect(describeCellHints(rule)).toEqual({ dropdownItems: ["a", "b"] });
-    expect(describeCellHints({ ...rule, showDropDown: false })).toBeUndefined();
+    expect(describeDropdownItems(rule)).toEqual(["a", "b"]);
+    expect(describeDropdownItems({ ...rule, showDropDown: false })).toBeUndefined();
   });
 
-  it("carries the input prompt for any rule type", () => {
-    const rule: DataValidationRule = { ...whole("w", cell), promptTitle: "提示", prompt: "填 0~10" };
-    expect(describeCellHints(rule)).toEqual({ promptTitle: "提示", prompt: "填 0~10" });
-    expect(describeCellHints({ ...whole("w", cell), prompt: "只有正文" })).toEqual({ prompt: "只有正文" });
-  });
-
-  it("combines the drop-down and the prompt", () => {
-    const rule: DataValidationRule = { id: "l", ranges: cell, criteria: { type: "list", items: ["a"] }, prompt: "选一个" };
-    expect(describeCellHints(rule)).toEqual({ dropdownItems: ["a"], prompt: "选一个" });
-  });
-
-  it("returns undefined when there is nothing to show", () => {
-    expect(describeCellHints(whole("w", cell))).toBeUndefined();
-    expect(describeCellHints({ ...whole("w", cell), prompt: "", promptTitle: "" })).toBeUndefined();
+  it("is undefined for rules that are not lists", () => {
+    expect(describeDropdownItems(whole("w", cell))).toBeUndefined();
   });
 });
 

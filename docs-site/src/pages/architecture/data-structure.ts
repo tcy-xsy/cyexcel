@@ -83,9 +83,8 @@ columnCount = maxOccupiedColumn + 1 + blankColumns`)
       { name: "ranges", type: "CellRange[]", description: "规则覆盖的区域。规则是区域数据，不是单元格的属性，所以不进 cellData，行列变化时整块搬移。" },
       { name: "criteria", type: "object", description: "判据。type 取 whole / decimal / textLength / date / time / list / custom。date 与 time 的值是序列号；custom 只存 name 和 params，函数不进快照。" },
       { name: "allowBlank", type: "boolean", description: "默认 true。" },
-      { name: "errorStyle", type: "\"stop\" | \"warning\" | \"information\"", description: "编辑器提交违规值时的处理，默认 stop。" },
-      { name: "renderMode / showDropDown", type: "list 专用", description: "text / arrow / custom（默认 arrow）与是否画下拉；list.colors 是选项到十六进制颜色的映射。" },
-      { name: "prompt / promptTitle", type: "string", description: "选中单元格时显示的输入提示。" }
+      { name: "errorStyle", type: "\"stop\" | \"warning\" | \"information\"", description: "默认 stop。只有 stop 会在编辑器提交时拒绝输入；warning、information 放行，只标红三角。" },
+      { name: "renderMode / showDropDown", type: "list 专用", description: "text / arrow / custom（默认 arrow）与是否画下拉；list.colors 是选项到十六进制颜色的映射。" }
     ])
   );
   root.append(

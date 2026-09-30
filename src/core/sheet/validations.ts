@@ -83,8 +83,6 @@ export interface DataValidationRule {
   readonly showDropDown?: boolean;
   /** `list` 用，默认 `"arrow"`。 */
   readonly renderMode?: DataValidationRenderMode;
-  readonly promptTitle?: string;
-  readonly prompt?: string;
 }
 
 /**
@@ -779,31 +777,10 @@ export function describeCellDropdown(
   return { mode: rule.renderMode ?? "arrow", ...(color !== undefined ? { color } : {}) };
 }
 
-export interface CellHints {
-  /** `list` 规则且 `showDropDown !== false`：下拉里列哪些项。 */
-  readonly dropdownItems?: readonly string[];
-  readonly promptTitle?: string;
-  readonly prompt?: string;
-}
-
 /**
- * 选中一个带规则的单元格时要给用户看什么：下拉箭头和列表（`list`），以及输入提示
- * （`promptTitle` / `prompt`）。没有任何可显示的东西返回 `undefined`。
+ * 这一格的下拉里列哪些选项：`list` 规则且 `showDropDown !== false`，否则 `undefined`。
+ * 选中带下拉的格子时，画布箭头的点击据此打开列表。
  */
-export function describeCellHints(rule: DataValidationRule): CellHints | undefined {
-  const dropdownItems =
-    rule.criteria.type === "list" && rule.showDropDown !== false ? rule.criteria.items : undefined;
-  const hasPrompt = (rule.prompt ?? "") !== "" || (rule.promptTitle ?? "") !== "";
-  if (dropdownItems === undefined && !hasPrompt) {
-    return undefined;
-  }
-  return {
-    ...(dropdownItems !== undefined ? { dropdownItems } : {}),
-    ...(hasPrompt
-      ? {
-          ...(rule.promptTitle !== undefined && rule.promptTitle !== "" ? { promptTitle: rule.promptTitle } : {}),
-          ...(rule.prompt !== undefined && rule.prompt !== "" ? { prompt: rule.prompt } : {})
-        }
-      : {})
-  };
+export function describeDropdownItems(rule: DataValidationRule): readonly string[] | undefined {
+  return rule.criteria.type === "list" && rule.showDropDown !== false ? rule.criteria.items : undefined;
 }

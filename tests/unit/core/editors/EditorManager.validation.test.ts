@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import { EditorManager } from "../../../../src/core/editors";
+import { EditorManager, outcomeFromResult } from "../../../../src/core/editors";
 import type { CellEditor, EditValidationOutcome, ValidationPresenter } from "../../../../src/core/editors";
-import { outcomeFromResult } from "../../../../src/core/editors";
 import { LayoutEngine, SkeletonSnapshot, ViewportSnapshot } from "../../../../src/core/layout";
 import { SceneSnapshot } from "../../../../src/core/scene";
 import type { CellValue } from "../../../../src/core/sheet/types";
 import type { DataValidationResult } from "../../../../src/core/sheet/validations";
 
 /**
- * 编辑器提交前的校验流程（数据验证设计稿 §7.1）。呈现器用假的：`EditorManager` 只管
- * "什么时候要提示、要什么"，气泡长什么样是 DOM 的事，Node 里没有 DOM。
+ * 编辑器提交前的校验流程（数据验证设计稿 §7.1）。与 Univer 一致：只有停止级会拒绝输入，
+ * 弹模态对话框；警告、信息放行。呈现器用假的：`EditorManager` 只管"什么时候要弹、弹什么"，
+ * 对话框长什么样是 DOM 的事，Node 里没有 DOM。
  */
 
 function createFakeContainer() {
@@ -35,29 +35,20 @@ function createFakeContainer() {
   };
 }
 
-interface PresenterCall {
-  readonly method: "show" | "hide" | "reposition" | "dispose";
-  readonly request?: Parameters<ValidationPresenter["show"]>[0];
-}
+type Shown = Parameters<ValidationPresenter["show"]>[0];
 
 function createFakePresenter() {
-  const calls: PresenterCall[] = [];
-  let last: Parameters<ValidationPresenter["show"]>[0] | undefined;
+  const calls: string[] = [];
+  const shown: Shown[] = [];
   const presenter: ValidationPresenter = {
     show: (request) => {
-      last = request;
-      calls.push({ method: "show", request });
+      shown.push(request);
+      calls.push("show");
     },
-    reposition: () => calls.push({ method: "reposition" }),
-    hide: () => calls.push({ method: "hide" }),
-    dispose: () => calls.push({ method: "dispose" })
+    hide: () => calls.push("hide"),
+    dispose: () => calls.push("dispose")
   };
-  return {
-    presenter,
-    calls,
-    shows: () => calls.filter((call) => call.method === "show").map((call) => call.request),
-    last: () => last
-  };
+  return { presenter, calls, shown, last: () => shown.at(-1) };
 }
 
 function setup(
@@ -81,8 +72,8 @@ function setup(
   const container = createFakeContainer();
   const fake = createFakePresenter();
   if (options.focusoutOnHide) {
-    // 浏览器行为：气泡里的按钮（此刻持有焦点）被摘掉时会发一次 focusout，relatedTarget 为空。
-    // 见 EditorManager 里 onContinue / onCancel 的注释。
+    // 浏览器行为：对话框里持有焦点的「确定」按钮被摘掉时会发一次 focusout，relatedTarget 为空。
+    // 见 EditorManager 里 onClose 的注释。
     const hide = fake.presenter.hide;
     fake.presenter.hide = () => {
       hide();
@@ -108,6 +99,8 @@ function setup(
   return { manager, container, fake, events, commits, validated };
 }
 
+const reject: EditValidationOutcome = { kind: "reject", title: "数量无效", message: "需要整数" };
+
 describe("EditorManager validation — accept", () => {
   it("commits normally and shows nothing", async () => {
     const { manager, fake, commits, validated } = setup({ kind: "accept" });
@@ -118,7 +111,7 @@ describe("EditorManager validation — accept", () => {
     expect(validated).toEqual([[2, 1, "typed"]]);
     expect(commits).toEqual(["typed"]);
     expect(manager.isEditing()).toBe(false);
-    expect(fake.shows()).toEqual([]);
+    expect(fake.shown).toEqual([]);
   });
 
   it("behaves exactly as before when no validateCommit is configured", async () => {
@@ -151,9 +144,7 @@ describe("EditorManager validation — accept", () => {
 });
 
 describe("EditorManager validation — stop (reject)", () => {
-  const reject: EditValidationOutcome = { kind: "reject", title: "输入无效", message: "需要整数" };
-
-  it("keeps the editor open, refocuses it, commits nothing, and shows the message under the cell", async () => {
+  it("commits nothing, keeps the editor open, and shows a dialog with the title and message", async () => {
     const { manager, fake, events, commits } = setup(reject);
     manager.startEdit(2, 1);
     events.length = 0;
@@ -162,21 +153,20 @@ describe("EditorManager validation — stop (reject)", () => {
 
     expect(commits).toEqual([]);
     expect(manager.isEditing()).toBe(true);
-    expect(events).toEqual(["focus"]); // 没有 destroy
-    const shown = fake.last();
-    expect(shown).toMatchObject({ kind: "reject", title: "输入无效", message: "需要整数" });
-    expect(shown?.rect).toEqual({ x: 50, y: 40, width: 50, height: 20 }); // 第 2 行第 1 列
+    expect(events).toEqual([]); // 没有 destroy
+    expect(fake.last()).toMatchObject({ title: "数量无效", message: "需要整数" });
   });
 
-  it("hides the bubble once the user edits again, and commits when the next attempt is accepted", async () => {
+  it("hands focus back to the editor when the dialog is closed, then validates again on the next attempt", async () => {
     let accept = false;
-    const { manager, container, fake, commits } = setup(() => (accept ? { kind: "accept" } : reject));
+    const { manager, fake, events, commits } = setup(() => (accept ? { kind: "accept" } : reject));
     manager.startEdit(0, 0);
     await manager.commitEdit();
-    expect(fake.calls.some((c) => c.method === "hide")).toBe(false);
+    events.length = 0;
 
-    container.dispatch("input");
-    expect(fake.calls.filter((c) => c.method === "hide")).toHaveLength(1);
+    fake.last()?.onClose();
+    expect(events).toEqual(["focus"]);
+    expect(manager.isEditing()).toBe(true);
 
     accept = true;
     await manager.commitEdit();
@@ -184,20 +174,42 @@ describe("EditorManager validation — stop (reject)", () => {
     expect(manager.isEditing()).toBe(false);
   });
 
-  it("Enter and focus-out both go through the same gate", async () => {
-    const { manager, container, commits } = setup(reject);
+  it("while the dialog is open, Enter, focus-out and repeated commits are ignored", async () => {
+    const { manager, container, fake, validated } = setup(reject);
     manager.startEdit(0, 0);
+    await manager.commitEdit();
 
     container.dispatch("keydown", { key: "Enter", preventDefault: () => {} });
     container.dispatch("focusout", { relatedTarget: null });
-    await Promise.resolve();
+    await manager.commitEdit();
     await Promise.resolve();
 
-    expect(commits).toEqual([]);
-    expect(manager.isEditing()).toBe(true);
+    expect(fake.shown).toHaveLength(1);
+    expect(validated).toHaveLength(1);
   });
 
-  it("Escape still cancels and hides the bubble", async () => {
+  it("closing the dialog does not raise it again when the removed OK button fires a focusout", async () => {
+    // 回归：点「确定」→ 按钮被摘掉 → 浏览器发 focusout → 曾被当成"点到别处去了"而重新校验、
+    // 再弹出同一个对话框，看上去就是点了没反应。
+    const { manager, fake, commits, validated } = setup(reject, { focusoutOnHide: true });
+    manager.startEdit(0, 0);
+    await manager.commitEdit();
+
+    fake.last()?.onClose();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fake.shown).toHaveLength(1);
+    expect(validated).toHaveLength(1);
+    expect(commits).toEqual([]);
+    expect(manager.isEditing()).toBe(true);
+
+    // 关掉之后提交仍然可用：再来一次会重新弹出
+    await manager.commitEdit();
+    expect(fake.shown).toHaveLength(2);
+  });
+
+  it("Escape still cancels the edit and hides the dialog", async () => {
     const { manager, container, fake } = setup(reject);
     manager.startEdit(0, 0);
     await manager.commitEdit();
@@ -205,139 +217,19 @@ describe("EditorManager validation — stop (reject)", () => {
     container.dispatch("keydown", { key: "Escape", preventDefault: () => {} });
 
     expect(manager.isEditing()).toBe(false);
-    expect(fake.calls.at(-1)?.method).toBe("hide");
-  });
-});
-
-describe("EditorManager validation — warning (confirm)", () => {
-  const confirm: EditValidationOutcome = { kind: "confirm", message: "值偏大" };
-
-  it("waits for the answer: nothing committed, editor stays, later commit attempts are ignored", async () => {
-    const { manager, container, fake, commits, validated } = setup(confirm);
-    manager.startEdit(0, 0);
-
-    await manager.commitEdit();
-    container.dispatch("focusout", { relatedTarget: null });
-    await Promise.resolve();
-
-    expect(fake.shows()).toHaveLength(1);
-    expect(fake.last()).toMatchObject({ kind: "confirm", message: "值偏大" });
-    expect(commits).toEqual([]);
-    expect(manager.isEditing()).toBe(true);
-    expect(validated).toHaveLength(1); // 失焦没有再触发一轮校验
+    expect(fake.calls.at(-1)).toBe("hide");
   });
 
-  it("commits when the user chooses to continue", async () => {
-    const { manager, fake, commits } = setup(confirm);
+  it("after cancelling, a fresh edit is validated normally again", async () => {
+    const { manager, container, validated } = setup(reject);
     manager.startEdit(0, 0);
     await manager.commitEdit();
-
-    fake.last()?.onContinue?.();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(commits).toEqual(["typed"]);
-    expect(manager.isEditing()).toBe(false);
-  });
-
-  it("returns to the editor, uncommitted, when the user cancels", async () => {
-    const { manager, fake, commits, events } = setup(confirm);
-    manager.startEdit(0, 0);
-    await manager.commitEdit();
-    events.length = 0;
-
-    fake.last()?.onCancel?.();
-
-    expect(commits).toEqual([]);
-    expect(manager.isEditing()).toBe(true);
-    expect(events).toEqual(["focus"]);
-    // 取消之后可以再次提交（不再被挡住）
-    await manager.commitEdit();
-    expect(fake.shows()).toHaveLength(2);
-  });
-
-  it("typing while the prompt is open dismisses it and re-validates on the next commit", async () => {
-    const { manager, container, fake, validated } = setup(confirm);
-    manager.startEdit(0, 0);
-    await manager.commitEdit();
-
-    container.dispatch("input");
-    await manager.commitEdit();
-
-    expect(validated).toHaveLength(2);
-    expect(fake.shows()).toHaveLength(2);
-  });
-});
-
-describe("EditorManager validation — removing the focused prompt button must not re-trigger a commit", () => {
-  const confirm: EditValidationOutcome = { kind: "confirm", message: "值偏大" };
-
-  it("cancel: the prompt goes away and stays away, the editor stays open", async () => {
-    const { manager, fake, commits, validated } = setup(confirm, { focusoutOnHide: true });
-    manager.startEdit(0, 0);
-    await manager.commitEdit();
-    expect(fake.shows()).toHaveLength(1);
-
-    fake.last()?.onCancel?.();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(fake.shows()).toHaveLength(1); // 没有因为 focusout 又弹出一次
-    expect(validated).toHaveLength(1); // 也没有重新校验
-    expect(commits).toEqual([]);
-    expect(manager.isEditing()).toBe(true);
-
-    // 取消之后提交仍然可用：再来一次会重新弹出
-    await manager.commitEdit();
-    expect(fake.shows()).toHaveLength(2);
-  });
-
-  it("continue: commits exactly once and does not raise a second prompt", async () => {
-    const { manager, fake, commits, validated } = setup(confirm, { focusoutOnHide: true });
-    manager.startEdit(0, 0);
-    await manager.commitEdit();
-
-    fake.last()?.onContinue?.();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
-
-    expect(commits).toEqual(["typed"]);
-    expect(fake.shows()).toHaveLength(1);
-    expect(validated).toHaveLength(1);
-    expect(manager.isEditing()).toBe(false);
-  });
-
-  it("after continuing, a later edit is validated normally again", async () => {
-    const { manager, fake, validated } = setup(confirm, { focusoutOnHide: true });
-    manager.startEdit(0, 0);
-    await manager.commitEdit();
-    fake.last()?.onContinue?.();
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    container.dispatch("keydown", { key: "Escape", preventDefault: () => {} });
 
     manager.startEdit(1, 1);
     await manager.commitEdit();
 
     expect(validated).toHaveLength(2);
-    expect(fake.shows()).toHaveLength(2);
-  });
-});
-
-describe("EditorManager validation — information (notify)", () => {
-  it("commits first, then shows the message", async () => {
-    const { manager, fake, commits } = setup({ kind: "notify", message: "已记录" });
-    manager.startEdit(1, 1);
-
-    await manager.commitEdit();
-
-    expect(commits).toEqual(["typed"]);
-    expect(manager.isEditing()).toBe(false);
-    expect(fake.last()).toMatchObject({ kind: "notify", message: "已记录" });
-    // 提示是提交完成之后才出现的：show 之前的最后一次 hide 来自 finishCommit
-    const methods = fake.calls.map((c) => c.method);
-    expect(methods.lastIndexOf("show")).toBeGreaterThan(methods.indexOf("hide"));
   });
 });
 
@@ -345,33 +237,29 @@ describe("EditorManager validation — lifecycle", () => {
   it("disposes the presenter with the manager", () => {
     const { manager, fake } = setup({ kind: "accept" });
     manager.dispose();
-    expect(fake.calls.at(-1)?.method).toBe("dispose");
-  });
-
-  it("moves the bubble when the scene is republished", async () => {
-    const { manager, fake } = setup({ kind: "reject", message: "x" });
-    manager.startEdit(0, 0);
-    manager.updateGeometry();
-    expect(fake.calls.some((c) => c.method === "reposition")).toBe(true);
+    expect(fake.calls.at(-1)).toBe("dispose");
   });
 });
 
 describe("outcomeFromResult", () => {
   const base: DataValidationResult = { valid: false, ruleId: "r", message: "不对" };
 
-  it("maps a valid result to accept", () => {
+  it("accepts a valid result", () => {
     expect(outcomeFromResult({ valid: true })).toEqual({ kind: "accept" });
   });
 
-  it.each([
-    ["stop", "reject"],
-    ["warning", "confirm"],
-    ["information", "notify"]
-  ] as const)("maps errorStyle %s to %s", (errorStyle, kind) => {
-    expect(outcomeFromResult({ ...base, errorStyle })).toEqual({ kind, message: "不对" });
+  it("rejects only stop-level rules — the default", () => {
+    expect(outcomeFromResult({ ...base, errorStyle: "stop" })).toEqual({ kind: "reject", message: "不对" });
+    expect(outcomeFromResult(base)).toEqual({ kind: "reject", message: "不对" });
   });
 
-  it("defaults to stop, and carries the title", () => {
+  it("lets warning and information values through (they are only marked), like Univer", () => {
+    expect(outcomeFromResult({ ...base, errorStyle: "warning" })).toEqual({ kind: "accept" });
+    expect(outcomeFromResult({ ...base, errorStyle: "information" })).toEqual({ kind: "accept" });
+  });
+
+  it("carries the title, and has a fallback message", () => {
     expect(outcomeFromResult({ ...base, title: "标题" })).toEqual({ kind: "reject", title: "标题", message: "不对" });
+    expect(outcomeFromResult({ valid: false, errorStyle: "stop" })).toMatchObject({ kind: "reject", message: expect.any(String) });
   });
 });

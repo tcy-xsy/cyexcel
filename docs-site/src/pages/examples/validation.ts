@@ -43,8 +43,7 @@ const rules: readonly DataValidationRule[] = [
     criteria: { type: "whole", operator: "between", value1: 1, value2: 100 },
     errorStyle: "stop",
     errorTitle: "数量无效",
-    errorMessage: "数量必须是 1 到 100 的整数",
-    prompt: "1~100 的整数"
+    errorMessage: "数量必须是 1 到 100 的整数"
   },
   {
     id: "dv-status",
@@ -76,9 +75,7 @@ const rules: readonly DataValidationRule[] = [
     ranges: [wholeColumn(5)],
     criteria: { type: "textLength", operator: "lessThanOrEqual", value1: 10 },
     errorStyle: "information",
-    errorMessage: "备注超过 10 个字，建议精简",
-    promptTitle: "备注",
-    prompt: "最多 10 个字"
+    errorMessage: "备注超过 10 个字，建议精简"
   }
 ];
 
@@ -116,8 +113,7 @@ export default function validationExamplePage(root: HTMLElement): () => void {
   {
     criteria: { type: "whole", operator: "between", value1: 1, value2: 100 },
     errorStyle: "stop",                       // 默认 "stop"
-    errorMessage: "数量必须是 1 到 100 的整数",
-    prompt: "1~100 的整数"                    // 选中这一格时显示
+    errorMessage: "数量必须是 1 到 100 的整数"
   }
 );
 
@@ -149,16 +145,17 @@ sheet.getDataValidationAt(row, column);       // 这一格所在的规则`)
   const styles = section("三种错误样式");
   styles.body.append(
     paragraph(
-      "errorStyle 决定编辑器提交违规值时怎么办。这套行为只作用于编辑器提交这一条路径：" +
-        "粘贴、填充柄、setCell()、查找替换都不拦截，只把违规的格子标出来（和 Excel 一致）。"
+      "errorStyle 决定编辑器提交违规值时怎么办。与 Univer 一致，只有停止级会拒绝输入，警告和信息直接放行、" +
+        "只把违规的格子标红。拒绝只作用于编辑器提交这一条路径：粘贴、填充柄、setCell()、查找替换都不拦截，" +
+        "只把违规的格子标出来。"
     )
   );
   root.append(styles.root);
   root.append(
     apiTable([
-      { name: "stop（默认）", type: "拦截", description: "不提交，编辑器、输入内容和焦点原样保留，在单元格下方弹出错误提示；再输入就会收起，下次提交重新校验。" },
-      { name: "warning", type: "确认", description: "弹出「取消 / 继续」，用户选继续才提交，选取消回到编辑器。回答之前失焦等提交动作会被挡住。" },
-      { name: "information", type: "提示", description: "先提交，再提示，几秒后自动消失。" }
+      { name: "stop（默认）", type: "拒绝", description: "不提交，弹出模态对话框（标题、错误信息、一个「确定」按钮）；点确定回到编辑器，输入内容还在。对话框开着的时候，回车、失焦等提交动作都被挡住。" },
+      { name: "warning", type: "仅标记", description: "值照常提交，违规的格子右上角出现红色小三角。" },
+      { name: "information", type: "仅标记", description: "同 warning。" }
     ])
   );
 
@@ -220,7 +217,8 @@ sheet.setDataValidation(range, { criteria: { type: "custom", name: "even" } });`
   check.body.append(
     paragraph(
       "设置规则不会检查已有数据是否合规。findInvalidCells() 列出违规的格子，对应 Excel 的“圈释无效数据”；" +
-        "validateCell() 检查单格。关掉红色小三角用 dataValidation: { showInvalidMarks: false }。"
+        "validateCell() 检查单格。关掉红色小三角用 dataValidation: { showInvalidMarks: false }。" +
+        "鼠标停在违规的格子上时，会在格子旁弹出这条规则的错误信息（停留 100ms 后出现，移开、滚动、开始编辑都会收起）。"
     )
   );
   root.append(check.root);
@@ -252,8 +250,9 @@ sheet.validateCell(2, 1);            // { valid: false, errorStyle: "stop", mess
   const demo = demoBlock({
     title: "试一试",
     description:
-      "双击「数量」输入 abc 或 500（停止：拒绝提交）；双击「交付日期」输入 2025-01-01（警告：问你是否继续）；" +
-      "「备注」写超过 10 个字（信息：提交后提示）；点「状态」「优先级」的下拉箭头选值。表里已经有几处违规值。",
+      "双击「数量」输入 abc 或 500（停止：弹出对话框拒绝输入）；双击「交付日期」输入 2025-01-01、" +
+      "「备注」写超过 10 个字（警告、信息：放行，只标红三角）；点「状态」「优先级」的下拉箭头选值；" +
+      "鼠标停在带红三角的格子上看错误提示。表里已经有几处违规值。",
     actions: [write, find, clear, undo]
   });
   root.append(demo.root);

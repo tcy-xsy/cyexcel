@@ -147,12 +147,11 @@
                     <option value="custom">胶囊标签</option>
                   </select>
                 </label>
-                <label>输入提示 <input id="dvPrompt" type="text" placeholder="选中单元格时显示" /></label>
                 <label>错误样式
                   <select id="dvErrorStyle">
-                    <option value="stop">停止（拒绝提交）</option>
-                    <option value="warning">警告（确认后提交）</option>
-                    <option value="information">信息（提交后提示）</option>
+                    <option value="stop">停止（拒绝输入）</option>
+                    <option value="warning">警告（仅标记）</option>
+                    <option value="information">信息（仅标记）</option>
                   </select>
                 </label>
               </div>
@@ -165,10 +164,10 @@
             <p class="hint" id="dvResult">
               调用 <code>core.setDataValidation()</code> / <code>clearDataValidation()</code> /
               <code>findInvalidCells()</code>；工具栏「数据验证」对话框是同一套 API 的图形入口。
-              序列规则的单元格右侧常驻下拉箭头（点它打开列表，悬停是手型），填了输入提示选中时会在旁边显示。规则随行列插入删除移动，
-              可以撤销。双击单元格输入来试：
-              停止级拒绝提交并留在编辑器里，警告级问你是否继续，信息级提交后提示。粘贴、填充、
-              <code>setCell()</code> 不拦截，违规的格子右上角出现红色小三角。
+              序列规则的单元格右侧常驻下拉箭头（点它打开列表，悬停是手型）。规则随行列插入删除移动，
+              可以撤销。双击单元格输入来试：只有停止级会拒绝输入（弹出模态对话框，点「确定」回到编辑器）；
+              警告、信息级放行，和粘贴、填充、<code>setCell()</code> 一样只把违规的格子右上角标上红色小三角。
+              鼠标停在违规的格子上会弹出错误提示。
             </p>
           </section>
 

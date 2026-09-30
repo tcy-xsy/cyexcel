@@ -2,7 +2,7 @@ import type { CellRect } from "../layout";
 import type { SceneSnapshot } from "../scene";
 import type { CellValue } from "../sheet/types";
 import type { CellRange } from "../types";
-import { describeCellHints, type DataValidationRule } from "../sheet/validations";
+import { describeDropdownItems, type DataValidationRule } from "../sheet/validations";
 import { visibleRectForRange } from "./visibleCellRect";
 
 export interface ValidationHintsOptions {
@@ -24,8 +24,8 @@ interface CellRef {
 }
 
 /**
- * 选中单元格时的两样东西（数据验证设计稿 §8）：`list` 规则的下拉列表，以及规则的输入
- * 提示。都是 DOM，挂在编辑层里，一次只跟着一个活动格。
+ * 数据验证里两样挂在编辑层的 DOM（设计稿 §8）：`list` 规则的下拉列表，以及鼠标停在
+ * 无效单元格上时的错误提示。一次各至多一个。
  *
  * **箭头不在这里。** 下拉箭头画在画布上（`ContentLayerRenderer` 的 `getCellDropdown`），
  * 所有 list 单元格常驻，点击走画布的命中测试（`CyExcelCore#routeBodyDropdownArrow`）
@@ -35,16 +35,20 @@ interface CellRef {
  * 关闭；活动格一换就关闭（Univer 是选区移到没有下拉的格子时关，这里更严一点，换到另一个
  * list 格也关，免得列表悬在上一格旁边）；选一项后关闭并写入。
  *
+ * **错误提示同 Univer 的 `DataValidationAlertController`：** 鼠标停在违规的格子上，
+ * 在格子旁弹一个宽 200 的小提示（标题「错误」加规则的错误信息）；移开、滚动、选区变化、
+ * 开始编辑都收起。什么时候弹由调用方决定（去抖、判断违规），这里只管画。
+ *
  * **为什么列表项用 `<button>`。** 核心的指针路由把 `input/select/textarea/button/option`
  * 认作"原生输入目标"，不当成单元格点击处理；换成 `div` 的话，点一下列表项会被路由到
  * 下面的画布上，先选中了别的单元格。
  *
  * 这一层在 node 里测不了（没有 DOM），由 playground 手验；"该显示什么"的决策是纯函数
- * `describeCellHints`，那部分有单测。
+ * （`describeDropdownItems`、`outcomeFromResult`），那部分有单测。
  */
 export class ValidationHints {
   readonly #options: ValidationHintsOptions;
-  #prompt: HTMLDivElement | undefined;
+  #alert: HTMLDivElement | undefined;
   #list: HTMLDivElement | undefined;
   /** 打开着的列表属于哪一格。 */
   #listTarget: CellRef | undefined;
@@ -62,11 +66,12 @@ export class ValidationHints {
   }
 
   /**
-   * 用最新的 Scene 和活动格重新摆放。`active` 为 `null`（正在编辑、没有选区……）时
-   * 全部收起。每次 Scene 发布、选区变化、规则变化都会调用，所以要便宜：没有规则就是
-   * 一次查询加 `hide()`。
+   * 用最新的 Scene 和活动格重新摆放列表。`active` 为 `null`（正在编辑、没有选区……）时
+   * 全部收起。每次 Scene 发布、选区变化、规则变化都会调用，所以要便宜。鼠标悬停的错误
+   * 提示在这里一并收起：滚动或选区一变，提示指着的位置就不对了。
    */
   sync(scene: SceneSnapshot, active: CellRef | null): void {
+    this.hideAlert();
     if (active === null) {
       this.hide();
       return;
@@ -75,35 +80,18 @@ export class ValidationHints {
     if (this.#listTarget !== undefined && (this.#listTarget.row !== active.row || this.#listTarget.column !== active.column)) {
       this.#closeList();
     }
-
+    if (this.#list === undefined) {
+      return;
+    }
     const rule = this.#options.getRule(active.row, active.column);
-    const hints = rule === undefined ? undefined : describeCellHints(rule);
-    if (hints === undefined) {
-      this.hide();
-      return;
-    }
+    const items = rule === undefined ? undefined : describeDropdownItems(rule);
     const rect = this.#rectOf(scene, active);
-    if (rect === null) {
-      this.hide();
+    if (items === undefined || rect === null) {
+      // 规则被清掉或改成没有下拉的样子，或者这一格滚出了视口
+      this.#closeList();
       return;
     }
-
-    if (this.#list !== undefined) {
-      if (hints.dropdownItems === undefined) {
-        // 规则改成了没有下拉的样子
-        this.#closeList();
-      } else {
-        this.#placeList(rect);
-      }
-    }
-    if (this.#list !== undefined) {
-      // 列表开着的时候提示会盖在它上面，先收起
-      this.#removePrompt();
-    } else if (hints.prompt !== undefined || hints.promptTitle !== undefined) {
-      this.#showPrompt(rect, hints.promptTitle, hints.prompt);
-    } else {
-      this.#removePrompt();
-    }
+    this.#placeList(rect);
   }
 
   /**
@@ -132,18 +120,60 @@ export class ValidationHints {
     }
     this.#closeList();
     const rule = this.#options.getRule(cell.row, cell.column);
-    const items = rule === undefined ? undefined : describeCellHints(rule)?.dropdownItems;
+    const items = rule === undefined ? undefined : describeDropdownItems(rule);
     const rect = this.#rectOf(scene, cell);
     if (items === undefined || rect === null) {
       return;
     }
-    this.#removePrompt();
+    this.hideAlert();
     this.#openList(cell, rect, items);
   }
 
   hide(): void {
-    this.#removePrompt();
+    this.hideAlert();
     this.#closeList();
+  }
+
+  /** 在 `cell` 旁显示错误提示（鼠标停在违规格子上）。列表开着时不显示，免得盖住它。 */
+  showAlert(scene: SceneSnapshot, cell: CellRef, message: string): void {
+    const rect = this.#rectOf(scene, cell);
+    if (rect === null || this.#list !== undefined) {
+      return;
+    }
+    this.hideAlert();
+    const bubble = document.createElement("div");
+    bubble.setAttribute("role", "alert");
+    bubble.dataset.cyValidation = "alert";
+    bubble.style.cssText = [
+      "position:absolute",
+      "z-index:14",
+      "box-sizing:border-box",
+      "width:200px",
+      "padding:8px 10px",
+      "background:#fff",
+      "border:1px solid #fe4b4b",
+      "border-radius:4px",
+      "box-shadow:0 2px 8px rgba(0,0,0,.18)",
+      "font:12px/1.5 system-ui,sans-serif",
+      "color:#202124",
+      // 只是提示：不接指针事件，不挡住下面的单元格
+      "pointer-events:none"
+    ].join(";");
+    const heading = document.createElement("div");
+    heading.style.cssText = "font-weight:600;color:#d93025";
+    heading.textContent = "错误";
+    const body = document.createElement("div");
+    body.textContent = message;
+    bubble.append(heading, body);
+    bubble.style.left = `${rect.x}px`;
+    bubble.style.top = `${rect.y + rect.height + LIST_GAP}px`;
+    this.#options.container.append(bubble);
+    this.#alert = bubble;
+  }
+
+  hideAlert(): void {
+    this.#alert?.remove();
+    this.#alert = undefined;
   }
 
   dispose(): void {
@@ -262,52 +292,5 @@ export class ValidationHints {
     this.#list?.remove();
     this.#list = undefined;
     this.#listTarget = undefined;
-  }
-
-  // -- 输入提示 ---------------------------------------------------------
-
-  #showPrompt(rect: CellRect, title: string | undefined, message: string | undefined): void {
-    if (this.#prompt === undefined) {
-      const bubble = document.createElement("div");
-      bubble.setAttribute("role", "note");
-      bubble.dataset.cyValidation = "prompt";
-      bubble.style.cssText = [
-        "position:absolute",
-        "z-index:14",
-        "box-sizing:border-box",
-        "max-width:240px",
-        "padding:6px 8px",
-        "background:#fffbe6",
-        "border:1px solid #e0c46c",
-        "border-radius:4px",
-        "box-shadow:0 1px 4px rgba(0,0,0,.15)",
-        "font:12px/1.5 system-ui,sans-serif",
-        "color:#202124",
-        // 只是提示：不接指针事件，不挡住下面的单元格
-        "pointer-events:none"
-      ].join(";");
-      this.#prompt = bubble;
-      this.#options.container.append(bubble);
-    }
-    const bubble = this.#prompt;
-    bubble.replaceChildren();
-    if (title !== undefined) {
-      const heading = document.createElement("div");
-      heading.style.fontWeight = "600";
-      heading.textContent = title;
-      bubble.append(heading);
-    }
-    if (message !== undefined) {
-      const body = document.createElement("div");
-      body.textContent = message;
-      bubble.append(body);
-    }
-    bubble.style.left = `${rect.x}px`;
-    bubble.style.top = `${rect.y + rect.height + 4}px`;
-  }
-
-  #removePrompt(): void {
-    this.#prompt?.remove();
-    this.#prompt = undefined;
   }
 }

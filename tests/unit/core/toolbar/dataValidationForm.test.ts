@@ -102,7 +102,7 @@ describe("ruleInputFromForm", () => {
 
   it("builds a whole-number between rule with the shared options", () => {
     const outcome = ruleInputFromForm(
-      form({ allow: "whole", operator: "between", value1: "1", value2: "10", errorStyle: "warning", errorMessage: "太大", prompt: "填 1~10" })
+      form({ allow: "whole", operator: "between", value1: "1", value2: "10", errorStyle: "warning", errorMessage: "太大" })
     );
     expect(outcome).toEqual({
       kind: "rule",
@@ -110,7 +110,6 @@ describe("ruleInputFromForm", () => {
         allowBlank: true,
         errorStyle: "warning",
         errorMessage: "太大",
-        prompt: "填 1~10",
         criteria: { type: "whole", operator: "between", value1: 1, value2: 10 }
       }
     });
@@ -122,7 +121,7 @@ describe("ruleInputFromForm", () => {
     if (outcome.kind === "rule") {
       expect(outcome.input.criteria).toEqual({ type: "decimal", operator: "greaterThan", value1: 0.5 });
       expect("errorTitle" in outcome.input).toBe(false);
-      expect("prompt" in outcome.input).toBe(false);
+      expect("errorMessage" in outcome.input).toBe(false);
     }
   });
 
@@ -201,7 +200,7 @@ describe("formFromRule", () => {
     form({ allow: "list", value1: "红,绿,蓝", showDropDown: false, allowBlank: false }),
     form({ allow: "list", value1: "红=#d93025,绿,蓝=#4285f4", renderMode: "custom" }),
     form({ allow: "list", value1: "是,否", renderMode: "text" }),
-    form({ allow: "date", operator: "between", value1: "2026-01-01", value2: "2026-01-31", promptTitle: "日期", prompt: "填今年的" }),
+    form({ allow: "date", operator: "between", value1: "2026-01-01", value2: "2026-01-31" }),
     form({ allow: "time", operator: "notBetween", value1: "09:00", value2: "18:00" })
   ])("survives form → rule → form for %j", (state) => {
     expect(roundTrip(state)).toEqual(state);

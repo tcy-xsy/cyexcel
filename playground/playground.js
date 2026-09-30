@@ -190,7 +190,6 @@ const dvType = document.getElementById("dvType");
 const dvValue1 = document.getElementById("dvValue1");
 const dvValue2 = document.getElementById("dvValue2");
 const dvErrorStyle = document.getElementById("dvErrorStyle");
-const dvPrompt = document.getElementById("dvPrompt");
 const dvRenderMode = document.getElementById("dvRenderMode");
 const dvSetButton = document.getElementById("dvSetButton");
 const dvClearButton = document.getElementById("dvClearButton");
@@ -435,11 +434,6 @@ function readDvRangeFromForm() {
 }
 
 function buildDvRuleFromForm() {
-  const rule = buildDvCriteriaFromForm();
-  return dvPrompt.value === "" ? rule : { ...rule, prompt: dvPrompt.value };
-}
-
-function buildDvCriteriaFromForm() {
   const type = dvType.value;
   if (type === "list") {
     // 每项可以写成 名称=颜色（#rgb / #rrggbb），颜色用作胶囊底色或单元格底色

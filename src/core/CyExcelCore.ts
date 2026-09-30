@@ -304,6 +304,8 @@ export interface CyExcelCoreOptions {
   readonly topWidgets?: readonly TopWidgetFactory[];
 }
 
+/** 鼠标停在违规格子上多久之后弹错误提示（同 Univer 的 `debounceTime(100)`）。 */
+const HOVER_ALERT_DELAY_MS = 100;
 const DEFAULT_ROW_HEIGHT = 24;
 const AUTO_HEIGHT_MAX_SYNC_PASSES = 2;
 
@@ -775,7 +777,7 @@ export class CyExcelCore {
   readonly #rowReorderController: RowReorderController | undefined;
   readonly #keyboardController: KeyboardController;
   readonly #editorManager: EditorManager;
-  /** 选中带规则的单元格时的下拉箭头、下拉列表与输入提示。 */
+  /** 下拉列表（点画布箭头打开）与鼠标停在违规格子上时的错误提示。 */
   readonly #validationHints: ValidationHints;
   /** 量文字宽度用的离屏上下文（字体已设成 `CELL_FONT`），下拉胶囊的命中测试要用。 */
   readonly #textMeasureCtx: Canvas2DLike;
@@ -2420,6 +2422,7 @@ export class CyExcelCore {
     this.#contentCanvas.removeEventListener("pointermove", this.#handleBodyPointerHover);
     this.#contentCanvas.removeEventListener("pointerleave", this.#handleBodyPointerLeave);
 
+    this.#cancelHoverAlert();
     this.#hooks.dispose();
     this.#events.dispose();
     this.#shortcuts.dispose();
@@ -2901,7 +2904,7 @@ export class CyExcelCore {
   }
 
   /**
-   * 把下拉箭头 / 输入提示摆到活动格上；正在编辑时收起（编辑器占着那一格）。
+   * 把下拉列表摆到活动格上、收起悬停错误提示；正在编辑时全部收起（编辑器占着那一格）。
    * 每次 Scene 发布、选区变化、编辑开始结束都会走到这里，所以是 finalizer：出错只
    * 报事件，不能拖垮触发它的那次提交。
    */
@@ -2910,6 +2913,10 @@ export class CyExcelCore {
     if (this.#validationHints === undefined || this.#disposed) {
       return;
     }
+    // 滚动、选区变化、规则或值变化之后，之前排队的或已经弹出的悬停提示都作废；
+    // 鼠标下一次移动会按新的状态重新判断
+    this.#cancelHoverAlert();
+    this.#hoverCell = undefined;
     this.#runFinalizer("validation-hints", () => {
       this.#validationHints.sync(
         scene,
@@ -3053,25 +3060,86 @@ export class CyExcelCore {
   /** 光标当前是不是被我们设成了手型——只在变化时写样式，别每次 pointermove 都碰 DOM。 */
   #dropdownCursorActive = false;
 
+  /** 鼠标当前停着的格子（合并单元格取锚点）——违规时要弹错误提示的那一格。 */
+  #hoverCell: { row: number; column: number } | undefined;
+  #hoverAlertTimer: ReturnType<typeof setTimeout> | undefined;
+
   #handleBodyPointerHover = (event: PointerEvent): void => {
-    // 拖选、拖填充柄时不管光标
+    // 拖选、拖填充柄时不管光标，也不弹提示
     if (event.buttons !== 0) {
+      this.#updateHoverAlert(undefined);
       return;
     }
     let over = false;
+    let cell: { row: number; column: number } | undefined;
     if (this.#sheet.validations().length > 0 && !this.#editorManager.isEditing()) {
-      over =
-        this.#dispatchInteraction("body-pointer-hover", (frame) => {
-          const point = frame.surfaces.clientToSurface(clientPoint(event.clientX, event.clientY), "body");
-          return point !== undefined && point !== null && this.#dropdownTargetAt(frame.scene, point) !== undefined;
-        }) ?? false;
+      const probe = this.#dispatchInteraction("body-pointer-hover", (frame) => {
+        const point = frame.surfaces.clientToSurface(clientPoint(event.clientX, event.clientY), "body");
+        if (point === undefined || point === null) {
+          return undefined;
+        }
+        const hit = frame.scene.hitTestCellGeometry(point);
+        const merge = hit ? findMergeAt(this.#sheet.merges(), hit.cell.row, hit.cell.column) : undefined;
+        return {
+          arrow: this.#dropdownTargetAt(frame.scene, point) !== undefined,
+          cell: hit ? (merge ? { row: merge.startRow, column: merge.startColumn } : { row: hit.cell.row, column: hit.cell.column }) : undefined
+        };
+      });
+      over = probe?.arrow ?? false;
+      cell = probe?.cell;
     }
     this.#setDropdownCursor(over);
+    this.#updateHoverAlert(cell);
   };
 
   #handleBodyPointerLeave = (): void => {
     this.#setDropdownCursor(false);
+    this.#updateHoverAlert(undefined);
   };
+
+  /**
+   * 鼠标停在违规的格子上，去抖 100ms 后在格子旁弹出错误提示（同 Univer 的
+   * `DataValidationAlertController`：订阅悬停格、`debounceTime(100)`、无效才弹）。
+   * 换格、离开、按下鼠标都会先收起旧的。同一格内移动不重复安排。
+   */
+  #updateHoverAlert(cell: { row: number; column: number } | undefined): void {
+    if (cell?.row === this.#hoverCell?.row && cell?.column === this.#hoverCell?.column) {
+      return;
+    }
+    this.#cancelHoverAlert();
+    this.#hoverCell = cell;
+    if (cell === undefined) {
+      return;
+    }
+    this.#hoverAlertTimer = setTimeout(() => {
+      this.#hoverAlertTimer = undefined;
+      if (this.#disposed || this.#editorManager.isEditing()) {
+        return;
+      }
+      const rule = findRuleAt(this.#sheet.validations(), cell.row, cell.column);
+      if (rule === undefined) {
+        return;
+      }
+      const result = validateValue(
+        rule,
+        this.#store.getCell(cell.row, cell.column) as CellValue | undefined,
+        this.#validateOptions(cell.row, cell.column)
+      );
+      if (!result.valid) {
+        this.#runFinalizer("validation-alert", () =>
+          this.#validationHints.showAlert(this.#scene, cell, result.message ?? "输入的值不符合规则")
+        );
+      }
+    }, HOVER_ALERT_DELAY_MS);
+  }
+
+  #cancelHoverAlert(): void {
+    if (this.#hoverAlertTimer !== undefined) {
+      clearTimeout(this.#hoverAlertTimer);
+      this.#hoverAlertTimer = undefined;
+    }
+    this.#validationHints?.hideAlert();
+  }
 
   #setDropdownCursor(active: boolean): void {
     if (active === this.#dropdownCursorActive) {
