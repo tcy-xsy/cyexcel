@@ -6,6 +6,7 @@ import {
   ViewportSnapshot
 } from "../../../../src/core/layout";
 import type { ViewportState } from "../../../../src/core/layout";
+import { createColumnAwarePainter } from "../../../../src/core/cells";
 import { ContentLayerRenderer } from "../../../../src/core/render";
 import { SceneSnapshot } from "../../../../src/core/scene";
 import { CyExcelError, CyExcelErrorCode } from "../../../../src/core/errors";
@@ -883,5 +884,135 @@ describe("ContentLayerRenderer — dropdown arrow", () => {
     renderer.paintContent({ kind: "full" });
 
     expect(ctx.calls.filter((c) => c.method === "save")).toHaveLength(ctx.calls.filter((c) => c.method === "restore").length);
+  });
+});
+
+describe("ContentLayerRenderer — room for the dropdown arrow", () => {
+  function capture() {
+    const rects: Array<{ row: number; column: number; rect: { x: number; y: number; width: number; height: number } }> = [];
+    const painter = (context: { row: number; column: number; rect: { x: number; y: number; width: number; height: number } }) => {
+      rects.push({ row: context.row, column: context.column, rect: { ...context.rect } });
+    };
+    return { rects, painter };
+  }
+
+  it("hands the painter a rect whose right edge is pulled in by the arrow zone, only for dropdown cells", () => {
+    const ctx = new RecordingCanvasContext();
+    const { rects, painter } = capture();
+    const renderer = createContentRenderer({
+      ctx,
+      layout: createLayout(1, 2), // 每列 50 宽、20 高
+      getCellValue: () => "x",
+      painter,
+      hasCellDropdown: (_row, column) => column === 1
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    expect(rects.find((r) => r.column === 0)?.rect).toEqual({ x: 0, y: 0, width: 50, height: 20 });
+    expect(rects.find((r) => r.column === 1)?.rect).toEqual({ x: 50, y: 0, width: 32, height: 20 }); // 50 - 18
+  });
+
+  it("clips the painter to the narrowed rect so long text stops before the arrow", () => {
+    const ctx = new RecordingCanvasContext();
+    const renderer = createContentRenderer({
+      ctx,
+      layout: createLayout(1, 1),
+      getCellValue: () => "a very long value",
+      hasCellDropdown: () => true
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    const clipAt = ctx.calls.findIndex((call, i) => call.method === "clip" && ctx.calls[i - 1]?.method === "rect" && ctx.calls[i - 1]?.args[2] === 32);
+    const textAt = ctx.calls.findIndex((call) => call.method === "fillText");
+    expect(clipAt).toBeGreaterThan(-1);
+    expect(textAt).toBeGreaterThan(clipAt); // 先裁剪、后画字
+    // 裁剪区是窄矩形（x 0..32），不是整格
+    expect(ctx.calls[clipAt - 1]?.args).toEqual([0, 0, 32, 20]);
+  });
+
+  it("does not clip or narrow a cell without a dropdown", () => {
+    const withoutOption = new RecordingCanvasContext();
+    const a = createContentRenderer({ ctx: withoutOption, layout: createLayout(1, 1), getCellValue: () => "x" });
+    a.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
+    a.paintContent({ kind: "full" });
+
+    const noDropdown = new RecordingCanvasContext();
+    const b = createContentRenderer({
+      ctx: noDropdown,
+      layout: createLayout(1, 1),
+      getCellValue: () => "x",
+      hasCellDropdown: () => false
+    });
+    b.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
+    b.paintContent({ kind: "full" });
+
+    expect(noDropdown.calls).toEqual(withoutOption.calls);
+  });
+
+  it("moves right-aligned text left of the arrow", () => {
+    const at = (dropdown: boolean): number => {
+      const ctx = new RecordingCanvasContext();
+      const renderer = createContentRenderer({
+        ctx,
+        layout: createLayout(1, 1),
+        getCellValue: () => "x",
+        painter: createColumnAwarePainter(() => [
+          {
+            width: 50,
+            typeName: "text",
+            format: (value: unknown) => String(value ?? ""),
+            clipboard: { copy: true, paste: true },
+            wrap: false,
+            sortable: false,
+            filterable: false,
+            version: 1
+          }
+        ]),
+        getCellStyle: () => ({ align: "right" }),
+        hasCellDropdown: () => dropdown
+      });
+      renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
+      renderer.paintContent({ kind: "full" });
+      return ctx.calls.find((call) => call.method === "fillText")!.args[1] as number;
+    };
+
+    expect(at(false) - at(true)).toBe(18);
+  });
+
+  it("keeps the full rect when the cell is no wider than the arrow zone", () => {
+    const ctx = new RecordingCanvasContext();
+    const { rects, painter } = capture();
+    const renderer = createContentRenderer({
+      ctx,
+      layout: new LayoutEngine({ rowCount: 1, columnCount: 1, rowHeight: 20, columnWidths: [16] }),
+      getCellValue: () => "x",
+      painter,
+      hasCellDropdown: () => true
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 16, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    expect(rects[0]?.rect.width).toBe(16);
+  });
+
+  it("still paints the arrow and the border against the full rect", () => {
+    const ctx = new RecordingCanvasContext();
+    const renderer = createContentRenderer({
+      ctx,
+      layout: createLayout(1, 1),
+      getCellValue: () => "x",
+      hasCellDropdown: () => true
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    const moveTo = ctx.calls.find((call) => call.method === "moveTo");
+    expect(moveTo?.args).toEqual([87.5 - 50, 8]); // 中心 x = 50 - 9 = 41，三角左顶点 37.5
   });
 });

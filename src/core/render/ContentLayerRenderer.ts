@@ -289,9 +289,25 @@ export class ContentLayerRenderer {
       this.#ctx.fillStyle = style.background;
       this.#ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
     }
+    // list 单元格右侧给下拉箭头留出位置（同 Univer 的 `calcCellAutoWidth` 给箭头预留
+    // 宽度）：painter 拿到的 rect 右边缘内缩一个箭头区，文字的对齐、换行宽度都按这个窄
+    // rect 算，并且裁剪到它——过长的文字在箭头前截断，不会画到箭头下面。格子比箭头区还窄
+    // 时不预留（否则整格什么都画不出来）。背景、网格线、边框仍按完整的 rect。
+    const dropdown = this.#hasCellDropdown?.(row, column) === true;
+    const paintRect: CellRect =
+      dropdown && rect.width > DROPDOWN_ARROW_ZONE
+        ? { x: rect.x, y: rect.y, width: rect.width - DROPDOWN_ARROW_ZONE, height: rect.height }
+        : rect;
+    const clipToPaintRect = (): void => {
+      if (paintRect !== rect) {
+        this.#ctx.beginPath();
+        this.#ctx.rect(paintRect.x, paintRect.y, paintRect.width, paintRect.height);
+        this.#ctx.clip();
+      }
+    };
     const context: CellPaintContext = {
       ctx: this.#ctx,
-      rect,
+      rect: paintRect,
       row,
       column,
       value,
@@ -307,6 +323,7 @@ export class ContentLayerRenderer {
     // renderer choosing e.g. a different font silently changes how every
     // later cell that never sets its own font gets drawn.
     this.#ctx.save();
+    clipToPaintRect();
     let result: unknown;
     try {
       result = this.#painter(context);
@@ -314,12 +331,13 @@ export class ContentLayerRenderer {
       this.#ctx.restore();
       this.#onError?.(error, { row, column });
       this.#ctx.save();
+      clipToPaintRect();
       defaultPainter(context);
       this.#ctx.restore();
       this.#paintGridLine(rect);
       this.#paintBorder(rect, style);
       this.#paintInvalidMark(row, column, rect);
-      this.#paintDropdownArrow(row, column, rect);
+      this.#paintDropdownArrow(dropdown, rect);
       return;
     }
     this.#ctx.restore();
@@ -334,15 +352,15 @@ export class ContentLayerRenderer {
     this.#paintGridLine(rect);
     this.#paintBorder(rect, style);
     this.#paintInvalidMark(row, column, rect);
-    this.#paintDropdownArrow(row, column, rect);
+    this.#paintDropdownArrow(dropdown, rect);
   }
 
   /**
    * 右侧居中的向下小三角。箭头中心落在命中区（`DROPDOWN_ARROW_ZONE`）的正中，格子比
    * 命中区还窄时贴着格子边缘。自己 save/restore，理由同无效角标。
    */
-  #paintDropdownArrow(row: number, column: number, rect: CellRect): void {
-    if (this.#hasCellDropdown === undefined || !this.#hasCellDropdown(row, column)) {
+  #paintDropdownArrow(dropdown: boolean, rect: CellRect): void {
+    if (!dropdown) {
       return;
     }
     const zone = Math.min(DROPDOWN_ARROW_ZONE, rect.width);
