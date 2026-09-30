@@ -36,13 +36,14 @@ export interface CellType<T extends CellValue = CellValue> {
   compare?(left: T, right: T): number;
   /**
    * Whether values of this type have a meaningful order at all. Defaults to
-   * `true`; a type sets it `false` to opt out of sorting entirely, which is
-   * different from having no `compare` (that only means "string order is
-   * already right"). A column can override it either way.
+   * `false` — the header's sort affordance is opt-in, not opt-out; a type
+   * sets it `true` to offer sorting. Different from having no `compare`
+   * (that only means "string order is already right" for a type that does
+   * opt in). A column can override it either way.
    */
   readonly sortable?: boolean;
   /**
-   * Whether values of this type can be filtered at all. Defaults to `true`,
+   * Whether values of this type can be filtered at all. Defaults to `false`,
    * same shape as `sortable` — a column can override it either way.
    */
   readonly filterable?: boolean;
@@ -272,16 +273,16 @@ export interface ColumnDefinition<T extends CellValue = CellValue> {
   readonly wrap?: boolean;
   /**
    * Overrides the cell type's own answer to "can this be sorted". Set it
-   * `false` to drop the header's sort affordance and refuse click-to-sort for
-   * this column; set it `true` to sort a type that opted out. Defaults to the
-   * type's `sortable`, which defaults to `true`.
+   * `true` to offer the header's sort affordance and click-to-sort for this
+   * column; set it `false` to force it off for a type that opted in.
+   * Defaults to the type's `sortable`, which defaults to `false`.
    */
   readonly sortable?: boolean;
   /**
    * Overrides the cell type's own answer to "can this be filtered". Same
-   * shape as `sortable` — set it `false` to drop the header's filter
+   * shape as `sortable` — set it `true` to turn on the header's filter
    * affordance for this column. Defaults to the type's `filterable`, which
-   * defaults to `true`.
+   * defaults to `false`.
    */
   readonly filterable?: boolean;
 }
@@ -296,9 +297,9 @@ export interface RuntimeColumn<T extends CellValue = CellValue> extends CellType
   readonly renderer?: CanvasCellRenderer<T> | DomCellRendererFactory<T>;
   readonly clipboard: Required<ColumnClipboardPolicy>;
   readonly wrap: boolean;
-  /** Resolved from the column, then the cell type, then `true`. */
+  /** Resolved from the column, then the cell type, then `false`. */
   readonly sortable: boolean;
-  /** Resolved from the column, then the cell type, then `true`. */
+  /** Resolved from the column, then the cell type, then `false`. */
   readonly filterable: boolean;
   /** Bumped only if columns are ever re-resolved; Step 8 resolves once at construction. */
   readonly version: number;

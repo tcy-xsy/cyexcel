@@ -137,10 +137,11 @@ export class ColumnManager {
       wrap: definition.wrap ?? false,
       // Three layers, narrowest first: the column decides, else the cell type
       // decides (a type with no total order opts itself out — see
-      // `builtins.ts`), else sortable. Same shape as `compare`: the type
-      // declares the capability, the column sets the policy.
-      sortable: definition.sortable ?? cellType.sortable ?? true,
-      filterable: definition.filterable ?? cellType.filterable ?? true,
+      // `builtins.ts`), else not sortable/filterable at all. Header
+      // sort/filter affordances are opt-in, not opt-out — see types.ts's
+      // `sortable`/`filterable` doc comments.
+      sortable: definition.sortable ?? cellType.sortable ?? false,
+      filterable: definition.filterable ?? cellType.filterable ?? false,
       version: RESOLVED_VERSION
     };
 

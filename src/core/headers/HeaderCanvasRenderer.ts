@@ -76,9 +76,11 @@ export function defaultHeaderHitTest(zone: {
   readonly rect: CellRect;
   readonly point: { readonly x: number; readonly y: number };
   /**
-   * Omitted means sortable, matching `HeaderState.sortable`. A column that
-   * opted out claims no zone, so its whole header stays available for
-   * click-to-select — and there is no mark drawn there to click either.
+   * Omitted means sortable at this raw layer — convenient for direct callers/
+   * tests. Production wiring always passes the resolved `RuntimeColumn.sortable`
+   * explicitly, which itself defaults to `false` (opt-in, see `types.ts`'s
+   * `sortable` doc comment) — the "sortable by default or not" decision lives
+   * at that layer, not here.
    */
   readonly sortable?: boolean;
   /**
@@ -88,8 +90,8 @@ export function defaultHeaderHitTest(zone: {
    * single-zone behavior unless it opts in. Production wiring
    * (`CyExcelCore#routeHeaderCanvasAction`) always resolves and passes this
    * explicitly from `RuntimeColumn.filterable`, which itself defaults to
-   * `true` (`HeaderState.filterable`'s own doc comment) — the "filterable by
-   * default" decision lives at that layer, not here.
+   * `false` (`types.ts`'s `filterable` doc comment) — same opt-in decision as
+   * `sortable`, it just lives at that layer, not here.
    */
   readonly filterable?: boolean;
 }): HeaderAction | undefined {

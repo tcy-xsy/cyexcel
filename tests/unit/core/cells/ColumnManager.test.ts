@@ -418,22 +418,23 @@ describe("ColumnManager prepared roots", () => {
 });
 
 describe("ColumnManager — sortable resolution", () => {
-  it("treats an ordinary column as sortable without being told", () => {
+  it("treats an ordinary column as not sortable without being told", () => {
     const manager = new ColumnManager({ columns: [{ }], registry: registryWithMoney() });
 
-    expect(manager.getColumn(0).sortable).toBe(true);
+    expect(manager.getColumn(0).sortable).toBe(false);
   });
 
-  it("takes sortable from the cell type, so a type with no total order opts itself out", () => {
-    // A type that declares itself unordered — sorting it would fall back to
-    // comparing string forms, which is a fake sort.
+  it("takes sortable from the cell type, so a type can opt itself in or out", () => {
+    const registry = registryWithMoney();
+    // The default is opt-in — a type has to say `sortable: true` to offer it.
+    registry.register("orderedText", { extends: "text", sortable: true });
+
     const manager = new ColumnManager({
-      columns: [{ type: "opaque" }, { type: "text" }],
-      registry: registryWithMoney()
+      columns: [{ type: "opaque" }, { type: "orderedText" }],
+      registry
     });
 
     expect(manager.getColumn(0).sortable).toBe(false);
-    // Premise: the default really is true, so the false above came from the type.
     expect(manager.getColumn(1).sortable).toBe(true);
   });
 
