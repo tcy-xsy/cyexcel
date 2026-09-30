@@ -35,6 +35,19 @@ export type ValidationOperator =
 export type ValidationErrorStyle = "stop" | "warning" | "information";
 
 /**
+ * `list` 规则在单元格里怎么显示（同 Univer 的 `DataValidationRenderMode`）：
+ * - `arrow`（默认）：普通文字加右侧常驻的下拉箭头；
+ * - `text`：只是文字，没有箭头；
+ * - `custom`：带底色的圆角胶囊标签，箭头在胶囊里。
+ */
+export type DataValidationRenderMode = "text" | "arrow" | "custom";
+
+const RENDER_MODES: ReadonlySet<string> = new Set<DataValidationRenderMode>(["text", "arrow", "custom"]);
+
+/** 选项颜色：`#rgb` / `#rrggbb` / `#rrggbbaa`。只收十六进制，不放任意 CSS 字符串进 canvas。 */
+export const COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+/**
  * 判据。内置类型 + 一个 `custom`：`custom` 只存**名字**和可 JSON 序列化的 `params`，
  * 判定函数由调用方按名字注册（`CyExcelCore.registerDataValidator`），不进快照。
  * 这样规则能序列化、能撤销、能随行列移动，而逻辑仍然是代码。
@@ -46,7 +59,12 @@ export type DataValidationCriteria =
       readonly value1: number;
       readonly value2?: number;
     }
-  | { readonly type: "list"; readonly items: readonly string[] }
+  | {
+      readonly type: "list";
+      readonly items: readonly string[];
+      /** 选项 → 颜色。键必须是 `items` 里的项。`custom` 模式下是胶囊底色，其余模式下是单元格底色。 */
+      readonly colors?: Readonly<Record<string, string>>;
+    }
   | { readonly type: "custom"; readonly name: string; readonly params?: unknown };
 
 export interface DataValidationRule {
@@ -63,6 +81,8 @@ export interface DataValidationRule {
   readonly errorMessage?: string;
   /** `list` 用，默认 `true`。 */
   readonly showDropDown?: boolean;
+  /** `list` 用，默认 `"arrow"`。 */
+  readonly renderMode?: DataValidationRenderMode;
   readonly promptTitle?: string;
   readonly prompt?: string;
 }
@@ -187,6 +207,9 @@ export function assertValidRule(rule: DataValidationRule): void {
   if (rule.errorStyle !== undefined && !ERROR_STYLES.has(rule.errorStyle)) {
     invalid(`unknown errorStyle "${String(rule.errorStyle)}"`);
   }
+  if (rule.renderMode !== undefined && !RENDER_MODES.has(rule.renderMode)) {
+    invalid(`unknown renderMode "${String(rule.renderMode)}"`);
+  }
 
   const criteria = rule.criteria as DataValidationCriteria | undefined;
   if (typeof criteria !== "object" || criteria === null) {
@@ -230,6 +253,19 @@ export function assertValidRule(rule: DataValidationRule): void {
         criteria.items.some((item) => typeof item !== "string")
       ) {
         invalid("list criteria needs a non-empty string array `items`");
+      }
+      if (criteria.colors !== undefined) {
+        if (typeof criteria.colors !== "object" || criteria.colors === null || Array.isArray(criteria.colors)) {
+          invalid("list criteria `colors` must be an object");
+        }
+        for (const [item, color] of Object.entries(criteria.colors)) {
+          if (!criteria.items.includes(item)) {
+            invalid(`list colors names "${item}", which is not one of the items`);
+          }
+          if (typeof color !== "string" || !COLOR_PATTERN.test(color)) {
+            invalid(`list color for "${item}" must be a hex colour like #d93025`);
+          }
+        }
       }
       return;
     case "custom":
@@ -719,6 +755,28 @@ export function collectInvalidCells(
     }
   }
   return found.sort((a, b) => a.row - b.row || a.column - b.column);
+}
+
+/** 一个 list 单元格要怎么画：显示模式，以及当前值对应的颜色（没有则不带）。 */
+export interface CellDropdownInfo {
+  readonly mode: DataValidationRenderMode;
+  readonly color?: string;
+}
+
+/**
+ * 这一格（当前值 `value`）要不要画下拉、怎么画。非 `list` 规则、`showDropDown: false`
+ * 都是 `undefined`。绘制时每个可见格每帧调一次，所以是纯查表。
+ */
+export function describeCellDropdown(
+  rule: DataValidationRule,
+  value: CellValue | undefined
+): CellDropdownInfo | undefined {
+  const criteria = rule.criteria;
+  if (criteria.type !== "list" || rule.showDropDown === false) {
+    return undefined;
+  }
+  const color = criteria.colors?.[String(value ?? "")];
+  return { mode: rule.renderMode ?? "arrow", ...(color !== undefined ? { color } : {}) };
 }
 
 export interface CellHints {

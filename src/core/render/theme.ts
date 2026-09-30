@@ -16,6 +16,8 @@ export const INVALID_MARK_SIZE = 6;
 /** 数据验证 list 单元格的下拉箭头：颜色、命中区宽度（单元格右侧这么宽都算点在箭头上）。 */
 export const DROPDOWN_ARROW_COLOR = "#5f6368";
 export const DROPDOWN_ARROW_ZONE = 18;
+/** `custom` 显示模式的胶囊标签：没有选项颜色时的底色。 */
+export const DROPDOWN_CAPSULE_COLOR = "#e8eaed";
 export const CELL_PADDING = 4;
 /**
  * 字号与字体分开导出，是为了让每格样式能覆盖其中一半（Step 24）。

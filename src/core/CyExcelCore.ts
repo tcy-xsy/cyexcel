@@ -79,6 +79,7 @@ import { expandRangeForMerges, findMergeAt, mergesIntersectingRange } from "./sh
 import {
   buildRule,
   collectInvalidCells,
+  describeCellDropdown,
   findRuleAt,
   intersectRanges,
   validateValue,
@@ -92,7 +93,6 @@ import type { CellEditorFactory } from "./editors";
 import {
   ACCEPT,
   EditorManager,
-  isInDropdownArrowZone,
   outcomeFromResult,
   ValidationHints,
   visibleRectForRange
@@ -169,8 +169,10 @@ import {
   CanvasSurface,
   RenderScheduler,
   SelectionLayerRenderer,
+  isInDropdownHitArea,
   readDevicePixelRatio,
-  type Canvas2DLike
+  type Canvas2DLike,
+  type CellDropdown
 } from "./render";
 import { CELL_FONT } from "./render/theme";
 import type { CellRange, Command, Disposer } from "./types";
@@ -775,6 +777,8 @@ export class CyExcelCore {
   readonly #editorManager: EditorManager;
   /** 选中带规则的单元格时的下拉箭头、下拉列表与输入提示。 */
   readonly #validationHints: ValidationHints;
+  /** 量文字宽度用的离屏上下文（字体已设成 `CELL_FONT`），下拉胶囊的命中测试要用。 */
+  readonly #textMeasureCtx: Canvas2DLike;
   readonly #domCellManager: DOMCellManager;
   readonly #clipboardService: ClipboardService;
   readonly #hooks: HookManager;
@@ -1046,6 +1050,8 @@ export class CyExcelCore {
     // #contentCanvas's own drawing state.
     const measureCtx = document.createElement("canvas").getContext("2d") as Canvas2DLike;
     measureCtx.font = CELL_FONT;
+    // 同一个上下文也给下拉胶囊量文字：命中测试要和绘制用同一把尺子
+    this.#textMeasureCtx = measureCtx;
     this.#measurement = new WrapMeasurementService({
       measureContext: measureCtx,
       getColumns: () => this.#columnManager.getColumns(),
@@ -1066,7 +1072,7 @@ export class CyExcelCore {
       ...(options.dataValidation?.showInvalidMarks !== false
         ? { isCellInvalid: (row: number, column: number) => this.#isCellInvalid(row, column) }
         : {}),
-      hasCellDropdown: (row, column) => this.#hasDropdown(row, column),
+      getCellDropdown: (row, column) => this.#dropdownAt(row, column),
       ...(options.showGridLines !== undefined ? { showGridLines: options.showGridLines } : {})
     });
     this.#selectionRenderer = new SelectionLayerRenderer({
@@ -1289,7 +1295,7 @@ export class CyExcelCore {
       priority: 300,
       route: (context) => this.#routeBodyFill(context)
     });
-    // list 规则的下拉箭头（画在画布上，见 ContentLayerRenderer 的 hasCellDropdown）：
+    // list 规则的下拉箭头（画在画布上，见 ContentLayerRenderer 的 getCellDropdown）：
     // 点在箭头的命中区里就打开列表，不走后面的自定义 renderer、链接、选区。优先级在填充柄
     // 之下、自定义 renderer 之上：填充柄在选区角上，箭头在格子右侧，几乎不会撞；而 list
     // 格子上的 renderer 不该抢走箭头的点击。
@@ -1769,14 +1775,16 @@ export class CyExcelCore {
     );
   }
 
-  /** 这一格该不该画下拉箭头：`list` 规则，且没关 `showDropDown`。绘制时每格每帧调一次。 */
-  #hasDropdown(row: number, column: number): boolean {
+  /** 这一格的下拉怎么画：`list` 规则、没关 `showDropDown`。绘制时每格每帧调一次。 */
+  #dropdownAt(row: number, column: number): CellDropdown | undefined {
     const rules = this.#sheet.validations();
     if (rules.length === 0) {
-      return false;
+      return undefined;
     }
     const rule = findRuleAt(rules, row, column);
-    return rule !== undefined && rule.criteria.type === "list" && rule.showDropDown !== false;
+    return rule === undefined
+      ? undefined
+      : describeCellDropdown(rule, this.#store.getCell(row, column) as CellValue | undefined);
   }
 
   /** 绘制时每个可见格每帧调一次：没有规则时只是一次长度判断。 */
@@ -2991,7 +2999,7 @@ export class CyExcelCore {
    * `point` 落在哪一格的下拉箭头命中区里，返回那一格（合并单元格返回锚点）；没有则
    * `undefined`。路由和悬停光标共用这一个判定，"画在哪、点哪里"不会各算各的。
    */
-  #dropdownArrowTargetAt(scene: SceneSnapshot, point: SurfacePoint<"body">): { row: number; column: number } | undefined {
+  #dropdownTargetAt(scene: SceneSnapshot, point: SurfacePoint<"body">): { row: number; column: number } | undefined {
     if (this.#sheet.validations().length === 0) {
       return undefined;
     }
@@ -3001,11 +3009,21 @@ export class CyExcelCore {
     }
     const merge = findMergeAt(this.#sheet.merges(), hit.cell.row, hit.cell.column);
     const anchor = merge ? { row: merge.startRow, column: merge.startColumn } : hit.cell;
-    if (!this.#hasDropdown(anchor.row, anchor.column)) {
+    const dropdown = this.#dropdownAt(anchor.row, anchor.column);
+    if (dropdown === undefined || dropdown.mode === "text") {
       return undefined;
     }
     const rect = merge ? visibleRectForRange(scene, merge) : hit.rect;
-    return rect !== null && isInDropdownArrowZone(rect, point) ? { row: anchor.row, column: anchor.column } : undefined;
+    if (rect === null) {
+      return undefined;
+    }
+    // `custom` 的命中区是胶囊，宽度取决于文字：用绘制时同一个字体量
+    const value = this.#store.getCell(anchor.row, anchor.column);
+    const textWidth =
+      dropdown.mode === "custom" && value !== undefined && value !== null && String(value) !== ""
+        ? this.#textMeasureCtx.measureText(String(value)).width
+        : 0;
+    return isInDropdownHitArea(dropdown, rect, textWidth, point) ? { row: anchor.row, column: anchor.column } : undefined;
   }
 
   #routeBodyDropdownArrow(context: CorePointerInputContext) {
@@ -3013,7 +3031,7 @@ export class CyExcelCore {
     if (event.button !== 0 || frame.structureVersion === undefined || this.#editorManager.isEditing()) {
       return declineInput();
     }
-    const target = this.#dropdownArrowTargetAt(frame.scene, context.point as SurfacePoint<"body">);
+    const target = this.#dropdownTargetAt(frame.scene, context.point as SurfacePoint<"body">);
     if (target === undefined) {
       return declineInput();
     }
@@ -3045,7 +3063,7 @@ export class CyExcelCore {
       over =
         this.#dispatchInteraction("body-pointer-hover", (frame) => {
           const point = frame.surfaces.clientToSurface(clientPoint(event.clientX, event.clientY), "body");
-          return point !== undefined && point !== null && this.#dropdownArrowTargetAt(frame.scene, point) !== undefined;
+          return point !== undefined && point !== null && this.#dropdownTargetAt(frame.scene, point) !== undefined;
         }) ?? false;
     }
     this.#setDropdownCursor(over);

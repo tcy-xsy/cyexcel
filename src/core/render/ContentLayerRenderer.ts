@@ -6,6 +6,7 @@ import type { Canvas2DLike } from "./Canvas2DLike";
 import type { BorderSide, CellStyle } from "../style/types";
 import type { DirtyState } from "./RenderScheduler";
 import type { CellValue } from "../sheet/types";
+import { CAPSULE_RADIUS, computeCapsule, type CapsuleGeometry, type CellDropdown } from "./dropdownGeometry";
 import {
   CELL_FONT,
   CELL_PADDING,
@@ -13,6 +14,7 @@ import {
   FROZEN_SEPARATOR_THICKNESS,
   DROPDOWN_ARROW_COLOR,
   DROPDOWN_ARROW_ZONE,
+  DROPDOWN_CAPSULE_COLOR,
   GRID_LINE_COLOR,
   INVALID_MARK_COLOR,
   INVALID_MARK_SIZE,
@@ -75,11 +77,12 @@ export interface ContentLayerRendererOptions {
    */
   readonly isCellInvalid?: (row: number, column: number) => boolean;
   /**
-   * 这一格要不要画下拉箭头（数据验证的 `list` 规则）。和"无效"角标一样画在 painter 之外，
-   * 常驻、不看选区——同 Univer 的 `DropdownWidget`：箭头是绘制的一部分，点击由画布的
-   * 命中测试处理。每帧对每个可见格调用一次，实现必须便宜。
+   * 这一格的 list 下拉要怎么画（数据验证的 `list` 规则）：`arrow` 文字加右侧箭头，`text`
+   * 只有文字，`custom` 带底色的胶囊标签（文字和箭头都画在胶囊里）；颜色见 `CellDropdown`。
+   * 和"无效"角标一样画在 painter 之外，常驻、不看选区——同 Univer 的 `DropdownWidget`：
+   * 箭头是绘制的一部分，点击由画布的命中测试处理。每帧对每个可见格调用一次，实现必须便宜。
    */
-  readonly hasCellDropdown?: (row: number, column: number) => boolean;
+  readonly getCellDropdown?: (row: number, column: number) => CellDropdown | undefined;
 }
 
 function defaultPainter(context: CellPaintContext): void {
@@ -131,7 +134,7 @@ export class ContentLayerRenderer {
   readonly #showGridLines: boolean;
   readonly #getMergesInRange: ContentLayerRendererOptions["getMergesInRange"];
   readonly #isCellInvalid: ContentLayerRendererOptions["isCellInvalid"];
-  readonly #hasCellDropdown: ContentLayerRendererOptions["hasCellDropdown"];
+  readonly #getCellDropdown: ContentLayerRendererOptions["getCellDropdown"];
 
   constructor(options: ContentLayerRendererOptions) {
     this.#ctx = options.ctx;
@@ -145,7 +148,7 @@ export class ContentLayerRenderer {
     this.#showGridLines = options.showGridLines ?? true;
     this.#getMergesInRange = options.getMergesInRange;
     this.#isCellInvalid = options.isCellInvalid;
-    this.#hasCellDropdown = options.hasCellDropdown;
+    this.#getCellDropdown = options.getCellDropdown;
   }
 
   paintContent(dirty: DirtyState, scene: SceneSnapshot = this.#getScene()): void {
@@ -283,19 +286,40 @@ export class ContentLayerRenderer {
     const value = this.#getCellValue(row, column);
     const style = this.#getCellStyle?.(row, column);
     const image = this.#getCellImage?.(row, column);
+    const dropdown = this.#getCellDropdown?.(row, column);
     // 背景在文字之前：Canvas 是后画的盖先画的，顺序反了底色会把字糊掉。
-    // 放在 painter 之外，所以自定义 renderer 不必自己记得画底色。
-    if (style?.background !== undefined) {
-      this.#ctx.fillStyle = style.background;
+    // 放在 painter 之外，所以自定义 renderer 不必自己记得画底色。格子自己设了背景色就用它；
+    // 没有的话，`arrow` / `text` 模式的选项颜色当作单元格底色（`custom` 的颜色在胶囊上）。
+    const background =
+      style?.background ?? (dropdown !== undefined && dropdown.mode !== "custom" ? dropdown.color : undefined);
+    if (background !== undefined) {
+      this.#ctx.fillStyle = background;
       this.#ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
     }
+
+    // `custom` 模式：文字和箭头都在胶囊里，这一格不交给 painter（同 Univer 的
+    // `skipDefaultFontRender`）。胶囊挤不下（格子太窄或太矮）时退回 `arrow` 模式。
+    let capsule: CapsuleGeometry | null = null;
+    let capsuleText = "";
+    if (dropdown?.mode === "custom") {
+      capsuleText = value === undefined || value === null ? "" : String(value);
+      capsule = computeCapsule(rect, this.#measureTextWidth(capsuleText));
+    }
+    if (dropdown !== undefined && capsule !== null) {
+      this.#paintCapsule(capsule, capsuleText, dropdown.color);
+      this.#paintGridLine(rect);
+      this.#paintBorder(rect, style);
+      this.#paintInvalidMark(row, column, rect);
+      return;
+    }
+    const arrow = dropdown !== undefined && dropdown.mode !== "text";
     // list 单元格右侧给下拉箭头留出位置（同 Univer 的 `calcCellAutoWidth` 给箭头预留
     // 宽度）：painter 拿到的 rect 右边缘内缩一个箭头区，文字的对齐、换行宽度都按这个窄
     // rect 算，并且裁剪到它——过长的文字在箭头前截断，不会画到箭头下面。格子比箭头区还窄
     // 时不预留（否则整格什么都画不出来）。背景、网格线、边框仍按完整的 rect。
-    const dropdown = this.#hasCellDropdown?.(row, column) === true;
+    // `text` 模式没有箭头，也就不预留。
     const paintRect: CellRect =
-      dropdown && rect.width > DROPDOWN_ARROW_ZONE
+      arrow && rect.width > DROPDOWN_ARROW_ZONE
         ? { x: rect.x, y: rect.y, width: rect.width - DROPDOWN_ARROW_ZONE, height: rect.height }
         : rect;
     const clipToPaintRect = (): void => {
@@ -337,7 +361,7 @@ export class ContentLayerRenderer {
       this.#paintGridLine(rect);
       this.#paintBorder(rect, style);
       this.#paintInvalidMark(row, column, rect);
-      this.#paintDropdownArrow(dropdown, rect);
+      this.#paintDropdownArrow(arrow, rect);
       return;
     }
     this.#ctx.restore();
@@ -352,20 +376,22 @@ export class ContentLayerRenderer {
     this.#paintGridLine(rect);
     this.#paintBorder(rect, style);
     this.#paintInvalidMark(row, column, rect);
-    this.#paintDropdownArrow(dropdown, rect);
+    this.#paintDropdownArrow(arrow, rect);
   }
 
   /**
    * 右侧居中的向下小三角。箭头中心落在命中区（`DROPDOWN_ARROW_ZONE`）的正中，格子比
    * 命中区还窄时贴着格子边缘。自己 save/restore，理由同无效角标。
    */
-  #paintDropdownArrow(dropdown: boolean, rect: CellRect): void {
-    if (!dropdown) {
+  #paintDropdownArrow(arrow: boolean, rect: CellRect): void {
+    if (!arrow) {
       return;
     }
     const zone = Math.min(DROPDOWN_ARROW_ZONE, rect.width);
-    const centerX = rect.x + rect.width - zone / 2;
-    const centerY = rect.y + rect.height / 2;
+    this.#paintArrowGlyph(rect.x + rect.width - zone / 2, rect.y + rect.height / 2);
+  }
+
+  #paintArrowGlyph(centerX: number, centerY: number): void {
     this.#ctx.save();
     this.#ctx.fillStyle = DROPDOWN_ARROW_COLOR;
     this.#ctx.beginPath();
@@ -375,6 +401,57 @@ export class ContentLayerRenderer {
     this.#ctx.closePath();
     this.#ctx.fill();
     this.#ctx.restore();
+  }
+
+  /** 胶囊内文字用的宽度：与画字用同一个字体，几何（画和命中）才对得上。 */
+  #measureTextWidth(text: string): number {
+    if (text === "") {
+      return 0;
+    }
+    this.#ctx.save();
+    this.#ctx.font = CELL_FONT;
+    const width = this.#ctx.measureText(text).width;
+    this.#ctx.restore();
+    return width;
+  }
+
+  /**
+   * `custom` 模式的胶囊：圆角底色、裁剪过的文字、箭头。Canvas2DLike 没有 `roundRect`，
+   * 用四段 `arc` 拼圆角矩形。自己 save/restore，不把 fillStyle、font 漏给下一格。
+   */
+  #paintCapsule(geometry: CapsuleGeometry, text: string, color: string | undefined): void {
+    const { x, y, width, height } = geometry.capsule;
+    const r = Math.min(CAPSULE_RADIUS, height / 2, width / 2);
+    const ctx = this.#ctx;
+    ctx.save();
+    ctx.fillStyle = color ?? DROPDOWN_CAPSULE_COLOR;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + width - r, y);
+    ctx.arc(x + width - r, y + r, r, -Math.PI / 2, 0);
+    ctx.lineTo(x + width, y + height - r);
+    ctx.arc(x + width - r, y + height - r, r, 0, Math.PI / 2);
+    ctx.lineTo(x + r, y + height);
+    ctx.arc(x + r, y + height - r, r, Math.PI / 2, Math.PI);
+    ctx.lineTo(x, y + r);
+    ctx.arc(x + r, y + r, r, Math.PI, Math.PI * 1.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    if (text !== "" && geometry.textMaxWidth > 0) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(geometry.textX, y, geometry.textMaxWidth, height);
+      ctx.clip();
+      ctx.fillStyle = TEXT_COLOR;
+      ctx.font = CELL_FONT;
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "left";
+      ctx.fillText(text, geometry.textX, y + height / 2);
+      ctx.restore();
+    }
+    this.#paintArrowGlyph(geometry.arrowCenter.x, geometry.arrowCenter.y);
   }
 
   /** 右上角的红色小三角。自己 save/restore：不能把 fillStyle 漏给下一格。 */

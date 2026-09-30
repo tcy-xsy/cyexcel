@@ -5,6 +5,7 @@ import type { SearchMatch } from "../search";
 import {
   ALLOW_OPTIONS,
   ERROR_STYLE_OPTIONS,
+  RENDER_MODE_OPTIONS,
   OPERATOR_OPTIONS,
   fieldsFor,
   formFromRule,
@@ -12,7 +13,7 @@ import {
   type AllowKind,
   type DataValidationFormState
 } from "./dataValidationForm";
-import type { ValidationErrorStyle, ValidationOperator } from "../sheet/validations";
+import type { DataValidationRenderMode, ValidationErrorStyle, ValidationOperator } from "../sheet/validations";
 
 /**
  * 对话框里的内容。契约与 `panels.ts` 一样——把内容塞进调用方给的容器，返回 disposer
@@ -253,6 +254,7 @@ export function dataValidationDialog(
   const value2 = textInput("", "最大值");
   const allowBlank = checkbox("忽略空值");
   const showDropDown = checkbox("提供下拉箭头");
+  const renderMode = selectInput<DataValidationRenderMode>(RENDER_MODE_OPTIONS, "显示方式");
   const promptTitle = textInput("可选", "输入信息标题");
   const prompt = textInput("选中单元格时显示", "输入信息");
   const errorStyle = selectInput<ValidationErrorStyle>(ERROR_STYLE_OPTIONS, "错误样式");
@@ -266,6 +268,7 @@ export function dataValidationDialog(
   styles.apply(value1Row, styles.dialogField);
   value1Row.append(value1Label, value1);
   const value2Row = field("最大值", value2);
+  const renderModeRow = field("显示方式", renderMode);
   const optionRow = el("div", "cyx-toolbar-dialog-options");
   styles.apply(optionRow, styles.dialogOptions);
   optionRow.append(allowBlank.wrap, showDropDown.wrap);
@@ -287,6 +290,7 @@ export function dataValidationDialog(
     value2: value2.value,
     allowBlank: allowBlank.input.checked,
     showDropDown: showDropDown.input.checked,
+    renderMode: renderMode.value as DataValidationRenderMode,
     errorStyle: errorStyle.value as ValidationErrorStyle,
     errorTitle: errorTitle.value,
     errorMessage: errorMessage.value,
@@ -301,8 +305,9 @@ export function dataValidationDialog(
     value1Row.style.display = shown.value1 ? "" : "none";
     value2Row.style.display = shown.value2 ? "" : "none";
     showDropDown.wrap.style.display = shown.dropDown ? "" : "none";
+    renderModeRow.style.display = shown.renderMode ? "" : "none";
     value1Label.textContent = allow.value === "list" ? "来源" : shown.value2 ? "最小值" : "值";
-    value1.placeholder = allow.value === "list" ? "用逗号分隔，如 红,绿,蓝" : allow.value === "date" ? "2026-01-15" : allow.value === "time" ? "09:30" : "";
+    value1.placeholder = allow.value === "list" ? "逗号分隔，可带颜色：红=#d93025,绿,蓝" : allow.value === "date" ? "2026-01-15" : allow.value === "time" ? "09:30" : "";
     optionRow.style.display = allow.value === "any" ? "none" : "";
   };
 
@@ -312,6 +317,7 @@ export function dataValidationDialog(
   value2.value = state.value2;
   allowBlank.input.checked = state.allowBlank;
   showDropDown.input.checked = state.showDropDown;
+  renderMode.value = state.renderMode;
   errorStyle.value = state.errorStyle;
   errorTitle.value = state.errorTitle;
   errorMessage.value = state.errorMessage;
@@ -354,6 +360,7 @@ export function dataValidationDialog(
     value1Row,
     value2Row,
     optionRow,
+    renderModeRow,
     field("输入标题", promptTitle),
     field("输入信息", prompt),
     field("错误样式", errorStyle),

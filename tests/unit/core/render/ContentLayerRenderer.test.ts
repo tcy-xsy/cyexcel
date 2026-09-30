@@ -794,6 +794,8 @@ describe("ContentLayerRenderer — invalid-data mark", () => {
   });
 });
 
+const ARROW = { mode: "arrow" } as const;
+
 describe("ContentLayerRenderer — dropdown arrow", () => {
   function triangles(ctx: RecordingCanvasContext): Array<readonly unknown[]> {
     return ctx.calls.filter((call) => call.method === "moveTo").map((call) => call.args);
@@ -806,7 +808,7 @@ describe("ContentLayerRenderer — dropdown arrow", () => {
       ctx,
       layout,
       getCellValue: () => "x",
-      hasCellDropdown: (row, column) => row === 0 && column === 1
+      getCellDropdown: (row, column) => (row === 0 && column === 1 ? ARROW : undefined)
     });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
 
@@ -828,7 +830,7 @@ describe("ContentLayerRenderer — dropdown arrow", () => {
       layout: createLayout(1, 1),
       getCellValue: () => "x",
       isCellInvalid: () => true,
-      hasCellDropdown: () => true
+      getCellDropdown: () => ARROW
     });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
 
@@ -845,7 +847,7 @@ describe("ContentLayerRenderer — dropdown arrow", () => {
       layout: createLayout(3, 2),
       getCellValue: () => "x",
       getMergesInRange: (range) => mergesIntersectingRange([merge], range),
-      hasCellDropdown: (row, column) => row === 0 && column === 0
+      getCellDropdown: (row, column) => (row === 0 && column === 0 ? ARROW : undefined)
     });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 60 });
 
@@ -858,7 +860,7 @@ describe("ContentLayerRenderer — dropdown arrow", () => {
   it("paints nothing extra when no cell has a dropdown, or when the option is absent", () => {
     const layout = createLayout(2, 2);
     const none = new RecordingCanvasContext();
-    const a = createContentRenderer({ ctx: none, layout, getCellValue: () => "x", hasCellDropdown: () => false });
+    const a = createContentRenderer({ ctx: none, layout, getCellValue: () => "x", getCellDropdown: () => undefined });
     a.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
     a.paintContent({ kind: "full" });
 
@@ -877,7 +879,7 @@ describe("ContentLayerRenderer — dropdown arrow", () => {
       ctx,
       layout: createLayout(1, 2),
       getCellValue: () => "x",
-      hasCellDropdown: () => true
+      getCellDropdown: () => ARROW
     });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 20 });
 
@@ -904,7 +906,7 @@ describe("ContentLayerRenderer — room for the dropdown arrow", () => {
       layout: createLayout(1, 2), // 每列 50 宽、20 高
       getCellValue: () => "x",
       painter,
-      hasCellDropdown: (_row, column) => column === 1
+      getCellDropdown: (_row, column) => (column === 1 ? ARROW : undefined)
     });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 20 });
 
@@ -920,7 +922,7 @@ describe("ContentLayerRenderer — room for the dropdown arrow", () => {
       ctx,
       layout: createLayout(1, 1),
       getCellValue: () => "a very long value",
-      hasCellDropdown: () => true
+      getCellDropdown: () => ARROW
     });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
 
@@ -945,7 +947,7 @@ describe("ContentLayerRenderer — room for the dropdown arrow", () => {
       ctx: noDropdown,
       layout: createLayout(1, 1),
       getCellValue: () => "x",
-      hasCellDropdown: () => false
+      getCellDropdown: () => undefined
     });
     b.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
     b.paintContent({ kind: "full" });
@@ -973,7 +975,7 @@ describe("ContentLayerRenderer — room for the dropdown arrow", () => {
           }
         ]),
         getCellStyle: () => ({ align: "right" }),
-        hasCellDropdown: () => dropdown
+        getCellDropdown: () => (dropdown ? ARROW : undefined)
       });
       renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
       renderer.paintContent({ kind: "full" });
@@ -991,7 +993,7 @@ describe("ContentLayerRenderer — room for the dropdown arrow", () => {
       layout: new LayoutEngine({ rowCount: 1, columnCount: 1, rowHeight: 20, columnWidths: [16] }),
       getCellValue: () => "x",
       painter,
-      hasCellDropdown: () => true
+      getCellDropdown: () => ARROW
     });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 16, height: 20 });
 
@@ -1006,7 +1008,7 @@ describe("ContentLayerRenderer — room for the dropdown arrow", () => {
       ctx,
       layout: createLayout(1, 1),
       getCellValue: () => "x",
-      hasCellDropdown: () => true
+      getCellDropdown: () => ARROW
     });
     renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
 
@@ -1014,5 +1016,111 @@ describe("ContentLayerRenderer — room for the dropdown arrow", () => {
 
     const moveTo = ctx.calls.find((call) => call.method === "moveTo");
     expect(moveTo?.args).toEqual([87.5 - 50, 8]); // 中心 x = 50 - 9 = 41，三角左顶点 37.5
+  });
+});
+
+describe("ContentLayerRenderer — dropdown display modes", () => {
+  function render(options: {
+    readonly dropdown: { mode: "text" | "arrow" | "custom"; color?: string } | undefined;
+    readonly value?: CellValue;
+    readonly width?: number;
+    readonly style?: { background?: string };
+  }) {
+    const ctx = new RecordingCanvasContext();
+    let painted = 0;
+    const width = options.width ?? 50;
+    const renderer = createContentRenderer({
+      ctx,
+      layout: new LayoutEngine({ rowCount: 1, columnCount: 1, rowHeight: 20, columnWidths: [width] }),
+      getCellValue: () => options.value ?? "ab",
+      painter: () => {
+        painted += 1;
+      },
+      ...(options.style !== undefined ? { getCellStyle: () => options.style } : {}),
+      getCellDropdown: () => options.dropdown
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width, height: 20 });
+    renderer.paintContent({ kind: "full" });
+    return { ctx, painted: () => painted };
+  }
+
+  const fills = (ctx: RecordingCanvasContext) =>
+    ctx.calls.filter((call) => call.method === "set:fillStyle").map((call) => call.args[0]);
+
+  describe("text", () => {
+    it("draws no arrow and does not narrow the painter's rect", () => {
+      const { ctx, painted } = render({ dropdown: { mode: "text" } });
+      expect(ctx.calls.filter((call) => call.method === "moveTo")).toEqual([]);
+      expect(painted()).toBe(1);
+    });
+
+    it("uses the item's colour as the cell background", () => {
+      const { ctx } = render({ dropdown: { mode: "text", color: "#d93025" } });
+      const fillRect = ctx.calls.findIndex((call) => call.method === "fillRect");
+      expect(fillRect).toBeGreaterThan(-1);
+      expect(ctx.calls[fillRect - 1]).toMatchObject({ method: "set:fillStyle", args: ["#d93025"] });
+    });
+  });
+
+  describe("arrow", () => {
+    it("uses the item's colour as the cell background too, but a style background wins", () => {
+      const coloured = render({ dropdown: { mode: "arrow", color: "#188038" } });
+      expect(fills(coloured.ctx)).toContain("#188038");
+
+      const styled = render({ dropdown: { mode: "arrow", color: "#188038" }, style: { background: "#ffffff" } });
+      expect(fills(styled.ctx)).toContain("#ffffff");
+      expect(fills(styled.ctx)).not.toContain("#188038");
+    });
+  });
+
+  describe("custom (capsule)", () => {
+    // 格子 50x20，文字 "ab" = 14 宽（记录器每字 7）→ 胶囊 x 6..42、y 3..17
+    it("draws a rounded capsule with the text and the arrow inside, and skips the painter", () => {
+      const { ctx, painted } = render({ dropdown: { mode: "custom" } });
+
+      expect(painted()).toBe(0);
+      expect(ctx.calls.filter((call) => call.method === "arc")).toHaveLength(4); // 四个圆角
+      const text = ctx.calls.find((call) => call.method === "fillText");
+      expect(text?.args).toEqual(["ab", 10, 10]);
+      // 箭头三角在胶囊右端：中心 x = 6 + 36 - 4 - 7 = 31
+      const arrow = ctx.calls.filter((call) => call.method === "moveTo").at(-1);
+      expect(arrow?.args).toEqual([31 - 3.5, 8]);
+    });
+
+    it("fills the capsule with the item colour, or the default grey when it has none", () => {
+      expect(fills(render({ dropdown: { mode: "custom", color: "#4285f4" } }).ctx)).toContain("#4285f4");
+      expect(fills(render({ dropdown: { mode: "custom" } }).ctx)).toContain("#e8eaed");
+    });
+
+    it("does not tint the whole cell — the colour belongs to the capsule", () => {
+      const { ctx } = render({ dropdown: { mode: "custom", color: "#4285f4" } });
+      expect(ctx.calls.filter((call) => call.method === "fillRect")).toEqual([]);
+    });
+
+    it("clips long text to the capsule's text area", () => {
+      const { ctx } = render({ dropdown: { mode: "custom" }, value: "a very long value indeed" });
+      const textIndex = ctx.calls.findIndex((call) => call.method === "fillText");
+      const clipIndex = ctx.calls.slice(0, textIndex).map((call) => call.method).lastIndexOf("clip");
+      // 胶囊撑满 50 - 12 = 38 宽，文字区 38 - 8 - 14 = 16；最靠近 fillText 的那次裁剪（更早的是面板自己的）
+      expect(ctx.calls[clipIndex - 1]?.args).toEqual([10, 3, 16, 14]);
+    });
+
+    it("draws just the arrow capsule for an empty value", () => {
+      const { ctx } = render({ dropdown: { mode: "custom" }, value: "" });
+      expect(ctx.calls.filter((call) => call.method === "fillText")).toEqual([]);
+      expect(ctx.calls.filter((call) => call.method === "arc")).toHaveLength(4);
+    });
+
+    it("falls back to the plain arrow when the capsule does not fit", () => {
+      const { ctx, painted } = render({ dropdown: { mode: "custom" }, width: 30 });
+      expect(painted()).toBe(1);
+      expect(ctx.calls.filter((call) => call.method === "arc")).toEqual([]);
+      expect(ctx.calls.filter((call) => call.method === "moveTo")).toHaveLength(1);
+    });
+
+    it("keeps save/restore balanced", () => {
+      const { ctx } = render({ dropdown: { mode: "custom", color: "#4285f4" } });
+      expect(ctx.calls.filter((c) => c.method === "save")).toHaveLength(ctx.calls.filter((c) => c.method === "restore").length);
+    });
   });
 });

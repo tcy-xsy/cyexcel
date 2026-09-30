@@ -1,9 +1,11 @@
 import { serialFromISODate, serialToISODate } from "../style/dateSerial";
-import type {
-  DataValidationRule,
-  DataValidationRuleInput,
-  ValidationErrorStyle,
-  ValidationOperator
+import {
+  COLOR_PATTERN,
+  type DataValidationRenderMode,
+  type DataValidationRule,
+  type DataValidationRuleInput,
+  type ValidationErrorStyle,
+  type ValidationOperator
 } from "../sheet/validations";
 
 /**
@@ -22,6 +24,7 @@ export interface DataValidationFormState {
   value2: string;
   allowBlank: boolean;
   showDropDown: boolean;
+  renderMode: DataValidationRenderMode;
   errorStyle: ValidationErrorStyle;
   errorTitle: string;
   errorMessage: string;
@@ -50,6 +53,12 @@ export const OPERATOR_OPTIONS: readonly { readonly value: ValidationOperator; re
   { value: "lessThanOrEqual", label: "小于或等于" }
 ];
 
+export const RENDER_MODE_OPTIONS: readonly { readonly value: DataValidationRenderMode; readonly label: string }[] = [
+  { value: "arrow", label: "文字加箭头" },
+  { value: "text", label: "仅文字" },
+  { value: "custom", label: "胶囊标签" }
+];
+
 export const ERROR_STYLE_OPTIONS: readonly { readonly value: ValidationErrorStyle; readonly label: string }[] = [
   { value: "stop", label: "停止" },
   { value: "warning", label: "警告" },
@@ -63,6 +72,7 @@ export const DEFAULT_FORM: DataValidationFormState = Object.freeze({
   value2: "",
   allowBlank: true,
   showDropDown: true,
+  renderMode: "arrow",
   errorStyle: "stop",
   errorTitle: "",
   errorMessage: "",
@@ -76,18 +86,21 @@ export function fieldsFor(allow: AllowKind, operator: ValidationOperator): {
   readonly value1: boolean;
   readonly value2: boolean;
   readonly dropDown: boolean;
+  /** 显示方式：只有序列才有。 */
+  readonly renderMode: boolean;
 } {
   if (allow === "any") {
-    return { operator: false, value1: false, value2: false, dropDown: false };
+    return { operator: false, value1: false, value2: false, dropDown: false, renderMode: false };
   }
   if (allow === "list") {
-    return { operator: false, value1: true, value2: false, dropDown: true };
+    return { operator: false, value1: true, value2: false, dropDown: true, renderMode: true };
   }
   return {
     operator: true,
     value1: true,
     value2: operator === "between" || operator === "notBetween",
-    dropDown: false
+    dropDown: false,
+    renderMode: false
   };
 }
 
@@ -99,6 +112,42 @@ export function parseListItems(text: string): string[] {
     .map((item) => item.trim())
     .filter((item) => item !== "");
   return [...new Set(items)];
+}
+
+export type ListSource =
+  | { readonly kind: "ok"; readonly items: string[]; readonly colors: Record<string, string> }
+  | { readonly kind: "error"; readonly message: string };
+
+/**
+ * 序列来源：逗号分隔，每项可以写成 `名称=颜色`（颜色是 `#rgb` / `#rrggbb`）。等号取**最后
+ * 一个**：`a=b=#fff` 是名为 `a=b` 的项。写了等号但后面不是合法颜色就报错，而不是悄悄把
+ * 整段当成名字——那会让"拼错颜色"变成一个多出来的怪选项。
+ */
+export function parseListSource(text: string): ListSource {
+  const items: string[] = [];
+  const colors: Record<string, string> = {};
+  for (const entry of text.split(LIST_SEPARATOR).map((part) => part.trim()).filter((part) => part !== "")) {
+    const at = entry.lastIndexOf("=");
+    if (at === -1) {
+      if (!items.includes(entry)) {
+        items.push(entry);
+      }
+      continue;
+    }
+    const name = entry.slice(0, at).trim();
+    const color = entry.slice(at + 1).trim();
+    if (name === "") {
+      return { kind: "error", message: `「${entry}」缺少名称` };
+    }
+    if (!COLOR_PATTERN.test(color)) {
+      return { kind: "error", message: `「${name}」的颜色需要是 #RRGGBB 形式，例如 #d93025` };
+    }
+    if (!items.includes(name)) {
+      items.push(name);
+    }
+    colors[name] = color;
+  }
+  return { kind: "ok", items, colors };
 }
 
 /** `"09:30"` / `"9:30:15"` → 一天中的小数部分；不是时间返回 `undefined`。 */
@@ -156,13 +205,25 @@ export function ruleInputFromForm(form: DataValidationFormState): FormOutcome {
   };
 
   if (form.allow === "list") {
-    const items = parseListItems(form.value1);
-    if (items.length === 0) {
+    const source = parseListSource(form.value1);
+    if (source.kind === "error") {
+      return source;
+    }
+    if (source.items.length === 0) {
       return { kind: "error", message: "请填写序列内容，用逗号分隔" };
     }
     return {
       kind: "rule",
-      input: { ...shared, showDropDown: form.showDropDown, criteria: { type: "list", items } }
+      input: {
+        ...shared,
+        showDropDown: form.showDropDown,
+        renderMode: form.renderMode,
+        criteria: {
+          type: "list",
+          items: source.items,
+          ...(Object.keys(source.colors).length > 0 ? { colors: source.colors } : {})
+        }
+      }
     };
   }
 
@@ -224,6 +285,7 @@ export function formFromRule(rule: DataValidationRule | undefined): DataValidati
   const shared = {
     allowBlank: rule.allowBlank ?? true,
     showDropDown: rule.showDropDown ?? true,
+    renderMode: rule.renderMode ?? "arrow",
     errorStyle: rule.errorStyle ?? "stop",
     errorTitle: rule.errorTitle ?? "",
     errorMessage: rule.errorMessage ?? "",
@@ -233,7 +295,12 @@ export function formFromRule(rule: DataValidationRule | undefined): DataValidati
   const criteria = rule.criteria;
   switch (criteria.type) {
     case "list":
-      return { ...DEFAULT_FORM, ...shared, allow: "list", value1: criteria.items.join(",") };
+      return {
+        ...DEFAULT_FORM,
+        ...shared,
+        allow: "list",
+        value1: criteria.items.map((item) => (criteria.colors?.[item] ? `${item}=${criteria.colors[item]}` : item)).join(",")
+      };
     case "custom":
       return { ...DEFAULT_FORM, ...shared, allow: "any" };
     case "date": {

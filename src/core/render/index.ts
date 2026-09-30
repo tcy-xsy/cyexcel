@@ -15,6 +15,14 @@ export {
   type ContentLayerRendererOptions
 } from "./ContentLayerRenderer";
 export {
+  computeCapsule,
+  isInDropdownArrowZone,
+  isInDropdownHitArea,
+  type CapsuleGeometry,
+  type CellDropdown,
+  type DropdownMode
+} from "./dropdownGeometry";
+export {
   SelectionLayerRenderer,
   type SelectionLayerRendererOptions
 } from "./SelectionLayerRenderer";

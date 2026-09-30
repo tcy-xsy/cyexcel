@@ -7,6 +7,7 @@ import {
   formatClock,
   parseClock,
   parseListItems,
+  parseListSource,
   ruleInputFromForm,
   type DataValidationFormState
 } from "../../../../src/core/toolbar/dataValidationForm";
@@ -20,15 +21,15 @@ const cell = [{ startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 }];
 
 describe("fieldsFor", () => {
   it("shows nothing for 'any', only the source and arrow for a list", () => {
-    expect(fieldsFor("any", "between")).toEqual({ operator: false, value1: false, value2: false, dropDown: false });
-    expect(fieldsFor("list", "between")).toEqual({ operator: false, value1: true, value2: false, dropDown: true });
+    expect(fieldsFor("any", "between")).toEqual({ operator: false, value1: false, value2: false, dropDown: false, renderMode: false });
+    expect(fieldsFor("list", "between")).toEqual({ operator: false, value1: true, value2: false, dropDown: true, renderMode: true });
   });
 
   it("shows the second value only for between / notBetween", () => {
     expect(fieldsFor("whole", "between").value2).toBe(true);
     expect(fieldsFor("whole", "notBetween").value2).toBe(true);
     expect(fieldsFor("whole", "equal").value2).toBe(false);
-    expect(fieldsFor("date", "greaterThan")).toEqual({ operator: true, value1: true, value2: false, dropDown: false });
+    expect(fieldsFor("date", "greaterThan")).toEqual({ operator: true, value1: true, value2: false, dropDown: false, renderMode: false });
   });
 });
 
@@ -37,6 +38,40 @@ describe("parseListItems", () => {
     expect(parseListItems(" 红 ，绿,, 蓝 ,红 ")).toEqual(["红", "绿", "蓝"]);
     expect(parseListItems("")).toEqual([]);
     expect(parseListItems(" , ,")).toEqual([]);
+  });
+});
+
+describe("parseListSource", () => {
+  it("reads plain items and name=colour items, keeping order and dropping duplicates", () => {
+    expect(parseListSource("红=#d93025, 绿 ,蓝=#00f,绿")).toEqual({
+      kind: "ok",
+      items: ["红", "绿", "蓝"],
+      colors: { 红: "#d93025", 蓝: "#00f" }
+    });
+  });
+
+  it("splits on the last equals sign, so the name may contain one", () => {
+    expect(parseListSource("a=b=#fff")).toEqual({ kind: "ok", items: ["a=b"], colors: { "a=b": "#fff" } });
+  });
+
+  it("later colour for the same name wins", () => {
+    expect(parseListSource("红=#111,红=#222")).toEqual({ kind: "ok", items: ["红"], colors: { 红: "#222" } });
+  });
+
+  it.each([
+    ["an unparseable colour", "红=red", "颜色"],
+    ["a missing colour", "红=", "颜色"],
+    ["a missing name", "=#fff", "缺少名称"]
+  ])("reports %s", (_label, text, fragment) => {
+    const result = parseListSource(text);
+    expect(result.kind).toBe("error");
+    if (result.kind === "error") {
+      expect(result.message).toContain(fragment);
+    }
+  });
+
+  it("is empty for blank input", () => {
+    expect(parseListSource(" , ")).toEqual({ kind: "ok", items: [], colors: {} });
   });
 });
 
@@ -91,12 +126,27 @@ describe("ruleInputFromForm", () => {
     }
   });
 
-  it("builds a list rule with its drop-down flag", () => {
-    const outcome = ruleInputFromForm(form({ allow: "list", value1: "红,绿", showDropDown: false }));
+  it("builds a list rule with its drop-down flag and render mode", () => {
+    const outcome = ruleInputFromForm(form({ allow: "list", value1: "红,绿", showDropDown: false, renderMode: "custom" }));
     expect(outcome).toMatchObject({
       kind: "rule",
-      input: { showDropDown: false, criteria: { type: "list", items: ["红", "绿"] } }
+      input: { showDropDown: false, renderMode: "custom", criteria: { type: "list", items: ["红", "绿"] } }
     });
+  });
+
+  it("puts item colours in criteria.colors, and leaves the key out when there are none", () => {
+    const withColors = ruleInputFromForm(form({ allow: "list", value1: "红=#d93025,绿" }));
+    expect(withColors).toMatchObject({
+      kind: "rule",
+      input: { criteria: { type: "list", items: ["红", "绿"], colors: { 红: "#d93025" } } }
+    });
+    const without = ruleInputFromForm(form({ allow: "list", value1: "红,绿" }));
+    expect(without.kind === "rule" && "colors" in (without.input.criteria as object)).toBe(false);
+  });
+
+  it("surfaces a bad colour as a form error", () => {
+    const outcome = ruleInputFromForm(form({ allow: "list", value1: "红=red" }));
+    expect(outcome).toMatchObject({ kind: "error" });
   });
 
   it("parses dates into serial numbers and times into fractions", () => {
@@ -149,6 +199,8 @@ describe("formFromRule", () => {
     form({ allow: "whole", operator: "between", value1: "1", value2: "10" }),
     form({ allow: "textLength", operator: "lessThanOrEqual", value1: "5", errorStyle: "information", errorTitle: "t", errorMessage: "m" }),
     form({ allow: "list", value1: "红,绿,蓝", showDropDown: false, allowBlank: false }),
+    form({ allow: "list", value1: "红=#d93025,绿,蓝=#4285f4", renderMode: "custom" }),
+    form({ allow: "list", value1: "是,否", renderMode: "text" }),
     form({ allow: "date", operator: "between", value1: "2026-01-01", value2: "2026-01-31", promptTitle: "日期", prompt: "填今年的" }),
     form({ allow: "time", operator: "notBetween", value1: "09:00", value2: "18:00" })
   ])("survives form → rule → form for %j", (state) => {

@@ -27,7 +27,7 @@ interface CellRef {
  * 选中单元格时的两样东西（数据验证设计稿 §8）：`list` 规则的下拉列表，以及规则的输入
  * 提示。都是 DOM，挂在编辑层里，一次只跟着一个活动格。
  *
- * **箭头不在这里。** 下拉箭头画在画布上（`ContentLayerRenderer` 的 `hasCellDropdown`），
+ * **箭头不在这里。** 下拉箭头画在画布上（`ContentLayerRenderer` 的 `getCellDropdown`），
  * 所有 list 单元格常驻，点击走画布的命中测试（`CyExcelCore#routeBodyDropdownArrow`）
  * 再调 `toggleList`——这是 Univer 的做法：箭头是绘制的一部分，列表才是弹出层。
  *

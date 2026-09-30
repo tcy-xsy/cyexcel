@@ -133,13 +133,20 @@
                 <label>规则
                   <select id="dvType">
                     <option value="whole">整数（介于 值1 和 值2）</option>
-                    <option value="list">序列（逗号分隔）</option>
+                    <option value="list">序列（逗号分隔，可写 红=#d93025）</option>
                     <option value="date">日期（介于 值1 和 值2）</option>
                     <option value="custom">自定义：偶数（registerDataValidator）</option>
                   </select>
                 </label>
                 <label>值1 / 序列 <input id="dvValue1" type="text" value="1" /></label>
                 <label>值2 <input id="dvValue2" type="text" value="100" /></label>
+                <label>序列显示
+                  <select id="dvRenderMode">
+                    <option value="arrow">文字加箭头</option>
+                    <option value="text">仅文字</option>
+                    <option value="custom">胶囊标签</option>
+                  </select>
+                </label>
                 <label>输入提示 <input id="dvPrompt" type="text" placeholder="选中单元格时显示" /></label>
                 <label>错误样式
                   <select id="dvErrorStyle">

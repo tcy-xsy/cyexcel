@@ -8,6 +8,7 @@ import {
   buildRule,
   clearRanges,
   collectInvalidCells,
+  describeCellDropdown,
   describeCellHints,
   findRuleAt,
   intersectRanges,
@@ -473,5 +474,66 @@ describe("describeCellHints", () => {
   it("returns undefined when there is nothing to show", () => {
     expect(describeCellHints(whole("w", cell))).toBeUndefined();
     expect(describeCellHints({ ...whole("w", cell), prompt: "", promptTitle: "" })).toBeUndefined();
+  });
+});
+
+describe("list renderMode and colors", () => {
+  const cell = [range(0, 0, 0, 0)];
+  const list = (extra: Partial<DataValidationRule> = {}, colors?: Record<string, string>): DataValidationRule => ({
+    id: "l",
+    ranges: cell,
+    criteria: { type: "list", items: ["红", "绿"], ...(colors !== undefined ? { colors } : {}) },
+    ...extra
+  });
+
+  it("accepts every render mode and rejects unknown ones", () => {
+    for (const renderMode of ["text", "arrow", "custom"] as const) {
+      expect(() => assertValidRule(list({ renderMode }))).not.toThrow();
+    }
+    expect(() => assertValidRule(list({ renderMode: "pill" as never }))).toThrow(CyExcelError);
+  });
+
+  it("accepts hex colours for known items", () => {
+    expect(() => assertValidRule(list({}, { 红: "#d93025", 绿: "#188038cc", }))).not.toThrow();
+    expect(() => assertValidRule(list({}, { 红: "#f00" }))).not.toThrow();
+  });
+
+  it.each([
+    ["a colour for a non-item", { 蓝: "#0000ff" }],
+    ["a named colour", { 红: "red" }],
+    ["an rgb() string", { 红: "rgb(1,2,3)" }],
+    ["a malformed hex", { 红: "#ff00" }],
+    ["a non-string", { 红: 12 as never }]
+  ])("rejects %s", (_label, colors) => {
+    expect(() => assertValidRule(list({}, colors as Record<string, string>))).toThrow(CyExcelError);
+  });
+
+  it("rejects colors that is not a plain object", () => {
+    const bad = { ...list(), criteria: { type: "list", items: ["a"], colors: ["#fff"] } } as unknown as DataValidationRule;
+    expect(() => assertValidRule(bad)).toThrow(CyExcelError);
+  });
+
+  describe("describeCellDropdown", () => {
+    it("defaults to arrow mode and carries the current value's colour", () => {
+      const rule = list({}, { 红: "#d93025" });
+      expect(describeCellDropdown(rule, "红")).toEqual({ mode: "arrow", color: "#d93025" });
+      expect(describeCellDropdown(rule, "绿")).toEqual({ mode: "arrow" });
+      expect(describeCellDropdown(rule, undefined)).toEqual({ mode: "arrow" });
+    });
+
+    it("reports the configured mode", () => {
+      expect(describeCellDropdown(list({ renderMode: "custom" }), "红")).toEqual({ mode: "custom" });
+      expect(describeCellDropdown(list({ renderMode: "text" }), "红")).toEqual({ mode: "text" });
+    });
+
+    it("is undefined for non-list rules and when showDropDown is false", () => {
+      expect(describeCellDropdown(whole("w", cell), 1)).toBeUndefined();
+      expect(describeCellDropdown(list({ showDropDown: false }), "红")).toBeUndefined();
+    });
+
+    it("matches numbers by their string form", () => {
+      const rule: DataValidationRule = { id: "n", ranges: cell, criteria: { type: "list", items: ["1"], colors: { "1": "#fff" } } };
+      expect(describeCellDropdown(rule, 1)).toEqual({ mode: "arrow", color: "#fff" });
+    });
   });
 });

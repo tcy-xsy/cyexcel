@@ -191,6 +191,7 @@ const dvValue1 = document.getElementById("dvValue1");
 const dvValue2 = document.getElementById("dvValue2");
 const dvErrorStyle = document.getElementById("dvErrorStyle");
 const dvPrompt = document.getElementById("dvPrompt");
+const dvRenderMode = document.getElementById("dvRenderMode");
 const dvSetButton = document.getElementById("dvSetButton");
 const dvClearButton = document.getElementById("dvClearButton");
 const dvFindButton = document.getElementById("dvFindButton");
@@ -441,8 +442,25 @@ function buildDvRuleFromForm() {
 function buildDvCriteriaFromForm() {
   const type = dvType.value;
   if (type === "list") {
-    const items = dvValue1.value.split(",").map((item) => item.trim()).filter((item) => item !== "");
-    return { criteria: { type: "list", items }, errorStyle: dvErrorStyle.value, errorMessage: `请从 ${items.join("、")} 中选择` };
+    // 每项可以写成 名称=颜色（#rgb / #rrggbb），颜色用作胶囊底色或单元格底色
+    const items = [];
+    const colors = {};
+    for (const entry of dvValue1.value.split(",").map((part) => part.trim()).filter((part) => part !== "")) {
+      const at = entry.lastIndexOf("=");
+      const name = at === -1 ? entry : entry.slice(0, at).trim();
+      if (at !== -1) {
+        colors[name] = entry.slice(at + 1).trim();
+      }
+      if (!items.includes(name)) {
+        items.push(name);
+      }
+    }
+    return {
+      criteria: { type: "list", items, ...(Object.keys(colors).length > 0 ? { colors } : {}) },
+      renderMode: dvRenderMode.value,
+      errorStyle: dvErrorStyle.value,
+      errorMessage: `请从 ${items.join("、")} 中选择`
+    };
   }
   if (type === "custom") {
     // 校验函数按名字注册在实例上，不进快照；规则里只存 { type: "custom", name }
