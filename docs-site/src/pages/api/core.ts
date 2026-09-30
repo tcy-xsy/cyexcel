@@ -1,4 +1,4 @@
-import { pageHeader, section, apiTable, callout } from "../../components/doc";
+import { pageHeader, paragraph, section, apiTable, callout } from "../../components/doc";
 
 export default function coreApiPage(root: HTMLElement): void {
   root.append(pageHeader("API", "CyExcelCore", "无 UI 的核心类。所有写入都经过 Command、Mutation 和 History。"));
@@ -55,6 +55,31 @@ export default function coreApiPage(root: HTMLElement): void {
       { name: "filterByColumn(column, predicate)", type: "void", description: "按谓词过滤行；被过滤的行高度收缩为 0。" },
       { name: "copy(options?) / paste(options?)", type: "Promise", description: "程序化复制和粘贴。" }
     ])
+  );
+
+  const validation = section("数据验证");
+  validation.body.append(
+    paragraph(
+      "规则是区域数据，随快照走，可撤销，也随行列的插入、删除、移动一起搬。用法与示例见「示例 → 数据验证」。"
+    )
+  );
+  root.append(validation.root);
+  root.append(
+    apiTable([
+      { name: "setDataValidation(range | ranges, rule)", type: "string", description: "给一个或多个区域设置规则，返回规则 id。一格至多属于一条规则，重叠部分从旧规则里挖掉。不检查已有数据是否合规。" },
+      { name: "clearDataValidation(range | ranges)", type: "void", description: "清除这些区域上的规则；被挖空的规则整条消失。可撤销。" },
+      { name: "getDataValidations()", type: "readonly DataValidationRule[]", description: "当前全部规则。" },
+      { name: "getDataValidationAt(row, column)", type: "DataValidationRule | undefined", description: "这一格所在的规则。" },
+      { name: "validateCell(row, column)", type: "DataValidationResult", description: "这一格当前的值是否符合规则；没有规则恒为有效。" },
+      { name: "findInvalidCells(range?)", type: "{ row, column }[]", description: "列出违规的格子（Excel 的“圈释无效数据”），缺省扫整张坐标空间。" },
+      { name: "registerDataValidator(name, fn)", type: "Disposer", description: "注册自定义校验函数：同步、纯函数，返回 true / false / 错误文案。实例级，不进快照。" }
+    ])
+  );
+  root.append(
+    callout(
+      "只有编辑器提交会被规则拦截或提示；粘贴、填充、setCell() 只标记不拦截。" +
+        "构造选项 dataValidation.showInvalidMarks: false 可关闭红色小三角。"
+    )
   );
 
   root.append(callout("结构操作使用下标。插入或删除列后，原有列下标会按新坐标空间解释。"));
