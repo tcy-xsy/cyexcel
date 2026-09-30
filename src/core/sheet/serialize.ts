@@ -6,6 +6,7 @@ import { assertCanonicalIndexKeys } from "./indexKey";
 import type { CellRecord, ColumnMeta, RowMeta, SheetSnapshot, WorkbookSnapshot } from "./types";
 import { SNAPSHOT_VERSION } from "./types";
 import { assertResourceSheetId, assertValidResourceEntry } from "./resources";
+import { assertValidRules, type DataValidationRule } from "./validations";
 
 export interface SerializeInput {
   readonly id: string;
@@ -19,6 +20,7 @@ export interface SerializeInput {
   readonly rowData: Readonly<Record<number, RowMeta>>;
   readonly columnData: Readonly<Record<number, ColumnMeta>>;
   readonly mergeData: readonly CellRange[];
+  readonly dataValidations?: readonly DataValidationRule[];
 }
 
 export interface DeserializeOutput {
@@ -33,6 +35,7 @@ export interface DeserializeOutput {
   readonly rowData: Readonly<Record<number, RowMeta>>;
   readonly columnData: Readonly<Record<number, ColumnMeta>>;
   readonly mergeData: readonly CellRange[];
+  readonly dataValidations: readonly DataValidationRule[];
 }
 
 export function serializeSheet(input: SerializeInput): SheetSnapshot {
@@ -54,7 +57,11 @@ export function serializeSheet(input: SerializeInput): SheetSnapshot {
     cellData,
     rowData: { ...input.rowData },
     columnData: { ...input.columnData },
-    mergeData: [...input.mergeData]
+    mergeData: [...input.mergeData],
+    // 空时不写字段：没用数据验证的表，快照与升级前逐字节一致
+    ...(input.dataValidations !== undefined && input.dataValidations.length > 0
+      ? { dataValidations: [...input.dataValidations] }
+      : {})
   };
 }
 
@@ -65,6 +72,8 @@ export function deserializeSheet(snapshot: SheetSnapshot): DeserializeOutput {
   // 成 NaN/负数后悄悄丢行或污染坐标空间。
   const label = `sheets.${snapshot.id}`;
   assertValidSheetKeys(snapshot, label);
+  // 快照是公开 API 的入口，规则形状与"区域互不相交"在这里一并查掉
+  assertValidRules(snapshot.dataValidations ?? []);
   const matrix = new CellMatrix();
   for (const rowKey of Object.keys(snapshot.cellData)) {
     const row = Number(rowKey);
@@ -102,7 +111,8 @@ export function deserializeSheet(snapshot: SheetSnapshot): DeserializeOutput {
     matrix,
     rowData: { ...snapshot.rowData },
     columnData: { ...snapshot.columnData },
-    mergeData: [...snapshot.mergeData]
+    mergeData: [...snapshot.mergeData],
+    dataValidations: [...(snapshot.dataValidations ?? [])]
   };
 }
 

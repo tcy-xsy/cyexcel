@@ -79,7 +79,8 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
         // 施加删除之前的完整合并区数组。`delete` 会让全覆盖被删区间的合并区整条
         // 消失，`insert` 无从凭空造出一条——这是真正的信息丢失（决策 3），必须捕获
         // 整份数组，而不是只捕获消失掉的那几条。
-        mergesBefore: model.merges()
+        mergesBefore: model.merges(),
+        validationsBefore: model.validations()
       };
     }
 
@@ -119,7 +120,8 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
         meta,
         tables: capturePluginTables(model, "column", mutation.start, mutation.count),
         // 同上——列轴同理，见 `delete-rows` 分支的注释。
-        mergesBefore: model.merges()
+        mergesBefore: model.merges(),
+        validationsBefore: model.validations()
       };
     }
 
@@ -145,6 +147,9 @@ export function invertSheetMutation(model: SheetModel, mutation: SheetMutation):
     // 哑变更，求逆不需要算增量，只需要带上施加之前的整份状态。
     case "set-merges":
       return { type: "set-merges", merges: model.merges() };
+
+    case "set-validations":
+      return { type: "set-validations", validations: model.validations() };
   }
 }
 
@@ -278,6 +283,7 @@ function assertMutationIsAppliable(model: SheetModel, mutation: SheetMutation): 
     case "set-row-meta":
     case "set-column-meta":
     case "set-merges":
+    case "set-validations":
       return;
   }
 }

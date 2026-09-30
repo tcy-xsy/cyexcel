@@ -12,13 +12,13 @@ import type { CellValue } from "./types";
  */
 
 /** 单轴上的闭区间 `[start, end]`，`start <= end`。 */
-type AxisInterval = readonly [start: number, end: number];
+export type AxisInterval = readonly [start: number, end: number];
 
-function axisInterval(range: CellRange, axis: "row" | "column"): AxisInterval {
+export function axisInterval(range: CellRange, axis: "row" | "column"): AxisInterval {
   return axis === "row" ? [range.startRow, range.endRow] : [range.startColumn, range.endColumn];
 }
 
-function withAxisInterval(range: CellRange, axis: "row" | "column", interval: AxisInterval): CellRange {
+export function withAxisInterval(range: CellRange, axis: "row" | "column", interval: AxisInterval): CellRange {
   const [start, end] = interval;
   return axis === "row"
     ? { ...range, startRow: start, endRow: end }
@@ -164,7 +164,7 @@ export function buildMergeClearGrid(range: CellRange): readonly (readonly (CellV
  * - `start > mEnd`：插入点在合并区结束之后，不受影响。
  * - 否则（`mStart < start <= mEnd`）：插入点严格落在合并区内部，撑大合并区。
  */
-function relocateIntervalForInsert(
+export function relocateIntervalForInsert(
   mStart: number,
   mEnd: number,
   start: number,
@@ -188,7 +188,7 @@ function relocateIntervalForInsert(
  * - `delStart <= mStart && delEnd >= mEnd`：全覆盖，合并区消失。
  * - 否则：部分重叠（删上沿/删下沿/删中段三种子情形之一），收缩、闭合空洞。
  */
-function relocateIntervalForDelete(
+export function relocateIntervalForDelete(
   mStart: number,
   mEnd: number,
   start: number,

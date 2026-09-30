@@ -47,6 +47,17 @@ export type {
   ChangeSet,
   SemanticChange
 } from "./data";
+export type {
+  CustomValidatorContext,
+  CustomValidatorFn,
+  DataValidationCriteria,
+  DataValidationCriteriaInput,
+  DataValidationRule,
+  DataValidationRuleInput,
+  ValidationErrorStyle,
+  ValidationOperator,
+  DataValidationResult
+} from "./sheet/validations";
 export type { ModelRevision } from "./model";
 export type { TransactionReadView } from "./mutations";
 
@@ -61,6 +72,10 @@ export {
   type MergeCellsCommandParams,
   UnmergeCellsCommand,
   type UnmergeCellsCommandParams,
+  SetDataValidationCommand,
+  type SetDataValidationCommandParams,
+  ClearDataValidationCommand,
+  type ClearDataValidationCommandParams,
   ClearRangeCommand,
   type ClearRangeCommandParams,
   InsertRowsCommand,

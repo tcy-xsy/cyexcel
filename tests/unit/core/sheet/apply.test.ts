@@ -31,7 +31,7 @@ describe("applySheetMutation — writeTables 的守卫", () => {
       rows: [{}],
       meta: [undefined],
       tables: { "com.acme.nope": ["x"] },
-      mergesBefore: []
+      mergesBefore: [], validationsBefore: []
     };
     expect(() => {
       applySheetMutation(modelWithoutTables(), mutation);
@@ -107,7 +107,7 @@ describe("estimateSheetMutationBytes", () => {
       rows: [{ 0: { v: 1 } }],
       meta: [{ h: 20 }],
       tables: {},
-      mergesBefore: []
+      mergesBefore: [], validationsBefore: []
     },
     { type: "move-rows", start: 0, count: 1, target: 2 },
     { type: "reorder-rows", order: Int32Array.from([1, 0]) },
@@ -120,7 +120,7 @@ describe("estimateSheetMutationBytes", () => {
       cells: [{ 0: { v: 1 } }],
       meta: [{ w: 10 }],
       tables: {},
-      mergesBefore: []
+      mergesBefore: [], validationsBefore: []
     },
     { type: "move-columns", start: 0, count: 1, target: 2 },
     { type: "set-row-meta", row: 0, meta: { h: 20 } },
@@ -152,7 +152,7 @@ describe("estimateSheetMutationBytes", () => {
       rows,
       meta: [],
       tables: {},
-      mergesBefore: []
+      mergesBefore: [], validationsBefore: []
     });
     const del = estimateSheetMutationBytes({ type: "delete-rows", start: 0, count: 100 });
     expect(restore).toBeGreaterThan(del * 100);
@@ -183,7 +183,7 @@ describe("estimateSheetMutationBytes", () => {
       rows: [{}],
       meta: [undefined],
       tables: {},
-      mergesBefore: []
+      mergesBefore: [], validationsBefore: []
     };
     const withEntries: SheetMutation = {
       type: "restore-rows",
@@ -191,7 +191,7 @@ describe("estimateSheetMutationBytes", () => {
       rows: [{}],
       meta: [undefined],
       tables: { "com.acme.rowKeys": ["k"] },
-      mergesBefore: []
+      mergesBefore: [], validationsBefore: []
     };
     expect(estimateSheetMutationBytes(withEntries)).toBeGreaterThan(estimateSheetMutationBytes(base));
   });

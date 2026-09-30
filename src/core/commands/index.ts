@@ -5,6 +5,8 @@ export { SetRangeCommand, type SetRangeCommandParams } from "./SetRangeCommand";
 export { SetStyleCommand, type SetStyleCommandParams } from "./SetStyleCommand";
 export { MergeCellsCommand, type MergeCellsCommandParams } from "./MergeCellsCommand";
 export { UnmergeCellsCommand, type UnmergeCellsCommandParams } from "./UnmergeCellsCommand";
+export { SetDataValidationCommand, type SetDataValidationCommandParams } from "./SetDataValidationCommand";
+export { ClearDataValidationCommand, type ClearDataValidationCommandParams } from "./ClearDataValidationCommand";
 export { ClearRangeCommand, type ClearRangeCommandParams } from "./ClearRangeCommand";
 export { InsertRowsCommand, type InsertRowsCommandParams } from "./InsertRowsCommand";
 export { DeleteRowsCommand, type DeleteRowsCommandParams } from "./DeleteRowsCommand";

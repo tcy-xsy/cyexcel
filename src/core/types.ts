@@ -76,6 +76,12 @@ export type Patch =
    */
   | { readonly type: "merge-layout" }
   /**
+   * A whole-sheet "data validation rules changed" marker, carrying no fields.
+   * Rules only change which cells show an invalid mark, never geometry, so
+   * downstream repaints cell content and nothing else.
+   */
+  | { readonly type: "validation-layout" }
+  /**
    * One atomic row-height mutation. `rows` names every changed row while
    * `range` starts at the earliest one because its geometry shift affects
    * every row below it.

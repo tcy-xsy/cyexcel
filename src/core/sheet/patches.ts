@@ -163,5 +163,10 @@ export function changesForSheetMutation(
       // 也没有 `row-structure`/`column-structure` 那套下标位移形状，是一整片
       // 几何/绘制方式的整体标记，不携带增量范围。`merge-layout` 完全没有字段。
       return [{ type: "merge-layout" }];
+
+    case "set-validations":
+      // 与 `merge-layout` 同一类：不描述某格的值变了，只是"哪些格子带校验标记"变了，
+      // 整体重绘内容层即可
+      return [{ type: "validation-layout" }];
   }
 }

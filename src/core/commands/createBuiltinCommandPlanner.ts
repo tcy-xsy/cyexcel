@@ -1,7 +1,9 @@
 import { buildMergeClearGrid, rangesIntersect, resolveMergeCells } from "../sheet/merges";
+import { applyRule, assertValidRule, clearRanges } from "../sheet/validations";
 import type { CellRange, CommandContext } from "../types";
 import type { CellValue } from "../sheet/types";
 import { assertValidRange } from "../validation";
+import type { ClearDataValidationCommand } from "./ClearDataValidationCommand";
 import type { ClearRangeCommand } from "./ClearRangeCommand";
 import { CommandHandlerRegistry } from "./CommandHandlerRegistry";
 import type { DeleteColumnsCommand } from "./DeleteColumnsCommand";
@@ -18,6 +20,7 @@ import type { ResizeColumnCommand } from "./ResizeColumnCommand";
 import type { ResizeRowCommand } from "./ResizeRowCommand";
 import type { SetCellCommand } from "./SetCellCommand";
 import type { SetCellImageCommand } from "./SetCellImageCommand";
+import type { SetDataValidationCommand } from "./SetDataValidationCommand";
 import type { SetRangeCommand } from "./SetRangeCommand";
 import type { SetStyleCommand } from "./SetStyleCommand";
 import type { SetRowHeightsCommand } from "./SetRowHeightsCommand";
@@ -130,6 +133,21 @@ export function createBuiltinCommandPlanner(options: BuiltinCommandPlannerOption
       assertValidRange(range);
       const remaining = context.model.merges().filter((merge) => !rangesIntersect(merge, range));
       context.stage(options.data.createSetMerges(remaining));
+    }
+  });
+  registry.register<SetDataValidationCommand>({
+    type: "set-data-validation",
+    plan: ({ rule }, context) => {
+      assertValidRule(rule);
+      // 重叠决策唯一入口是 `applyRule`：先挖掉旧规则的重叠部分，再追加新规则
+      context.stage(options.data.createSetValidations(applyRule(context.model.validations(), rule)));
+    }
+  });
+  registry.register<ClearDataValidationCommand>({
+    type: "clear-data-validation",
+    plan: ({ ranges }, context) => {
+      ranges.forEach(assertValidRange);
+      context.stage(options.data.createSetValidations(clearRanges(context.model.validations(), ranges)));
     }
   });
   registry.register<ClearRangeCommand>({

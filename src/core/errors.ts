@@ -35,7 +35,9 @@ export const CyExcelErrorCode = {
   MergeOverlapsExistingMerge: "merge-overlaps-existing-merge",
   MergeSpansMoveBoundary: "merge-spans-move-boundary",
   /** 设置样式时 numFmt pattern 不合法（Step 24）。在设置时抛，不等到渲染。 */
-  InvalidNumberFormat: "invalid-number-format"
+  InvalidNumberFormat: "invalid-number-format",
+  /** 数据验证规则形状不合法（`setDataValidation` 入参、快照里的 `dataValidations`）。 */
+  InvalidDataValidation: "invalid-data-validation"
 } as const;
 
 export type CyExcelErrorCode =

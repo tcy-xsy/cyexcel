@@ -12,7 +12,7 @@ function onlyPatch(mutation: SheetMutation, space: SheetAxisSpace = SPACE): Patc
   return patches[0] as Patch;
 }
 
-describe("changesForSheetMutation — 十四个成员一条不落", () => {
+describe("changesForSheetMutation — 十五个成员一条不落", () => {
   const table: readonly { mutation: SheetMutation; patchType: Patch["type"] }[] = [
     { mutation: { type: "set-cell", row: 0, column: 0, record: { v: 1 } }, patchType: "cell-value" },
     {
@@ -32,7 +32,7 @@ describe("changesForSheetMutation — 十四个成员一条不落", () => {
         rows: [{}],
         meta: [undefined],
         tables: {},
-        mergesBefore: []
+        mergesBefore: [], validationsBefore: []
       },
       patchType: "row-structure"
     },
@@ -48,7 +48,7 @@ describe("changesForSheetMutation — 十四个成员一条不落", () => {
         cells: [{}],
         meta: [undefined],
         tables: {},
-        mergesBefore: []
+        mergesBefore: [], validationsBefore: []
       },
       patchType: "column-structure"
     },
@@ -61,13 +61,14 @@ describe("changesForSheetMutation — 十四个成员一条不落", () => {
         merges: [{ startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }]
       },
       patchType: "merge-layout"
-    }
+    },
+    { mutation: { type: "set-validations", validations: [] }, patchType: "validation-layout" }
   ];
 
   it("每个成员都恰好产出一条补丁，类型按 §5 的映射表", () => {
     // 反空洞：上面那张表少抄一个成员，这一条先红。TypeScript 只保证 `switch` 穷尽，
-    // 保证不了这里真的把十四个都过了一遍。
-    expect(new Set(table.map((entry) => entry.mutation.type)).size).toBe(14);
+    // 保证不了这里真的把十五个都过了一遍。
+    expect(new Set(table.map((entry) => entry.mutation.type)).size).toBe(15);
     for (const entry of table) {
       expect(onlyPatch(entry.mutation).type).toBe(entry.patchType);
     }
@@ -88,7 +89,7 @@ describe("changesForSheetMutation — `restore-*` 在下游眼里就是一次插
       rows,
       meta: [undefined, undefined, undefined],
       tables: {},
-      mergesBefore: []
+      mergesBefore: [], validationsBefore: []
     });
     const insert = onlyPatch({ type: "insert-rows", start: 2, rows });
     expect(restore).toStrictEqual(insert);
@@ -103,7 +104,7 @@ describe("changesForSheetMutation — `restore-*` 在下游眼里就是一次插
       cells: [{}, {}],
       meta: [undefined, undefined],
       tables: {},
-      mergesBefore: []
+      mergesBefore: [], validationsBefore: []
     });
     const insert = onlyPatch({ type: "insert-columns", start: 1, count: 2 });
     expect(restore).toStrictEqual(insert);
@@ -218,6 +219,23 @@ describe("changesForSheetMutation — `set-column-meta` → `column-layout`", ()
  * 标记（`doc/merge-cells-plan.md` §Task 5）。传入的 `merges` 载荷本身不出现在补丁
  * 里——下游按全量重画处理，不需要知道具体是哪些区被合并/取消合并了。
  */
+describe("changesForSheetMutation — `set-validations` → `validation-layout`", () => {
+  it("不带任何字段，规则载荷不会泄漏进补丁", () => {
+    expect(
+      onlyPatch({
+        type: "set-validations",
+        validations: [
+          {
+            id: "a",
+            ranges: [{ startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }],
+            criteria: { type: "list", items: ["x"] }
+          }
+        ]
+      })
+    ).toStrictEqual({ type: "validation-layout" });
+  });
+});
+
 describe("changesForSheetMutation — `set-merges` → `merge-layout`", () => {
   it("不带任何字段，`merges` 载荷不会泄漏进补丁", () => {
     expect(

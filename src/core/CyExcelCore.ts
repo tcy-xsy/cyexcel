@@ -30,6 +30,8 @@ import {
   SetStyleCommand,
   MergeCellsCommand,
   UnmergeCellsCommand,
+  SetDataValidationCommand,
+  ClearDataValidationCommand,
   InsertRowsCommand,
   DeleteRowsCommand,
   MoveRowsCommand,
@@ -63,6 +65,7 @@ import {
 import { formatCellText } from "./style/formatCellText";
 import { buildCopyHtml, CopyStyleCache, styleAt, type CopiedStyles } from "./clipboard/styleClipboard";
 import { assertValidCoordinate, assertValidRange } from "./validation";
+import { CyExcelError, CyExcelErrorCode } from "./errors";
 import type { CellStylePatch } from "./style/styleKey";
 import { STYLE_KEYS, type CellStyle } from "./style/types";
 import {
@@ -73,6 +76,18 @@ import {
   type WorkbookSnapshot
 } from "./sheet";
 import { expandRangeForMerges, findMergeAt, mergesIntersectingRange } from "./sheet/merges";
+import {
+  buildRule,
+  collectInvalidCells,
+  findRuleAt,
+  intersectRanges,
+  validateValue,
+  type CustomValidatorFn,
+  type DataValidationRule,
+  type DataValidationRuleInput,
+  type ValidateOptions,
+  type DataValidationResult
+} from "./sheet/validations";
 import type { CellEditorFactory } from "./editors";
 import { EditorManager } from "./editors";
 import { EventBus } from "./events";
@@ -539,6 +554,11 @@ function createBrowserClipboardIO(): ClipboardIO {
   };
 }
 
+/** 规则 id：不与快照里已有的 id 撞车即可，不需要密码学强度。 */
+function generateValidationId(): string {
+  return `dv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 /**
  * 从入口的 `snapshot` 装载存储模型，没给就建一张空表（ADR 0004 §3.1）。
  *
@@ -778,6 +798,8 @@ export class CyExcelCore {
    */
   #focusFromPointer = false;
   #disposed = false;
+  /** 自定义校验函数，按名字索引。实例级，不进快照。 */
+  readonly #customValidators = new Map<string, CustomValidatorFn>();
   /** Top widgets (toolbar/formula bar) constructed from `options.topWidgets` — disposed alongside `this`. */
   #topWidgetHandles: readonly TopWidgetHandle[] = [];
   #topWidgetHost: HTMLDivElement | undefined;
@@ -1595,6 +1617,96 @@ export class CyExcelCore {
    */
   unmergeCells(range: CellRange): void {
     this.#enqueueOrRunMutation(() => this.#applyCommandNow(new UnmergeCellsCommand(range)));
+  }
+
+  /**
+   * 给一个或多个区域设置数据验证规则，返回规则 `id`。一格至多属于一条规则：新规则会
+   * 从旧规则里挖掉重叠的部分，被挖空的旧规则整条消失。**不检查已有数据是否合规**
+   * （同 Excel），事后用 `findInvalidCells()` 查。
+   *
+   * 校验的时机：编辑器提交时按规则拦截或提示（后续阶段）；粘贴、填充、`setCell()`
+   * 等批量与程序写入**只标记不拦截**。`setCell()` 不经 `#parseEditedValue`，校验看到
+   * 的就是调用方给的值——`"12"` 与 `12` 对 `whole` 的结果不同。
+   */
+  setDataValidation(range: CellRange | readonly CellRange[], rule: DataValidationRuleInput): string {
+    const ranges = Array.isArray(range) ? (range as readonly CellRange[]) : [range as CellRange];
+    ranges.forEach(assertValidRange);
+    const built = buildRule(rule, ranges, generateValidationId);
+    this.#enqueueOrRunMutation(() => this.#applyCommandNow(new SetDataValidationCommand(built)));
+    return built.id;
+  }
+
+  /** 清掉这些区域上的数据验证；区域被挖空的规则整条消失。 */
+  clearDataValidation(range: CellRange | readonly CellRange[]): void {
+    const ranges = Array.isArray(range) ? (range as readonly CellRange[]) : [range as CellRange];
+    this.#enqueueOrRunMutation(() => this.#applyCommandNow(new ClearDataValidationCommand(ranges)));
+  }
+
+  getDataValidations(): readonly DataValidationRule[] {
+    return this.#sheet.validations();
+  }
+
+  getDataValidationAt(row: number, column: number): DataValidationRule | undefined {
+    return findRuleAt(this.#sheet.validations(), row, column);
+  }
+
+  /**
+   * 注册一个自定义校验类型。规则里存 `{ type: "custom", name, params }`，函数本身不进
+   * 快照——每次创建实例都要重新注册。**同步、纯函数**，而且要够便宜：绘制时每帧对可视
+   * 格调用。没注册的名字按"有效"处理，别的环境打开同一份快照不会满屏报错。
+   */
+  registerDataValidator(name: string, validator: CustomValidatorFn): Disposer {
+    if (name === "") {
+      throw new CyExcelError(CyExcelErrorCode.InvalidDataValidation, "validator name must be non-empty");
+    }
+    this.#customValidators.set(name, validator);
+    return () => {
+      if (this.#customValidators.get(name) === validator) {
+        this.#customValidators.delete(name);
+      }
+    };
+  }
+
+  /** 这一格当前的值是否符合它所在的规则。没有规则的格子恒为有效。 */
+  validateCell(row: number, column: number): DataValidationResult {
+    assertValidCoordinate(row, column);
+    const rule = findRuleAt(this.#sheet.validations(), row, column);
+    if (rule === undefined) {
+      return { valid: true };
+    }
+    return validateValue(rule, this.#store.getCell(row, column) as CellValue | undefined, this.#validateOptions(row, column));
+  }
+
+  /**
+   * 列出 `range`（缺省整张表）里不符合规则的格子——对应 Excel 的"圈释无效数据"。
+   * 只扫坐标空间以内的格子；空格子只有在规则 `allowBlank: false` 时才算无效。
+   */
+  findInvalidCells(range?: CellRange): { readonly row: number; readonly column: number }[] {
+    const bounds: CellRange = {
+      startRow: 0,
+      startColumn: 0,
+      endRow: this.#sheet.rowCount() - 1,
+      endColumn: this.#sheet.columnCount() - 1
+    };
+    const scope = range === undefined ? bounds : intersectRanges(range, bounds);
+    if (scope === undefined) {
+      return [];
+    }
+    return collectInvalidCells(
+      this.#sheet.validations(),
+      scope,
+      (row, column) => this.#store.getCell(row, column) as CellValue | undefined,
+      (row, column) => this.#validateOptions(row, column)
+    );
+  }
+
+  #validateOptions(row: number, column: number): ValidateOptions {
+    return {
+      getCustomValidator: (name) => this.#customValidators.get(name),
+      row,
+      column,
+      getCell: (r, c) => this.#store.getCell(r, c) as CellValue | undefined
+    };
   }
 
   /**

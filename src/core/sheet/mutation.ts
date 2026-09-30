@@ -1,5 +1,6 @@
 import type { CellRange } from "../types";
 import type { CellRecord, ColumnMeta, RowMeta } from "./types";
+import type { DataValidationRule } from "./validations";
 
 /** 一行的格子：列号 -> 记录。稀疏，未占用的列不出现（spec §11 不变量 1）。 */
 export type RowCells = Readonly<Record<number, CellRecord>>;
@@ -105,6 +106,8 @@ export type SheetMutation =
       readonly meta: readonly (RowMeta | undefined)[];
       readonly tables: SideTableEntries;
       readonly mergesBefore: readonly CellRange[];
+      /** 同 `mergesBefore`：删除会让规则区域收缩或消失，撤销要整份回写。 */
+      readonly validationsBefore: readonly DataValidationRule[];
     }
   | { readonly type: "move-rows"; readonly start: number; readonly count: number; readonly target: number }
   | { readonly type: "reorder-rows"; readonly order: Int32Array }
@@ -118,6 +121,7 @@ export type SheetMutation =
       readonly meta: readonly (ColumnMeta | undefined)[];
       readonly tables: SideTableEntries;
       readonly mergesBefore: readonly CellRange[];
+      readonly validationsBefore: readonly DataValidationRule[];
     }
   | { readonly type: "move-columns"; readonly start: number; readonly count: number; readonly target: number }
   // `meta: undefined` 表示"这一行/列原先在 `rowData` / `columnData` 里没有条目"，
@@ -128,7 +132,10 @@ export type SheetMutation =
   // 合并区是整体替换的哑变更，与 `set-row-meta` / `set-column-meta` 同一类
   // （见下面 `isStructuralSheetMutation` 的口径）：不移动任何下标，只是换一整份
   // 状态。求逆同样是"读现在的整份 `merges()`"，见 `invert.ts`。
-  | { readonly type: "set-merges"; readonly merges: readonly CellRange[] };
+  | { readonly type: "set-merges"; readonly merges: readonly CellRange[] }
+  // 数据验证规则也是整体替换的哑变更，与 `set-merges` 同一类：区域几何与重叠决策
+  // 在 plan 期由 `validations.ts` 的纯函数做完，这里只带最终整份列表。
+  | { readonly type: "set-validations"; readonly validations: readonly DataValidationRule[] };
 
 const STRUCTURAL = new Set<SheetMutation["type"]>([
   "insert-rows",

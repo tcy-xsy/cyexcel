@@ -22,6 +22,12 @@ import {
   relocateMergesForInsert,
   relocateMergesForMove
 } from "./merges";
+import {
+  relocateValidationsForDelete,
+  relocateValidationsForInsert,
+  relocateValidationsForMove,
+  type DataValidationRule
+} from "./validations";
 import { validateAxisChange } from "../layout/structuralChange";
 import { assertValidRowOrder } from "../layout/rowOrder";
 
@@ -75,6 +81,7 @@ export class SheetModel {
   readonly #rowData: IndexedTable<RowMeta>;
   readonly #columnData: IndexedTable<ColumnMeta>;
   #mergeData: readonly CellRange[];
+  #validationData: readonly DataValidationRule[];
   readonly #id: string;
   readonly #name: string;
   #blankRows: number;
@@ -88,6 +95,7 @@ export class SheetModel {
     rowData: Readonly<Record<number, RowMeta>>;
     columnData: Readonly<Record<number, ColumnMeta>>;
     mergeData: readonly CellRange[];
+    dataValidations: readonly DataValidationRule[];
     id: string;
     name: string;
     blankRows: number;
@@ -104,6 +112,7 @@ export class SheetModel {
       new IndexedTable<ColumnMeta>("columnData", "column", init.columnData)
     );
     this.#mergeData = init.mergeData;
+    this.#validationData = init.dataValidations;
     this.#id = init.id;
     this.#name = init.name;
     this.#blankRows = init.blankRows;
@@ -119,6 +128,7 @@ export class SheetModel {
       rowData: {},
       columnData: {},
       mergeData: [],
+      dataValidations: [],
       id: options.id ?? "sheet-1",
       name: options.name ?? "Sheet1",
       blankRows: options.blankRows ?? DEFAULT_BLANK_ROWS,
@@ -137,6 +147,7 @@ export class SheetModel {
       rowData: restored.rowData,
       columnData: restored.columnData,
       mergeData: restored.mergeData,
+      dataValidations: restored.dataValidations,
       id: restored.id,
       name: restored.name,
       blankRows: restored.blankRows,
@@ -171,6 +182,7 @@ export class SheetModel {
       rowData: this.#rowData.read(),
       columnData: this.#columnData.read(),
       mergeData: this.#mergeData,
+      dataValidations: this.#validationData,
       id: this.#id,
       name: this.#name,
       blankRows: this.#blankRows,
@@ -340,6 +352,7 @@ export class SheetModel {
       rowData: this.#rowData.read(),
       columnData: this.#columnData.read(),
       mergeData: this.#mergeData,
+      dataValidations: this.#validationData,
       ...(this.#freeze !== undefined ? { freeze: this.#freeze } : {})
     });
   }
@@ -457,6 +470,7 @@ export class SheetModel {
     const space = this.rowCount();
     validateAxisChange({ axis: "row", operation: "insert", start, count }, space);
     this.#mergeData = relocateMergesForInsert(this.#mergeData, "row", start, count);
+    this.#validationData = relocateValidationsForInsert(this.#validationData, "row", start, count);
     const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildInsertRowsPlan(extent, start, count), extent);
     this.#pinRowSpace(space + count);
@@ -466,6 +480,7 @@ export class SheetModel {
     const space = this.rowCount();
     validateAxisChange({ axis: "row", operation: "delete", start, count }, space);
     this.#mergeData = relocateMergesForDelete(this.#mergeData, "row", start, count);
+    this.#validationData = relocateValidationsForDelete(this.#validationData, "row", start, count);
     const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildDeleteRowsPlan(extent, start, count), extent);
     this.#pinRowSpace(space - count);
@@ -482,6 +497,7 @@ export class SheetModel {
       throw new CyExcelError(CyExcelErrorCode.MergeSpansMoveBoundary, "moveRows would split a merged range");
     }
     this.#mergeData = relocated.merges;
+    this.#validationData = relocateValidationsForMove(this.#validationData, "row", start, count, target);
     const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildMoveRowsPlan(extent, start, count, target), extent);
     this.#pinRowSpace(space);
@@ -529,6 +545,7 @@ export class SheetModel {
     const space = this.columnCount();
     validateAxisChange({ axis: "column", operation: "insert", start, count }, space);
     this.#mergeData = relocateMergesForInsert(this.#mergeData, "column", start, count);
+    this.#validationData = relocateValidationsForInsert(this.#validationData, "column", start, count);
     const shift = buildInsertColumnsShift(start, count);
     this.#matrix.insertColumns(start, count);
     this.#tables.applyColumnShift(shift);
@@ -539,6 +556,7 @@ export class SheetModel {
     const space = this.columnCount();
     validateAxisChange({ axis: "column", operation: "delete", start, count }, space);
     this.#mergeData = relocateMergesForDelete(this.#mergeData, "column", start, count);
+    this.#validationData = relocateValidationsForDelete(this.#validationData, "column", start, count);
     const shift = buildDeleteColumnsShift(start, count);
     this.#matrix.deleteColumns(start, count);
     this.#tables.applyColumnShift(shift);
@@ -559,6 +577,7 @@ export class SheetModel {
       );
     }
     this.#mergeData = relocated.merges;
+    this.#validationData = relocateValidationsForMove(this.#validationData, "column", start, count, target);
     const shift = buildMoveColumnsShift(start, count, target);
     this.#matrix.moveColumns(start, count, target);
     this.#tables.applyColumnShift(shift);
@@ -648,6 +667,26 @@ export class SheetModel {
    */
   setMerges(merges: readonly CellRange[]): void {
     this.#mergeData = Object.freeze(merges.map((range) => Object.freeze({ ...range })));
+  }
+
+  validations(): readonly DataValidationRule[] {
+    return this.#validationData;
+  }
+
+  /**
+   * 整体替换数据验证规则列表，与 `setMerges` 同一口径：几何与重叠决策（`applyRule` /
+   * `clearRanges`）由调用方在这一侧做完，这里只管冻结落地。**不查形状**——形状由
+   * `setDataValidation` 入口与 `deserializeSheet` 各自校验，撤销重放的是已经过校验的
+   * 状态。
+   *
+   * 排序（`reorderRows`）不碰规则：规则记的是区域而不是行，排序前后覆盖范围不变。
+   */
+  setValidations(rules: readonly DataValidationRule[]): void {
+    this.#validationData = Object.freeze(
+      rules.map((rule) =>
+        Object.freeze({ ...rule, ranges: Object.freeze(rule.ranges.map((range) => Object.freeze({ ...range }))) })
+      )
+    );
   }
 
   occupiedCount(): number {

@@ -310,7 +310,7 @@ describe("invertSheetMutation — 纯算术分支的形状", () => {
         rows: [{ 1: { v: "y" } }, {}],
         meta: [{ h: 30 }, undefined],
         tables: {},
-        mergesBefore: []
+        mergesBefore: [], validationsBefore: []
       })
     ).toStrictEqual({ type: "delete-rows", start: 2, count: 2 });
   });
@@ -332,7 +332,7 @@ describe("invertSheetMutation — 纯算术分支的形状", () => {
         cells: [{ 0: { v: "z" } }, {}, {}],
         meta: [{ w: 80 }, undefined, undefined],
         tables: {},
-        mergesBefore: []
+        mergesBefore: [], validationsBefore: []
       })
     ).toStrictEqual({ type: "delete-columns", start: 1, count: 3 });
   });
@@ -621,7 +621,7 @@ describe("invertSheetMutation — 插入/删除/restore 不再因合并区被拒
         rows: [{}],
         meta: [undefined],
         tables: {},
-        mergesBefore: []
+        mergesBefore: [], validationsBefore: []
       })
     ).not.toThrow();
     expect(() =>
@@ -632,7 +632,7 @@ describe("invertSheetMutation — 插入/删除/restore 不再因合并区被拒
         cells: [{}],
         meta: [undefined],
         tables: {},
-        mergesBefore: []
+        mergesBefore: [], validationsBefore: []
       })
     ).not.toThrow();
   });
@@ -916,7 +916,7 @@ describe("invertSheetMutation — 任务三那道临时守卫已撤除", () => {
       rows: [{ 0: { v: "a1" }, 2: { v: "c1", s: "s1" } }, { 1: { v: "b2", f: "=1+1" } }],
       meta: [{ h: 40 }, undefined],
       tables: sideTables({ "com.acme.rowKeys": ["k1", undefined] }),
-      mergesBefore: []
+      mergesBefore: [], validationsBefore: []
     });
 
     expect(invertSheetMutation(model, { type: "delete-columns", start: 0, count: 1 })).toStrictEqual({
@@ -926,7 +926,7 @@ describe("invertSheetMutation — 任务三那道临时守卫已撤除", () => {
       cells: [{ 0: { v: "a0" }, 1: { v: "a1" }, 3: { v: "a3" } }],
       meta: [{ w: 100 }],
       tables: sideTables({ "com.acme.colTags": ["t0"] }),
-      mergesBefore: []
+      mergesBefore: [], validationsBefore: []
     });
   });
 });
@@ -1066,7 +1066,7 @@ describe("invertSheetMutation — restore-* 的 tables 校验", () => {
       meta: [undefined, undefined],
       // 两行的 restore 带了三条条目，第三条会落到 insert 往下推的那一行上
       tables: sideTables({ "com.acme.rowKeys": ["a", "b", "c"] }),
-      mergesBefore: []
+      mergesBefore: [], validationsBefore: []
     };
     const error = grabError(() => invertSheetMutation(model, mutation));
     expect(error).toBeInstanceOf(CyExcelError);
@@ -1082,7 +1082,7 @@ describe("invertSheetMutation — restore-* 的 tables 校验", () => {
         rows: [{}],
         meta: [undefined],
         tables: sideTables({ "com.acme.nope": ["a"] }),
-        mergesBefore: []
+        mergesBefore: [], validationsBefore: []
       })
     );
     expect(error).toBeInstanceOf(CyExcelError);
@@ -1098,7 +1098,7 @@ describe("invertSheetMutation — restore-* 的 tables 校验", () => {
         meta: [undefined],
         // 这是一张列表，拿它的条目去写行下标
         tables: sideTables({ "com.acme.colTags": ["a"] }),
-        mergesBefore: []
+        mergesBefore: [], validationsBefore: []
       })
     );
     expect(error).toBeInstanceOf(CyExcelError);

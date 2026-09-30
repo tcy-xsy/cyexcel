@@ -57,6 +57,8 @@ function patchKey(patch: KeyedPatch): string {
       ].join(":");
     case "merge-layout":
       return "merge-layout";
+    case "validation-layout":
+      return "validation-layout";
     case "row-visibility":
       return "row-visibility";
     case "full-reset":

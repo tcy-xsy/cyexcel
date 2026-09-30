@@ -32,6 +32,7 @@ import { createGridStructurePayload } from "./GridStructureOwner";
 import type { GridStructureOwner } from "./GridStructureOwner";
 import type { CellStylePatch } from "../style/styleKey";
 import type { CellValue } from "../sheet/types";
+import type { DataValidationRule } from "../sheet/validations";
 
 const STANDALONE_COMMAND_HOOKS: HookRegistry = {
   beforeCommand: BEFORE_COMMAND_HOOK,
@@ -85,6 +86,10 @@ export class TableDataCommandMutationFactory implements DataCommandMutationFacto
 
   createSetMerges(merges: readonly CellRange[]): Mutation {
     return this.#store.createSetMergesMutation(merges);
+  }
+
+  createSetValidations(validations: readonly DataValidationRule[]): Mutation {
+    return this.#store.createSetValidationsMutation(validations);
   }
 
   createInsertRows(start: number, rows: readonly (readonly (CellValue | null | undefined)[])[]): Mutation {

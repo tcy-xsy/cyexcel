@@ -2,6 +2,7 @@ import { CyExcelError, CyExcelErrorCode } from "../errors";
 import type { ModelRevision } from "../model";
 import type { TransactionReadView } from "../mutations/types";
 import type { CellRange } from "../types";
+import type { DataValidationRule } from "./validations";
 import { applySheetMutation, estimateSheetMutationBytes } from "./apply";
 import { invertSheetMutation } from "./invert";
 import type { SheetMutation } from "./mutation";
@@ -98,6 +99,11 @@ export class SheetTransaction implements TransactionReadView {
   /** 影子上的合并区表，`getRowCount`/`getColumnCount` 同一条口径，不查 dispose。 */
   merges(): readonly CellRange[] {
     return this.#shadow.merges();
+  }
+
+  /** 影子上的数据验证规则，与 `merges()` 同一条口径。 */
+  validations(): readonly DataValidationRule[] {
+    return this.#shadow.validations();
   }
 
   /** 裸值（ADR 0004 §3.6）——`TransactionReadView` 要的正是这个，不需要适配。 */

@@ -104,7 +104,7 @@ describe("SheetTransaction — prepare 不得触碰活状态", () => {
         rows: [{}],
         meta: [undefined],
         tables: { "com.acme.notRegistered": [undefined] },
-        mergesBefore: []
+        mergesBefore: [], validationsBefore: []
       })
     ).toThrow(CyExcelError);
     expect(workbook.toSnapshot()).toStrictEqual(before);

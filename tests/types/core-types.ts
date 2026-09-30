@@ -6,6 +6,8 @@ import {
   type Command,
   type CyExcelCoreOptions,
   type CyExcelPlugin,
+  type DataValidationResult,
+  type DataValidationRuleInput,
   type SemanticChange,
   type SceneSnapshot,
   type SelectionSnapshot
@@ -43,6 +45,8 @@ function describeChange(value: SemanticChange): string {
       return `column-layout:${value.column}`;
     case "merge-layout":
       return "merge-layout";
+    case "validation-layout":
+      return "validation-layout";
     case "row-layout":
       return `row-layout:${value.rows.join(",")}`;
     case "full-reset":
@@ -157,3 +161,29 @@ const internalSurface: [
 
 void retainedSurface;
 void internalSurface;
+
+// --- Data validation ------------------------------------------------------
+
+declare const validationSheet: CoreApi.CyExcelCore;
+
+const dateRule: DataValidationRuleInput = {
+  // 日期与时间的判据值可以写成 ISO 字符串，创建时规范化成序列号
+  criteria: { type: "date", operator: "between", value1: "2026-01-01", value2: 46053 },
+  errorStyle: "warning"
+};
+const validationId: string = validationSheet.setDataValidation(range, dateRule);
+const validationResult: DataValidationResult = validationSheet.validateCell(0, 0);
+const invalidCells: readonly { readonly row: number; readonly column: number }[] = validationSheet.findInvalidCells();
+
+validationSheet.setDataValidation([range], { criteria: { type: "list", items: ["a", "b"] } });
+validationSheet.registerDataValidator("even", (value, _params, context) =>
+  typeof value === "number" && value % 2 === 0 ? true : `第 ${context.row} 行需要偶数`
+);
+
+// @ts-expect-error a `whole` rule takes numbers; only date/time accept strings
+const badWhole: DataValidationRuleInput = { criteria: { type: "whole", operator: "equal", value1: "1" } };
+
+void validationId;
+void validationResult;
+void invalidCells;
+void badWhole;

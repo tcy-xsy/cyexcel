@@ -61,6 +61,7 @@ export function applySheetMutation(model: SheetModel, mutation: SheetMutation): 
         writeRows(model, mutation.start, mutation.rows, mutation.meta);
         writeTables(model, mutation.start, mutation.tables);
         model.setMerges(mutation.mergesBefore);
+        model.setValidations(mutation.validationsBefore);
       });
       return;
 
@@ -112,6 +113,7 @@ export function applySheetMutation(model: SheetModel, mutation: SheetMutation): 
         }
         writeTables(model, mutation.start, mutation.tables);
         model.setMerges(mutation.mergesBefore);
+        model.setValidations(mutation.validationsBefore);
       });
       return;
 
@@ -149,6 +151,12 @@ export function applySheetMutation(model: SheetModel, mutation: SheetMutation): 
     case "set-merges":
       writeValues(model, () => {
         model.setMerges(mutation.merges);
+      });
+      return;
+
+    case "set-validations":
+      writeValues(model, () => {
+        model.setValidations(mutation.validations);
       });
       return;
   }
@@ -339,7 +347,8 @@ export function estimateSheetMutationBytes(mutation: SheetMutation): number {
         countRowCells(mutation.rows) * RECORD_BYTES +
         countDefined(mutation.meta) * META_BYTES +
         countTableEntries(mutation.tables) * ENTRY_BYTES +
-        mutation.mergesBefore.length * MERGE_BYTES
+        mutation.mergesBefore.length * MERGE_BYTES +
+        mutation.validationsBefore.length * VALIDATION_BYTES
       );
     case "restore-columns":
       return (
@@ -347,7 +356,8 @@ export function estimateSheetMutationBytes(mutation: SheetMutation): number {
         countRowCells(mutation.cells) * RECORD_BYTES +
         countDefined(mutation.meta) * META_BYTES +
         countTableEntries(mutation.tables) * ENTRY_BYTES +
-        mutation.mergesBefore.length * MERGE_BYTES
+        mutation.mergesBefore.length * MERGE_BYTES +
+        mutation.validationsBefore.length * VALIDATION_BYTES
       );
     case "reorder-rows":
       // `Int32Array` 是这条变更里唯一随表长增长的东西，按它的实际字节数算
@@ -357,6 +367,8 @@ export function estimateSheetMutationBytes(mutation: SheetMutation): number {
       return BASE_BYTES + (mutation.meta === undefined ? 0 : META_BYTES);
     case "set-merges":
       return BASE_BYTES + mutation.merges.length * MERGE_BYTES;
+    case "set-validations":
+      return BASE_BYTES + mutation.validations.length * VALIDATION_BYTES;
     case "delete-rows":
     case "move-rows":
     case "insert-columns":
@@ -371,6 +383,8 @@ export function estimateSheetMutationBytes(mutation: SheetMutation): number {
 const BASE_BYTES = 64;
 /** 一条 `CellRecord`：一个小对象加上 `v`/`t`/`s`/`f` 几个字段。 */
 const RECORD_BYTES = 48;
+/** 一条数据验证规则：对象头加判据、区域数组，粗估。 */
+const VALIDATION_BYTES = 160;
 /** 一条 `RowMeta` / `ColumnMeta`：比记录少几个字段。 */
 const META_BYTES = 32;
 /** 一条插件侧表条目：载荷由插件定义，核心估不了，按小对象算。 */

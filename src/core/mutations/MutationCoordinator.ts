@@ -270,7 +270,8 @@ export class MutationCoordinator {
         getRowCount: () => 0,
         getColumnCount: () => 0,
         getCell: unsupported,
-        merges: () => []
+        merges: () => [],
+        validations: () => []
       },
       prepareData: unsupported,
       readRecord: unsupported,

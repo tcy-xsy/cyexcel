@@ -365,7 +365,8 @@ describe("MutationCoordinator", () => {
         getRowCount: () => 0,
         getColumnCount: () => 0,
         getCell: () => undefined,
-        merges: () => []
+        merges: () => [],
+        validations: () => []
       },
       prepareData: () => {
         throw new Error("not used");

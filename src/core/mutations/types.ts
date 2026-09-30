@@ -4,6 +4,7 @@ import type { SheetMutation } from "../sheet/mutation";
 import type { SheetModel } from "../sheet/SheetModel";
 import type { PreparedSheetMutation } from "../sheet/SheetTransaction";
 import type { CellRecord, ColumnMeta, RowMeta } from "../sheet/types";
+import type { DataValidationRule } from "../sheet/validations";
 import type { CellRange, Patch } from "../types";
 
 export type MutationCoordinatorState =
@@ -118,6 +119,8 @@ export interface TransactionReadView {
    * 不查 dispose：答的是"这次事务规划完的那个状态"，不是一个会过期的数。
    */
   merges(): readonly CellRange[];
+  /** 当前（暂存后）的数据验证规则列表，与 `merges()` 同一条口径。 */
+  validations(): readonly DataValidationRule[];
 }
 
 /** Planning session whose preview advances after every staged mutation. */

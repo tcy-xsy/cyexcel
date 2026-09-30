@@ -142,6 +142,18 @@ describe("compileDirtySet", () => {
     });
   });
 
+  it("marks only the content layer dirty for a validation-layout fact", () => {
+    // 规则只影响"无效"角标画不画：不动几何、表头、选区，也不需要重排 DOM 单元格
+    const dirty = compileDirtySet([{ type: "validation-layout" }]);
+
+    expect(dirty).toEqual({
+      content: "full",
+      skeleton: "none",
+      selection: false,
+      presentation: { domCells: false, columnHeader: false, rowHeader: false, domHeaders: false }
+    });
+  });
+
   it("marks content and selection dirty for a merge-layout fact, but leaves headers untouched", () => {
     // Narrower than column-layout: merges don't move row/column geometry, so
     // unlike the column-axis facts below, the header bands stay clean.

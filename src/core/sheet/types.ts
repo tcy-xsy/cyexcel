@@ -1,5 +1,6 @@
 import type { CellRange } from "../types";
 import type { CellStyle } from "../style/types";
+import type { DataValidationRule } from "./validations";
 
 /**
  * # 别名规则（模块级，一条规则推出四条形态）
@@ -177,6 +178,11 @@ export interface SheetSnapshot {
   readonly rowData: Readonly<Record<number, RowMeta>>;
   readonly columnData: Readonly<Record<number, ColumnMeta>>;
   readonly mergeData: readonly CellRange[];
+  /**
+   * 数据验证规则（区域规则列表，形态同 `mergeData`：不进格子、不按下标索引，
+   * 见 `doc/data-validation-design.md`）。缺省视为空——旧快照没有这个字段，不必升版本。
+   */
+  readonly dataValidations?: readonly DataValidationRule[];
 }
 
 export interface WorkbookSnapshot {

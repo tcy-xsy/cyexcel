@@ -4,6 +4,7 @@ import type { Mutation } from "../mutations/types";
 import type { CellRange } from "../types";
 import type { CellStylePatch } from "../style/styleKey";
 import type { CellValue } from "../sheet/types";
+import type { DataValidationRule } from "../sheet/validations";
 import type {
   RowHeightCommandProvenance,
   SetRowHeightUpdate
@@ -17,6 +18,8 @@ export interface DataCommandMutationFactory {
   /** 单格设置/清空图片 URL。与 `v`/`s` 独立——单元格级图片，不依赖列配置。 */
   createSetCellImage(row: number, column: number, url: string | undefined): Mutation;
   createSetMerges(merges: readonly CellRange[]): Mutation;
+  /** 整体替换数据验证规则列表（区域几何与重叠决策已在 plan 期做完）。 */
+  createSetValidations(validations: readonly DataValidationRule[]): Mutation;
   createInsertRows(start: number, rows: readonly (readonly (CellValue | null | undefined)[])[]): Mutation;
   createDeleteRows(start: number, count: number): Mutation;
   createMoveRows(start: number, count: number, target: number): Mutation;

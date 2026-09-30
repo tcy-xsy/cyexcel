@@ -12,6 +12,7 @@ import {
 import { rowValuesToCells, valueToRecord } from "../sheet/import";
 import type { SheetMutation } from "../sheet/mutation";
 import type { CellValue } from "../sheet/types";
+import type { DataValidationRule } from "../sheet/validations";
 import { changesForSheetMutation, type SheetAxisSpace } from "../sheet/patches";
 import type { SheetModel } from "../sheet/SheetModel";
 import { createSheetPlanningResources } from "../sheet/planning";
@@ -258,6 +259,18 @@ export class TableStore {
       this.#sheet,
       { type: "set-merges", merges: merges.map((range) => ({ ...range })) },
       [{ type: "merge-layout" }]
+    );
+  }
+
+  /**
+   * 整体替换数据验证规则列表，与 `createSetMergesMutation` 同一类：补丁是不带字段的
+   * `validation-layout`，不依赖坐标空间。规则的几何与重叠决策在 plan 期已经做完。
+   */
+  createSetValidationsMutation(validations: readonly DataValidationRule[]): Mutation {
+    return new TableSheetMutation(
+      this.#sheet,
+      { type: "set-validations", validations },
+      [{ type: "validation-layout" }]
     );
   }
 

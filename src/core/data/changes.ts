@@ -63,6 +63,7 @@ function snapshotChange(change: SemanticChange): SemanticChange {
     case "column-structure":
     case "column-layout":
     case "merge-layout":
+    case "validation-layout":
     case "row-visibility":
     case "full-reset":
       return Object.freeze({ ...change });
@@ -210,6 +211,10 @@ export function compileDirtySet(changes: readonly SemanticChange[]): DirtySet {
         domCells = true;
         content = "full";
         selection = true;
+        break;
+      case "validation-layout":
+        // 只有"无效"角标会变：重绘内容层，几何、表头、选区都不动
+        content = "full";
         break;
       case "full-reset":
         domCells = columnHeader = rowHeader = domHeaders = true;
