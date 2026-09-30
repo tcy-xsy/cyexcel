@@ -27,8 +27,6 @@ export interface DialogOptions {
   readonly fill: (body: HTMLElement, close: () => void) => () => void;
   /** 关掉之后回调一次，用于让调用方把它从"开着的对话框"里摘掉。 */
   readonly onClosed?: () => void;
-  /** 初始位置参考（通常是触发按钮的 rect）；对话框落在它下方、左边缘对齐。 */
-  readonly anchorRect?: DOMRect;
 }
 
 export interface DialogHandle {
@@ -143,12 +141,11 @@ export function createDialog(options: DialogOptions): DialogHandle {
   document.body.append(root);
 
   // 先落位再收边：要量到真实尺寸才知道会不会顶出视口。同 openLayer 的做法。
-  const anchor = options.anchorRect;
-  root.style.left = `${anchor === undefined ? EDGE : anchor.left}px`;
-  root.style.top = `${anchor === undefined ? EDGE : anchor.bottom}px`;
+  // 居中而不是锚定在触发按钮下方——按钮可能在工具栏最左或最右，锚定过去经常
+  // 大半个框飘在视口外；居中不需要知道按钮在哪，也不会有这问题。
   const rect = root.getBoundingClientRect();
-  root.style.left = `${clamp(rect.left, EDGE, Math.max(EDGE, window.innerWidth - EDGE - rect.width))}px`;
-  root.style.top = `${clamp(rect.top, EDGE, Math.max(EDGE, window.innerHeight - EDGE - rect.height))}px`;
+  root.style.left = `${clamp((window.innerWidth - rect.width) / 2, EDGE, Math.max(EDGE, window.innerWidth - EDGE - rect.width))}px`;
+  root.style.top = `${clamp((window.innerHeight - rect.height) / 2, EDGE, Math.max(EDGE, window.innerHeight - EDGE - rect.height))}px`;
 
   return {
     root,
