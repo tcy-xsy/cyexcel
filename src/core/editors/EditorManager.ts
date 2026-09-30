@@ -4,6 +4,8 @@ import type { CellRange } from "../types";
 import type { CellEditor, CellEditorFactory } from "./CellEditor";
 import { createTextCellEditor } from "./TextCellEditor";
 import type { CellValue } from "../sheet/types";
+import { ACCEPT, type EditValidationOutcome, type ValidationPresenter } from "./editValidation";
+import { createDomValidationPresenter } from "./ValidationBubble";
 
 export interface EditorManagerOptions {
   /** DOM node editors mount into; must already be connected to the document. */
@@ -30,12 +32,23 @@ export interface EditorManagerOptions {
   readonly onEditStart?: (row: number, column: number) => void;
   readonly onEditCommit?: (row: number, column: number) => void;
   readonly onEditCancel?: (row: number, column: number) => void;
+  /**
+   * Called with the editor's value just before it is committed; the answer
+   * decides whether to commit, refuse, ask first, or commit and tell the user
+   * (数据验证设计稿 §7.1). Omitted means "always accept". Only this path is
+   * gated — paste, fill and `setCell()` mark invalid cells but never refuse.
+   */
+  readonly validateCommit?: (row: number, column: number, value: CellValue | undefined) => EditValidationOutcome;
+  /** How refusals/confirmations are shown. Defaults to a DOM bubble in `container`, created on first use. */
+  readonly validationPresenter?: ValidationPresenter;
 }
 
 interface ActiveEdit {
   readonly row: number;
   readonly column: number;
   readonly editor: CellEditor;
+  /** Latest cell rect, kept so the validation bubble can sit under the cell. */
+  rect: CellRect;
 }
 
 function intersectRect(rect: CellRect, clipRect: CellRect): CellRect | null {
@@ -70,9 +83,13 @@ export class EditorManager {
   readonly #onEditStart: ((row: number, column: number) => void) | undefined;
   readonly #onEditCommit: ((row: number, column: number) => void) | undefined;
   readonly #onEditCancel: ((row: number, column: number) => void) | undefined;
+  readonly #validateCommit: EditorManagerOptions["validateCommit"];
+  #presenter: ValidationPresenter | undefined;
 
   #active: ActiveEdit | null = null;
   #composing = false;
+  /** A warning-level "continue anyway?" prompt is open: further commit attempts wait for its answer. */
+  #confirming = false;
 
   constructor(options: EditorManagerOptions) {
     this.#container = options.container;
@@ -86,8 +103,11 @@ export class EditorManager {
     this.#onEditStart = options.onEditStart;
     this.#onEditCommit = options.onEditCommit;
     this.#onEditCancel = options.onEditCancel;
+    this.#validateCommit = options.validateCommit;
+    this.#presenter = options.validationPresenter;
 
     this.#container.addEventListener("keydown", this.#handleKeyDown);
+    this.#container.addEventListener("input", this.#handleInput);
     this.#container.addEventListener("compositionstart", this.#handleCompositionStart);
     this.#container.addEventListener("compositionend", this.#handleCompositionEnd);
     this.#container.addEventListener("focusout", this.#handleFocusOut);
@@ -116,6 +136,8 @@ export class EditorManager {
       this.cancelEdit();
       return;
     }
+    active.rect = rect;
+    this.#presenter?.reposition(rect);
     active.editor.updateGeometry(Object.freeze(rect));
   }
 
@@ -142,7 +164,7 @@ export class EditorManager {
     editor.mount(this.#container, { row, column, initialValue, initialInput, initialText, rect });
     editor.focus();
 
-    this.#active = { row, column, editor };
+    this.#active = { row, column, editor, rect };
     this.#onEditStart?.(row, column);
   }
 
@@ -153,15 +175,18 @@ export class EditorManager {
     const { row, column, editor } = this.#active;
     this.#active = null;
     this.#composing = false;
+    this.#confirming = false;
+    this.#presenter?.hide();
     editor.destroy();
     this.#onEditCancel?.(row, column);
   }
 
   async commitEdit(): Promise<void> {
-    if (!this.#active) {
+    if (!this.#active || this.#confirming) {
       return;
     }
-    const { row, column, editor } = this.#active;
+    const active = this.#active;
+    const { row, column, editor } = active;
 
     const validation = editor.validate?.();
     if (validation && !validation.valid) {
@@ -170,6 +195,44 @@ export class EditorManager {
     }
 
     const value = editor.getValue();
+    const outcome = this.#validateCommit?.(row, column, value) ?? ACCEPT;
+
+    if (outcome.kind === "reject") {
+      // 停止：什么都不提交，编辑器、输入值和焦点原样留着，让用户改。
+      this.#present(active, outcome);
+      editor.focus();
+      return;
+    }
+
+    if (outcome.kind === "confirm") {
+      // 警告：等用户回答。回答之前再来的提交（比如失焦）都被 #confirming 挡掉。
+      this.#confirming = true;
+      this.#present(active, outcome, {
+        onContinue: () => {
+          this.#confirming = false;
+          this.#presenter?.hide();
+          void this.#finishCommit(active, value);
+        },
+        onCancel: () => {
+          this.#confirming = false;
+          this.#presenter?.hide();
+          editor.focus();
+        }
+      });
+      return;
+    }
+
+    await this.#finishCommit(active, value);
+    if (outcome.kind === "notify") {
+      // 信息：先提交再说。编辑器已经销毁，提示只需要那一格的位置。
+      this.#present(active, outcome);
+    }
+  }
+
+  async #finishCommit(active: ActiveEdit, value: CellValue | undefined): Promise<void> {
+    const { row, column, editor } = active;
+    // 之前那次被拒绝的提示，这次能提交说明用户已经改对了
+    this.#presenter?.hide();
     await this.#commitValue(row, column, value);
 
     // #active may have been cleared by a concurrent cancelEdit()/dispose()
@@ -182,6 +245,21 @@ export class EditorManager {
     }
   }
 
+  #present(
+    active: ActiveEdit,
+    outcome: Exclude<EditValidationOutcome, { readonly kind: "accept" }>,
+    handlers: { readonly onContinue?: () => void; readonly onCancel?: () => void } = {}
+  ): void {
+    this.#presenter ??= createDomValidationPresenter(this.#container);
+    this.#presenter.show({
+      kind: outcome.kind,
+      ...(outcome.title !== undefined ? { title: outcome.title } : {}),
+      message: outcome.message,
+      rect: active.rect,
+      ...handlers
+    });
+  }
+
   dispose(): void {
     if (this.#active) {
       const { row, column, editor } = this.#active;
@@ -190,7 +268,10 @@ export class EditorManager {
       editor.destroy();
       this.#onEditCancel?.(row, column);
     }
+    this.#confirming = false;
+    this.#presenter?.dispose();
     this.#container.removeEventListener("keydown", this.#handleKeyDown);
+    this.#container.removeEventListener("input", this.#handleInput);
     this.#container.removeEventListener("compositionstart", this.#handleCompositionStart);
     this.#container.removeEventListener("compositionend", this.#handleCompositionEnd);
     this.#container.removeEventListener("focusout", this.#handleFocusOut);
@@ -209,6 +290,15 @@ export class EditorManager {
       event.preventDefault();
       void this.commitEdit();
     }
+  };
+
+  /** 用户又改了内容：之前的拒绝/确认提示作废，下一次提交重新校验。 */
+  #handleInput = (): void => {
+    if (!this.#active) {
+      return;
+    }
+    this.#confirming = false;
+    this.#presenter?.hide();
   };
 
   #handleCompositionStart = (): void => {

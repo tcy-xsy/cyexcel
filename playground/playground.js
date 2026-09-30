@@ -189,6 +189,7 @@ const dvEndColumn = document.getElementById("dvEndColumn");
 const dvType = document.getElementById("dvType");
 const dvValue1 = document.getElementById("dvValue1");
 const dvValue2 = document.getElementById("dvValue2");
+const dvErrorStyle = document.getElementById("dvErrorStyle");
 const dvSetButton = document.getElementById("dvSetButton");
 const dvClearButton = document.getElementById("dvClearButton");
 const dvFindButton = document.getElementById("dvFindButton");
@@ -435,18 +436,18 @@ function buildDvRuleFromForm() {
   const type = dvType.value;
   if (type === "list") {
     const items = dvValue1.value.split(",").map((item) => item.trim()).filter((item) => item !== "");
-    return { criteria: { type: "list", items }, errorMessage: `请从 ${items.join("、")} 中选择` };
+    return { criteria: { type: "list", items }, errorStyle: dvErrorStyle.value, errorMessage: `请从 ${items.join("、")} 中选择` };
   }
   if (type === "custom") {
     // 校验函数按名字注册在实例上，不进快照；规则里只存 { type: "custom", name }
     core.registerDataValidator("even", (value) =>
       typeof value === "number" && value % 2 === 0 ? true : "需要偶数"
     );
-    return { criteria: { type: "custom", name: "even" } };
+    return { criteria: { type: "custom", name: "even" }, errorStyle: dvErrorStyle.value };
   }
   const value1 = type === "date" ? dvValue1.value : Number(dvValue1.value);
   const value2 = type === "date" ? dvValue2.value : Number(dvValue2.value);
-  return { criteria: { type, operator: "between", value1, value2 } };
+  return { criteria: { type, operator: "between", value1, value2 }, errorStyle: dvErrorStyle.value };
 }
 
 dvSetButton.addEventListener("click", () => {

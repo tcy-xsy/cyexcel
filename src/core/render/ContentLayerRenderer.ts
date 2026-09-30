@@ -12,6 +12,8 @@ import {
   FROZEN_SEPARATOR_COLOR,
   FROZEN_SEPARATOR_THICKNESS,
   GRID_LINE_COLOR,
+  INVALID_MARK_COLOR,
+  INVALID_MARK_SIZE,
   TEXT_COLOR
 } from "./theme";
 
@@ -64,6 +66,12 @@ export interface ContentLayerRendererOptions {
    * one call per visible cell. See `#paintFragment`.
    */
   readonly getMergesInRange?: (range: CellRange) => readonly CellRange[];
+  /**
+   * 这一格的值是否违反了它所在的数据验证规则。画在 painter 之外（网格线和边框之后），
+   * 所以自定义 renderer 不必各自处理；合并单元格按合并后的矩形算右上角。
+   * 每帧对每个可见格调用一次，实现必须便宜——没有规则时应当是一次数组长度判断。
+   */
+  readonly isCellInvalid?: (row: number, column: number) => boolean;
 }
 
 function defaultPainter(context: CellPaintContext): void {
@@ -114,6 +122,7 @@ export class ContentLayerRenderer {
   readonly #checkSyncRenderers: boolean;
   readonly #showGridLines: boolean;
   readonly #getMergesInRange: ContentLayerRendererOptions["getMergesInRange"];
+  readonly #isCellInvalid: ContentLayerRendererOptions["isCellInvalid"];
 
   constructor(options: ContentLayerRendererOptions) {
     this.#ctx = options.ctx;
@@ -126,6 +135,7 @@ export class ContentLayerRenderer {
     this.#checkSyncRenderers = options.checkSyncRenderers ?? true;
     this.#showGridLines = options.showGridLines ?? true;
     this.#getMergesInRange = options.getMergesInRange;
+    this.#isCellInvalid = options.isCellInvalid;
   }
 
   paintContent(dirty: DirtyState, scene: SceneSnapshot = this.#getScene()): void {
@@ -298,6 +308,7 @@ export class ContentLayerRenderer {
       this.#ctx.restore();
       this.#paintGridLine(rect);
       this.#paintBorder(rect, style);
+      this.#paintInvalidMark(row, column, rect);
       return;
     }
     this.#ctx.restore();
@@ -311,6 +322,25 @@ export class ContentLayerRenderer {
 
     this.#paintGridLine(rect);
     this.#paintBorder(rect, style);
+    this.#paintInvalidMark(row, column, rect);
+  }
+
+  /** 右上角的红色小三角。自己 save/restore：不能把 fillStyle 漏给下一格。 */
+  #paintInvalidMark(row: number, column: number, rect: CellRect): void {
+    if (this.#isCellInvalid === undefined || !this.#isCellInvalid(row, column)) {
+      return;
+    }
+    const size = Math.min(INVALID_MARK_SIZE, rect.width, rect.height);
+    const right = rect.x + rect.width;
+    this.#ctx.save();
+    this.#ctx.fillStyle = INVALID_MARK_COLOR;
+    this.#ctx.beginPath();
+    this.#ctx.moveTo(right - size, rect.y);
+    this.#ctx.lineTo(right, rect.y);
+    this.#ctx.lineTo(right, rect.y + size);
+    this.#ctx.closePath();
+    this.#ctx.fill();
+    this.#ctx.restore();
   }
 
   /**

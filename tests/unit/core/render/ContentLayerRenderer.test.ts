@@ -713,3 +713,82 @@ describe("ContentLayerRenderer no-op cases", () => {
     expect(ctx.calls).toHaveLength(0);
   });
 });
+
+describe("ContentLayerRenderer — invalid-data mark", () => {
+  function marks(ctx: RecordingCanvasContext): Array<readonly unknown[]> {
+    // 三角形 = moveTo → lineTo → lineTo → closePath → fill；只取 moveTo 起点
+    return ctx.calls.filter((call) => call.method === "moveTo").map((call) => call.args);
+  }
+
+  it("draws a small triangle in the top-right corner of each invalid cell only", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(2, 2); // rowHeight 20, columnWidths [50, 50]
+    const renderer = createContentRenderer({
+      ctx,
+      layout,
+      getCellValue: () => "x",
+      isCellInvalid: (row, column) => row === 1 && column === 0
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
+
+    renderer.paintContent({ kind: "full" });
+
+    // (1, 0)：x 0..50、y 20..40，起点在右上角向左 6px
+    expect(marks(ctx)).toEqual([[44, 20]]);
+    expect(ctx.calls.filter((call) => call.method === "fill")).toHaveLength(1);
+  });
+
+  it("paints nothing extra when no cell is invalid, or when the option is absent", () => {
+    const layout = createLayout(2, 2);
+
+    const none = new RecordingCanvasContext();
+    const withOption = createContentRenderer({ ctx: none, layout, getCellValue: () => "x", isCellInvalid: () => false });
+    withOption.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
+    withOption.paintContent({ kind: "full" });
+
+    const absent = new RecordingCanvasContext();
+    const withoutOption = createContentRenderer({ ctx: absent, layout, getCellValue: () => "x" });
+    withoutOption.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
+    withoutOption.paintContent({ kind: "full" });
+
+    expect(marks(none)).toEqual([]);
+    expect(none.calls).toEqual(absent.calls);
+  });
+
+  it("uses the merged rect's top-right corner for a merged cell, painted once", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(3, 2);
+    const merge = { startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 };
+    const renderer = createContentRenderer({
+      ctx,
+      layout,
+      getCellValue: () => "x",
+      getMergesInRange: (range) => mergesIntersectingRange([merge], range),
+      isCellInvalid: (row, column) => row === 0 && column === 0
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 60 });
+
+    renderer.paintContent({ kind: "full" });
+
+    // 合并区 x 0..100：右上角向左 6px
+    expect(marks(ctx)).toEqual([[94, 0]]);
+  });
+
+  it("does not leak the mark's fill colour into the next cell", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(1, 2);
+    const renderer = createContentRenderer({
+      ctx,
+      layout,
+      getCellValue: () => "x",
+      isCellInvalid: (_row, column) => column === 0
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    const saves = ctx.calls.filter((call) => call.method === "save").length;
+    const restores = ctx.calls.filter((call) => call.method === "restore").length;
+    expect(saves).toBe(restores);
+  });
+});

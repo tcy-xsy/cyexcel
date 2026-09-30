@@ -140,6 +140,13 @@
                 </label>
                 <label>值1 / 序列 <input id="dvValue1" type="text" value="1" /></label>
                 <label>值2 <input id="dvValue2" type="text" value="100" /></label>
+                <label>错误样式
+                  <select id="dvErrorStyle">
+                    <option value="stop">停止（拒绝提交）</option>
+                    <option value="warning">警告（确认后提交）</option>
+                    <option value="information">信息（提交后提示）</option>
+                  </select>
+                </label>
               </div>
               <div class="cell-form-actions">
                 <button class="button primary" id="dvSetButton" type="button">设置规则</button>
@@ -149,8 +156,9 @@
             </div>
             <p class="hint" id="dvResult">
               调用 <code>core.setDataValidation()</code> / <code>clearDataValidation()</code> /
-              <code>findInvalidCells()</code>。规则随行列插入删除移动，可以撤销。一期还没有角标和
-              编辑器拦截，无效格用"找出无效格"列出；批量与程序写入本来就只标记不拦截。
+              <code>findInvalidCells()</code>。规则随行列插入删除移动，可以撤销。双击单元格输入来试：
+              停止级拒绝提交并留在编辑器里，警告级问你是否继续，信息级提交后提示。粘贴、填充、
+              <code>setCell()</code> 不拦截，违规的格子右上角出现红色小三角。
             </p>
           </section>
 

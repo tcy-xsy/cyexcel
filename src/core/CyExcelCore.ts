@@ -89,7 +89,7 @@ import {
   type DataValidationResult
 } from "./sheet/validations";
 import type { CellEditorFactory } from "./editors";
-import { EditorManager } from "./editors";
+import { ACCEPT, EditorManager, outcomeFromResult } from "./editors";
 import { EventBus } from "./events";
 import {
   DomHeaderManager,
@@ -280,6 +280,14 @@ export interface CyExcelCoreOptions {
   readonly rowReorder?: boolean;
   /** Draw a light gridline around every body cell. Default: true. */
   readonly showGridLines?: boolean;
+  /** 数据验证的显示选项。 */
+  readonly dataValidation?: {
+    /**
+     * 违反规则的单元格右上角画红色小三角。Default: true。批量与程序写入（粘贴、填充、
+     * `setCell()`）不拦截，靠这个标记让用户看到。
+     */
+    readonly showInvalidMarks?: boolean;
+  };
   readonly clipboard?: ClipboardOptions;
   /** Installed via PluginManager at construction, in order — see doc/customization-and-hooks.md §11.2. Nothing is installed by default (e.g. createBasicContextMenuPlugin() must be listed explicitly to get a Copy/Paste right-click menu). */
   readonly plugins?: readonly CyExcelPlugin[];
@@ -1046,6 +1054,9 @@ export class CyExcelCore {
       onError: (error, cell) =>
         this.#events.emit("error", { error, eventName: `finalize:canvas-cell:${cell.row}:${cell.column}` }),
       getMergesInRange: (range) => mergesIntersectingRange(this.#sheet.merges(), range),
+      ...(options.dataValidation?.showInvalidMarks !== false
+        ? { isCellInvalid: (row: number, column: number) => this.#isCellInvalid(row, column) }
+        : {}),
       ...(options.showGridLines !== undefined ? { showGridLines: options.showGridLines } : {})
     });
     this.#selectionRenderer = new SelectionLayerRenderer({
@@ -1339,6 +1350,17 @@ export class CyExcelCore {
         this.#enqueueMutationPromise(() => {
           this.#applyCommandNow(new SetCellCommand(row, column, this.#parseEditedValue(row, column, value)));
         }),
+      // 只有编辑器提交这一条路径会被规则拦截或提示；粘贴、填充、setCell() 只标记。
+      // 校验的是解析之后的值（#parseEditedValue 是唯一解释输入的地方）。
+      validateCommit: (row, column, value) => {
+        const rule = findRuleAt(this.#sheet.validations(), row, column);
+        if (rule === undefined) {
+          return ACCEPT;
+        }
+        return outcomeFromResult(
+          validateValue(rule, this.#parseEditedValue(row, column, value), this.#validateOptions(row, column))
+        );
+      },
       // Pure forwarding to whatever the column's own CellType declares —
       // EditorManager itself never decides which editor a column gets, and
       // neither does this integration layer; a column that doesn't declare
@@ -1697,6 +1719,20 @@ export class CyExcelCore {
       scope,
       (row, column) => this.#store.getCell(row, column) as CellValue | undefined,
       (row, column) => this.#validateOptions(row, column)
+    );
+  }
+
+  /** 绘制时每个可见格每帧调一次：没有规则时只是一次长度判断。 */
+  #isCellInvalid(row: number, column: number): boolean {
+    const rules = this.#sheet.validations();
+    if (rules.length === 0) {
+      return false;
+    }
+    const rule = findRuleAt(rules, row, column);
+    return (
+      rule !== undefined &&
+      !validateValue(rule, this.#store.getCell(row, column) as CellValue | undefined, this.#validateOptions(row, column))
+        .valid
     );
   }
 
