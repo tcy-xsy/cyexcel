@@ -89,7 +89,7 @@ import {
   type DataValidationResult
 } from "./sheet/validations";
 import type { CellEditorFactory } from "./editors";
-import { ACCEPT, EditorManager, outcomeFromResult } from "./editors";
+import { ACCEPT, EditorManager, outcomeFromResult, ValidationHints } from "./editors";
 import { EventBus } from "./events";
 import {
   DomHeaderManager,
@@ -766,6 +766,8 @@ export class CyExcelCore {
   readonly #rowReorderController: RowReorderController | undefined;
   readonly #keyboardController: KeyboardController;
   readonly #editorManager: EditorManager;
+  /** 选中带规则的单元格时的下拉箭头、下拉列表与输入提示。 */
+  readonly #validationHints: ValidationHints;
   readonly #domCellManager: DOMCellManager;
   readonly #clipboardService: ClipboardService;
   readonly #hooks: HookManager;
@@ -1143,7 +1145,10 @@ export class CyExcelCore {
       },
       // 选区变化对外是一个事件（Step 25）：工具栏按钮的高亮、禁用都跟着它走。
       // 发的是快照而不是"你自己去读 sheet.selection"——订阅者拿到的就是当时那一份。
-      () => this.#events.emit("selection-change", this.#selectionModel.snapshot)
+      () => {
+        this.#events.emit("selection-change", this.#selectionModel.snapshot);
+        this.#syncValidationHints();
+      }
     );
     this.#interactionFrames = new InteractionFrameProvider({
       revisionGate: this.#store.coordinator.revisionGate,
@@ -1380,7 +1385,10 @@ export class CyExcelCore {
       // to actually take effect at the right moment — without these, the
       // box only hides/reappears whenever some unrelated repaint happens to
       // fire next, not exactly when editing starts or ends.
-      onEditStart: () => this.#renderScheduler.invalidateSelection(),
+      onEditStart: () => {
+        this.#renderScheduler.invalidateSelection();
+        this.#syncValidationHints();
+      },
       onEditCommit: () => {
         this.#selectionModel.moveActive(1, 0);
         this.#renderScheduler.invalidateSelection();
@@ -1391,13 +1399,29 @@ export class CyExcelCore {
         // here, #handleKeyDown (bound to contentCanvas) stops receiving any
         // further Enter/arrow-key events after the very first edit cycle.
         this.#contentCanvas.focus({ preventScroll: true });
+        this.#syncValidationHints();
       },
       onEditCancel: () => {
         this.#renderScheduler.invalidateSelection();
         this.#contentCanvas.focus({ preventScroll: true });
+        this.#syncValidationHints();
       }
     });
     initialization.defer(() => this.#editorManager.dispose());
+
+    this.#validationHints = new ValidationHints({
+      container: dom.editorLayer,
+      getRule: (row, column) => findRuleAt(this.#sheet.validations(), row, column),
+      getCellValue: (row, column) => this.#store.getCell(row, column) as CellValue | undefined,
+      findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column),
+      // 从下拉里选一项就是一次普通的单元格写入：先经 #parseEditedValue（数字列里
+      // 选 "1" 得到数字 1），选中的格子和滚动位置都不动
+      onPick: (row, column, value) =>
+        this.#enqueueOrRunMutation(() => {
+          this.#applyCommandNow(new SetCellCommand(row, column, this.#parseEditedValue(row, column, value)));
+        })
+    });
+    initialization.defer(() => this.#validationHints.dispose());
 
     this.#domCellManager = new DOMCellManager({
       container: dom.domCellLayer,
@@ -2830,6 +2854,25 @@ export class CyExcelCore {
 
   #reprojectEditor(scene: SceneSnapshot): void {
     this.#runFinalizer("editor-geometry", () => this.#editorManager?.updateGeometry(scene));
+    this.#syncValidationHints(scene);
+  }
+
+  /**
+   * 把下拉箭头 / 输入提示摆到活动格上；正在编辑时收起（编辑器占着那一格）。
+   * 每次 Scene 发布、选区变化、编辑开始结束都会走到这里，所以是 finalizer：出错只
+   * 报事件，不能拖垮触发它的那次提交。
+   */
+  #syncValidationHints(scene: SceneSnapshot = this.#scene): void {
+    // 构造期间选区回调可能先于 #validationHints 赋值触发
+    if (this.#validationHints === undefined || this.#disposed) {
+      return;
+    }
+    this.#runFinalizer("validation-hints", () => {
+      this.#validationHints.sync(
+        scene,
+        this.#editorManager?.isEditing() ? null : this.#selectionModel.snapshot.active
+      );
+    });
   }
 
   #restoreAuthoritativeScene(): void {

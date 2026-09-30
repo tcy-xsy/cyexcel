@@ -140,6 +140,7 @@
                 </label>
                 <label>值1 / 序列 <input id="dvValue1" type="text" value="1" /></label>
                 <label>值2 <input id="dvValue2" type="text" value="100" /></label>
+                <label>输入提示 <input id="dvPrompt" type="text" placeholder="选中单元格时显示" /></label>
                 <label>错误样式
                   <select id="dvErrorStyle">
                     <option value="stop">停止（拒绝提交）</option>
@@ -156,7 +157,9 @@
             </div>
             <p class="hint" id="dvResult">
               调用 <code>core.setDataValidation()</code> / <code>clearDataValidation()</code> /
-              <code>findInvalidCells()</code>。规则随行列插入删除移动，可以撤销。双击单元格输入来试：
+              <code>findInvalidCells()</code>；工具栏「数据验证」对话框是同一套 API 的图形入口。
+              序列规则选中单元格会出现下拉箭头，填了输入提示会在旁边显示。规则随行列插入删除移动，
+              可以撤销。双击单元格输入来试：
               停止级拒绝提交并留在编辑器里，警告级问你是否继续，信息级提交后提示。粘贴、填充、
               <code>setCell()</code> 不拦截，违规的格子右上角出现红色小三角。
             </p>

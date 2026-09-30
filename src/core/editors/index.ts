@@ -11,6 +11,7 @@ export { createSelectCellEditor, type SelectCellEditorOption } from "./SelectCel
 export { createTextAreaCellEditor, type TextAreaCellEditorOptions } from "./TextAreaCellEditor";
 export { EditorManager, type EditorManagerOptions } from "./EditorManager";
 export { createDomValidationPresenter } from "./ValidationBubble";
+export { ValidationHints, type ValidationHintsOptions } from "./ValidationHints";
 export {
   ACCEPT,
   outcomeFromResult,

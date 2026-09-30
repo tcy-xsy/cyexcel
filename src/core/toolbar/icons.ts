@@ -41,6 +41,7 @@ export const alignBottom = wrap('<path d="M4 20h16"/><path d="M12 4v12"/><path d
 export const sortAsc = wrap('<path d="M7 20V4"/><path d="m3 8 4-4 4 4"/><path d="M14 7h7"/><path d="M14 12h5"/><path d="M14 17h3"/>');
 export const sortDesc = wrap('<path d="M7 4v16"/><path d="m3 16 4 4 4-4"/><path d="M14 7h3"/><path d="M14 12h5"/><path d="M14 17h7"/>');
 export const filter = wrap('<path d="M3 5h18l-7 8v6l-4 2v-8z"/>');
+export const dataValidation = wrap('<path d="M12 3 5 6v5c0 4.4 3 8.3 7 10 4-1.7 7-5.6 7-10V6z"/><path d="m9 12 2 2 4-4"/>');
 export const find = wrap('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>');
 export const exportExcel = wrap('<path d="M12 3v11"/><path d="m8 10 4 4 4-4"/><path d="M5 20h14"/>');
 

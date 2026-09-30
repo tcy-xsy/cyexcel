@@ -2,6 +2,17 @@ import { el } from "./dom";
 import * as styles from "./styles";
 import type { ToolbarContext } from "./types";
 import type { SearchMatch } from "../search";
+import {
+  ALLOW_OPTIONS,
+  ERROR_STYLE_OPTIONS,
+  OPERATOR_OPTIONS,
+  fieldsFor,
+  formFromRule,
+  ruleInputFromForm,
+  type AllowKind,
+  type DataValidationFormState
+} from "./dataValidationForm";
+import type { ValidationErrorStyle, ValidationOperator } from "../sheet/validations";
 
 /**
  * 对话框里的内容。契约与 `panels.ts` 一样——把内容塞进调用方给的容器，返回 disposer
@@ -199,6 +210,160 @@ export function findReplaceDialog(
   return () => {
     // 关掉对话框就撤掉高亮：那片黄底留在表格上而没有任何界面能再操作它，会很费解。
     ctx.sheet.clearSearch();
+    body.replaceChildren();
+  };
+}
+
+function selectInput<T extends string>(
+  options: readonly { readonly value: T; readonly label: string }[],
+  ariaLabel: string
+): HTMLSelectElement {
+  const select = el("select", "cyx-toolbar-dialog-input");
+  styles.apply(select, styles.dialogInput);
+  select.setAttribute("aria-label", ariaLabel);
+  for (const option of options) {
+    const node = el("option", undefined, option.label);
+    node.value = option.value;
+    select.append(node);
+  }
+  return select;
+}
+
+/**
+ * 「数据验证」。对选区（活动区域）设置或清除规则；打开时按选区左上角那一格的规则回填。
+ *
+ * 规则怎么从表单来、怎么回填表单都在 `dataValidationForm.ts`（纯函数，有单测）；这里
+ * 只是把它们接到 DOM 上，node 里测不了，由 playground 手验。
+ *
+ * 与 Excel 一致：「任何值」+ 确定 = 清除这片区域的规则；`allow` 是「任何值」而区域上原本
+ * 是自定义规则时，先提示一句"保存会替换它"，因为表单没法表达自定义规则。
+ */
+export function dataValidationDialog(
+  body: HTMLElement,
+  close: () => void,
+  ctx: ToolbarContext
+): () => void {
+  const range = ctx.range;
+  const existing = ctx.sheet.getDataValidationAt(range.startRow, range.startColumn);
+  const state: DataValidationFormState = formFromRule(existing);
+
+  const allow = selectInput<AllowKind>(ALLOW_OPTIONS, "允许");
+  const operator = selectInput<ValidationOperator>(OPERATOR_OPTIONS, "数据");
+  const value1 = textInput("", "值");
+  const value2 = textInput("", "最大值");
+  const allowBlank = checkbox("忽略空值");
+  const showDropDown = checkbox("提供下拉箭头");
+  const promptTitle = textInput("可选", "输入信息标题");
+  const prompt = textInput("选中单元格时显示", "输入信息");
+  const errorStyle = selectInput<ValidationErrorStyle>(ERROR_STYLE_OPTIONS, "错误样式");
+  const errorTitle = textInput("可选", "出错警告标题");
+  const errorMessage = textInput("留空使用默认文案", "出错警告信息");
+
+  const operatorRow = field("数据", operator);
+  const value1Label = el("label", "cyx-toolbar-dialog-label", "值");
+  styles.apply(value1Label, styles.dialogLabel);
+  const value1Row = el("div", "cyx-toolbar-dialog-field");
+  styles.apply(value1Row, styles.dialogField);
+  value1Row.append(value1Label, value1);
+  const value2Row = field("最大值", value2);
+  const optionRow = el("div", "cyx-toolbar-dialog-options");
+  styles.apply(optionRow, styles.dialogOptions);
+  optionRow.append(allowBlank.wrap, showDropDown.wrap);
+
+  const status = el("div", "cyx-toolbar-dialog-status", "");
+  styles.apply(status, styles.dialogStatus);
+
+  const ok = button("确定");
+  const cancel = button("取消");
+  const clearAll = button("全部清除");
+  const buttonRow = el("div", "cyx-toolbar-dialog-buttons");
+  styles.apply(buttonRow, styles.dialogButtons);
+  buttonRow.append(ok, cancel, clearAll);
+
+  const read = (): DataValidationFormState => ({
+    allow: allow.value as AllowKind,
+    operator: operator.value as ValidationOperator,
+    value1: value1.value,
+    value2: value2.value,
+    allowBlank: allowBlank.input.checked,
+    showDropDown: showDropDown.input.checked,
+    errorStyle: errorStyle.value as ValidationErrorStyle,
+    errorTitle: errorTitle.value,
+    errorMessage: errorMessage.value,
+    promptTitle: promptTitle.value,
+    prompt: prompt.value
+  });
+
+  /** 按当前的"允许"和"数据"显示或隐藏对应的输入框。 */
+  const refresh = (): void => {
+    const shown = fieldsFor(allow.value as AllowKind, operator.value as ValidationOperator);
+    operatorRow.style.display = shown.operator ? "" : "none";
+    value1Row.style.display = shown.value1 ? "" : "none";
+    value2Row.style.display = shown.value2 ? "" : "none";
+    showDropDown.wrap.style.display = shown.dropDown ? "" : "none";
+    value1Label.textContent = allow.value === "list" ? "来源" : shown.value2 ? "最小值" : "值";
+    value1.placeholder = allow.value === "list" ? "用逗号分隔，如 红,绿,蓝" : allow.value === "date" ? "2026-01-15" : allow.value === "time" ? "09:30" : "";
+    optionRow.style.display = allow.value === "any" ? "none" : "";
+  };
+
+  allow.value = state.allow;
+  operator.value = state.operator;
+  value1.value = state.value1;
+  value2.value = state.value2;
+  allowBlank.input.checked = state.allowBlank;
+  showDropDown.input.checked = state.showDropDown;
+  errorStyle.value = state.errorStyle;
+  errorTitle.value = state.errorTitle;
+  errorMessage.value = state.errorMessage;
+  promptTitle.value = state.promptTitle;
+  prompt.value = state.prompt;
+  refresh();
+  allow.addEventListener("change", refresh);
+  operator.addEventListener("change", refresh);
+
+  if (existing?.criteria.type === "custom") {
+    status.textContent = "这片区域用的是自定义规则，表单无法编辑；保存会替换它。";
+  }
+
+  ok.addEventListener("click", () => {
+    const outcome = ruleInputFromForm(read());
+    if (outcome.kind === "error") {
+      status.textContent = outcome.message;
+      return;
+    }
+    try {
+      if (outcome.kind === "clear") {
+        ctx.sheet.clearDataValidation(range);
+      } else {
+        ctx.sheet.setDataValidation(range, outcome.input);
+      }
+      close();
+    } catch (error) {
+      status.textContent = error instanceof Error ? error.message : String(error);
+    }
+  });
+  cancel.addEventListener("click", close);
+  clearAll.addEventListener("click", () => {
+    ctx.sheet.clearDataValidation(range);
+    close();
+  });
+
+  body.append(
+    field("允许", allow),
+    operatorRow,
+    value1Row,
+    value2Row,
+    optionRow,
+    field("输入标题", promptTitle),
+    field("输入信息", prompt),
+    field("错误样式", errorStyle),
+    field("错误标题", errorTitle),
+    field("错误信息", errorMessage),
+    buttonRow,
+    status
+  );
+
+  return () => {
     body.replaceChildren();
   };
 }

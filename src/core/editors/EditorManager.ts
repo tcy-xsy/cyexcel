@@ -6,6 +6,7 @@ import { createTextCellEditor } from "./TextCellEditor";
 import type { CellValue } from "../sheet/types";
 import { ACCEPT, type EditValidationOutcome, type ValidationPresenter } from "./editValidation";
 import { createDomValidationPresenter } from "./ValidationBubble";
+import { intersectRect } from "./visibleCellRect";
 
 export interface EditorManagerOptions {
   /** DOM node editors mount into; must already be connected to the document. */
@@ -49,17 +50,6 @@ interface ActiveEdit {
   readonly editor: CellEditor;
   /** Latest cell rect, kept so the validation bubble can sit under the cell. */
   rect: CellRect;
-}
-
-function intersectRect(rect: CellRect, clipRect: CellRect): CellRect | null {
-  const left = Math.max(rect.x, clipRect.x);
-  const top = Math.max(rect.y, clipRect.y);
-  const right = Math.min(rect.x + rect.width, clipRect.x + clipRect.width);
-  const bottom = Math.min(rect.y + rect.height, clipRect.y + clipRect.height);
-  if (right <= left || bottom <= top) {
-    return null;
-  }
-  return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
 /**

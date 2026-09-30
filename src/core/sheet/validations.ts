@@ -720,3 +720,32 @@ export function collectInvalidCells(
   }
   return found.sort((a, b) => a.row - b.row || a.column - b.column);
 }
+
+export interface CellHints {
+  /** `list` 规则且 `showDropDown !== false`：下拉里列哪些项。 */
+  readonly dropdownItems?: readonly string[];
+  readonly promptTitle?: string;
+  readonly prompt?: string;
+}
+
+/**
+ * 选中一个带规则的单元格时要给用户看什么：下拉箭头和列表（`list`），以及输入提示
+ * （`promptTitle` / `prompt`）。没有任何可显示的东西返回 `undefined`。
+ */
+export function describeCellHints(rule: DataValidationRule): CellHints | undefined {
+  const dropdownItems =
+    rule.criteria.type === "list" && rule.showDropDown !== false ? rule.criteria.items : undefined;
+  const hasPrompt = (rule.prompt ?? "") !== "" || (rule.promptTitle ?? "") !== "";
+  if (dropdownItems === undefined && !hasPrompt) {
+    return undefined;
+  }
+  return {
+    ...(dropdownItems !== undefined ? { dropdownItems } : {}),
+    ...(hasPrompt
+      ? {
+          ...(rule.promptTitle !== undefined && rule.promptTitle !== "" ? { promptTitle: rule.promptTitle } : {}),
+          ...(rule.prompt !== undefined && rule.prompt !== "" ? { prompt: rule.prompt } : {})
+        }
+      : {})
+  };
+}

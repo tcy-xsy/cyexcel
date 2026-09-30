@@ -5,7 +5,7 @@ import { DEFAULT_FONT_SIZE } from "../render/theme";
 import type { ToolbarContext, ToolbarItem, ToolbarSchema } from "./types";
 import * as icons from "./icons";
 import { applyBorderPreset, borderPanel, colorPanel, filterPanel } from "./panels";
-import { findReplaceDialog } from "./dialogs";
+import { dataValidationDialog, findReplaceDialog } from "./dialogs";
 import { exportSheetToExcel } from "./exportExcel";
 
 /**
@@ -381,6 +381,17 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     label: "查找和替换",
     tooltip: "查找和替换",
     dialog: (ctx, body, close) => findReplaceDialog(body, close, ctx)
+  },
+  {
+    id: "data-validation",
+    group: "data",
+    order: 45,
+    // 对话框：允许 / 数据 / 值 / 输入信息 / 错误警告，一屏放得下，也要能边开边看表格
+    type: "dialog",
+    icon: icons.dataValidation,
+    label: "数据验证",
+    tooltip: "给选区设置数据验证规则",
+    dialog: (ctx, body, close) => dataValidationDialog(body, close, ctx)
   },
   {
     id: "export-excel",
