@@ -60,7 +60,10 @@ function createFakePresenter() {
   };
 }
 
-function setup(outcome: EditValidationOutcome | ((value: CellValue | undefined) => EditValidationOutcome)) {
+function setup(
+  outcome: EditValidationOutcome | ((value: CellValue | undefined) => EditValidationOutcome),
+  options: { readonly focusoutOnHide?: boolean } = {}
+) {
   const layout = new LayoutEngine({ rowCount: 10, columnCount: 5, rowHeight: 20, columnWidths: [50, 50, 50, 50, 50] });
   const scene = new SceneSnapshot({
     version: 1,
@@ -77,6 +80,15 @@ function setup(outcome: EditValidationOutcome | ((value: CellValue | undefined) 
   };
   const container = createFakeContainer();
   const fake = createFakePresenter();
+  if (options.focusoutOnHide) {
+    // 浏览器行为：气泡里的按钮（此刻持有焦点）被摘掉时会发一次 focusout，relatedTarget 为空。
+    // 见 EditorManager 里 onContinue / onCancel 的注释。
+    const hide = fake.presenter.hide;
+    fake.presenter.hide = () => {
+      hide();
+      container.dispatch("focusout", { relatedTarget: null });
+    };
+  }
   const commits: unknown[] = [];
   const validated: Array<[number, number, unknown]> = [];
   const manager = new EditorManager({
@@ -250,6 +262,62 @@ describe("EditorManager validation — warning (confirm)", () => {
     await manager.commitEdit();
 
     container.dispatch("input");
+    await manager.commitEdit();
+
+    expect(validated).toHaveLength(2);
+    expect(fake.shows()).toHaveLength(2);
+  });
+});
+
+describe("EditorManager validation — removing the focused prompt button must not re-trigger a commit", () => {
+  const confirm: EditValidationOutcome = { kind: "confirm", message: "值偏大" };
+
+  it("cancel: the prompt goes away and stays away, the editor stays open", async () => {
+    const { manager, fake, commits, validated } = setup(confirm, { focusoutOnHide: true });
+    manager.startEdit(0, 0);
+    await manager.commitEdit();
+    expect(fake.shows()).toHaveLength(1);
+
+    fake.last()?.onCancel?.();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(fake.shows()).toHaveLength(1); // 没有因为 focusout 又弹出一次
+    expect(validated).toHaveLength(1); // 也没有重新校验
+    expect(commits).toEqual([]);
+    expect(manager.isEditing()).toBe(true);
+
+    // 取消之后提交仍然可用：再来一次会重新弹出
+    await manager.commitEdit();
+    expect(fake.shows()).toHaveLength(2);
+  });
+
+  it("continue: commits exactly once and does not raise a second prompt", async () => {
+    const { manager, fake, commits, validated } = setup(confirm, { focusoutOnHide: true });
+    manager.startEdit(0, 0);
+    await manager.commitEdit();
+
+    fake.last()?.onContinue?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(commits).toEqual(["typed"]);
+    expect(fake.shows()).toHaveLength(1);
+    expect(validated).toHaveLength(1);
+    expect(manager.isEditing()).toBe(false);
+  });
+
+  it("after continuing, a later edit is validated normally again", async () => {
+    const { manager, fake, validated } = setup(confirm, { focusoutOnHide: true });
+    manager.startEdit(0, 0);
+    await manager.commitEdit();
+    fake.last()?.onContinue?.();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    manager.startEdit(1, 1);
     await manager.commitEdit();
 
     expect(validated).toHaveLength(2);

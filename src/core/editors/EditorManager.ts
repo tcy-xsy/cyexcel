@@ -198,15 +198,21 @@ export class EditorManager {
       // 警告：等用户回答。回答之前再来的提交（比如失焦）都被 #confirming 挡掉。
       this.#confirming = true;
       this.#present(active, outcome, {
+        // **`#confirming` 必须撑过整个收尾，最后才复位。** 点的是气泡里的按钮，按钮此刻
+        // 持有焦点；`hide()` 把它从 DOM 里摘掉，浏览器随即发一次 `focusout`（`relatedTarget`
+        // 为空），`#handleFocusOut` 会把它当成"点到别处去了"而重新提交、重新校验、再弹出
+        // 同一个警告——看上去就是点了"继续/取消"毫无反应。所以先摘气泡、归还焦点，
+        // 这些动作触发的 `focusout` 都被 `#confirming` 挡掉，之后才复位。
         onContinue: () => {
-          this.#confirming = false;
           this.#presenter?.hide();
-          void this.#finishCommit(active, value);
+          void this.#finishCommit(active, value).finally(() => {
+            this.#confirming = false;
+          });
         },
         onCancel: () => {
-          this.#confirming = false;
           this.#presenter?.hide();
           editor.focus();
+          this.#confirming = false;
         }
       });
       return;
