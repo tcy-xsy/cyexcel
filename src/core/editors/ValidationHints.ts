@@ -15,14 +15,28 @@ export interface ValidationHintsOptions {
   readonly onPick: (row: number, column: number, value: string) => void;
 }
 
-const ARROW_WIDTH = 18;
+/** 列表与单元格之间的间距，同 Univer 的 `offset: [0, 3]`。 */
+const LIST_GAP = 3;
+
+interface CellRef {
+  readonly row: number;
+  readonly column: number;
+}
 
 /**
- * 选中单元格时的两样东西（数据验证设计稿 §8）：`list` 规则的下拉箭头和列表，以及
- * 规则的输入提示。都是 DOM，挂在编辑层里；一次只跟着一个活动格。
+ * 选中单元格时的两样东西（数据验证设计稿 §8）：`list` 规则的下拉列表，以及规则的输入
+ * 提示。都是 DOM，挂在编辑层里，一次只跟着一个活动格。
  *
- * **为什么全用 `<button>`。** 核心的指针路由把 `input/select/textarea/button/option`
- * 认作"原生输入目标"，不当成单元格点击处理；换成 `div` 的话，点一下下拉项会被路由到
+ * **箭头不在这里。** 下拉箭头画在画布上（`ContentLayerRenderer` 的 `hasCellDropdown`），
+ * 所有 list 单元格常驻，点击走画布的命中测试（`CyExcelCore#routeBodyDropdownArrow`）
+ * 再调 `toggleList`——这是 Univer 的做法：箭头是绘制的一部分，列表才是弹出层。
+ *
+ * **列表的生命周期同 Univer 的 `DropdownManagerService`：** 同一时刻至多一个；点列表外面
+ * 关闭；活动格一换就关闭（Univer 是选区移到没有下拉的格子时关，这里更严一点，换到另一个
+ * list 格也关，免得列表悬在上一格旁边）；选一项后关闭并写入。
+ *
+ * **为什么列表项用 `<button>`。** 核心的指针路由把 `input/select/textarea/button/option`
+ * 认作"原生输入目标"，不当成单元格点击处理；换成 `div` 的话，点一下列表项会被路由到
  * 下面的画布上，先选中了别的单元格。
  *
  * 这一层在 node 里测不了（没有 DOM），由 playground 手验；"该显示什么"的决策是纯函数
@@ -30,14 +44,21 @@ const ARROW_WIDTH = 18;
  */
 export class ValidationHints {
   readonly #options: ValidationHintsOptions;
-  #arrow: HTMLButtonElement | undefined;
   #prompt: HTMLDivElement | undefined;
   #list: HTMLDivElement | undefined;
-  #target: { readonly row: number; readonly column: number } | undefined;
+  /** 打开着的列表属于哪一格。 */
+  #listTarget: CellRef | undefined;
   #removeOutsideListeners: (() => void) | undefined;
+  /** 最近一次被"点外面"关掉的列表：哪个指针事件、哪一格。`toggleList` 靠它认出"这一下点的就是箭头"。 */
+  #closedByPointer: { readonly event: Event; readonly cell: CellRef } | undefined;
 
   constructor(options: ValidationHintsOptions) {
     this.#options = options;
+  }
+
+  /** 列表当前是不是开着（供调用方判断"再点一次是关"）。 */
+  get isListOpen(): boolean {
+    return this.#list !== undefined;
   }
 
   /**
@@ -45,47 +66,39 @@ export class ValidationHints {
    * 全部收起。每次 Scene 发布、选区变化、规则变化都会调用，所以要便宜：没有规则就是
    * 一次查询加 `hide()`。
    */
-  sync(scene: SceneSnapshot, active: { readonly row: number; readonly column: number } | null): void {
+  sync(scene: SceneSnapshot, active: CellRef | null): void {
     if (active === null) {
       this.hide();
       return;
     }
+    // 活动格换了：上一格打开的列表作废
+    if (this.#listTarget !== undefined && (this.#listTarget.row !== active.row || this.#listTarget.column !== active.column)) {
+      this.#closeList();
+    }
+
     const rule = this.#options.getRule(active.row, active.column);
     const hints = rule === undefined ? undefined : describeCellHints(rule);
     if (hints === undefined) {
       this.hide();
       return;
     }
-    const merge = this.#options.findMergeAt?.(active.row, active.column);
-    const range: CellRange = merge ?? {
-      startRow: active.row,
-      endRow: active.row,
-      startColumn: active.column,
-      endColumn: active.column
-    };
-    const rect = visibleRectForRange(scene, range);
+    const rect = this.#rectOf(scene, active);
     if (rect === null) {
       this.hide();
       return;
     }
 
-    // 换了一个格子：上一格打开的列表作废
-    if (this.#target?.row !== active.row || this.#target?.column !== active.column) {
-      this.#closeList();
+    if (this.#list !== undefined) {
+      if (hints.dropdownItems === undefined) {
+        // 规则改成了没有下拉的样子
+        this.#closeList();
+      } else {
+        this.#placeList(rect);
+      }
     }
-    this.#target = { row: active.row, column: active.column };
-
-    if (hints.dropdownItems !== undefined) {
-      this.#showArrow(rect, hints.dropdownItems);
-    } else {
-      this.#removeArrow();
-      this.#closeList();
-    }
-
     if (this.#list !== undefined) {
       // 列表开着的时候提示会盖在它上面，先收起
       this.#removePrompt();
-      this.#placeList(rect);
     } else if (hints.prompt !== undefined || hints.promptTitle !== undefined) {
       this.#showPrompt(rect, hints.promptTitle, hints.prompt);
     } else {
@@ -93,9 +106,42 @@ export class ValidationHints {
     }
   }
 
+  /**
+   * 点画布箭头时调用：这一格的列表开着就关，没开就开。
+   *
+   * `event` 是这次点击的指针事件。文档级的"点外面关闭"监听在捕获阶段先于画布的路由
+   * 跑，点箭头时它已经把列表关掉了——如果 `toggleList` 只看"列表现在开没开"，就会把
+   * 刚关掉的列表又打开，"再点一次关闭"永远做不到。所以认事件：同一个指针事件刚把
+   * 这一格的列表关掉，这次就不再打开。
+   */
+  toggleList(scene: SceneSnapshot, cell: CellRef, event?: Event): void {
+    const closed = this.#closedByPointer;
+    this.#closedByPointer = undefined;
+    if (
+      event !== undefined &&
+      closed !== undefined &&
+      closed.event === event &&
+      closed.cell.row === cell.row &&
+      closed.cell.column === cell.column
+    ) {
+      return;
+    }
+    if (this.#list !== undefined && this.#listTarget?.row === cell.row && this.#listTarget.column === cell.column) {
+      this.#closeList();
+      return;
+    }
+    this.#closeList();
+    const rule = this.#options.getRule(cell.row, cell.column);
+    const items = rule === undefined ? undefined : describeCellHints(rule)?.dropdownItems;
+    const rect = this.#rectOf(scene, cell);
+    if (items === undefined || rect === null) {
+      return;
+    }
+    this.#removePrompt();
+    this.#openList(cell, rect, items);
+  }
+
   hide(): void {
-    this.#target = undefined;
-    this.#removeArrow();
     this.#removePrompt();
     this.#closeList();
   }
@@ -104,61 +150,21 @@ export class ValidationHints {
     this.hide();
   }
 
-  // -- 箭头 -------------------------------------------------------------
-
-  #showArrow(rect: CellRect, items: readonly string[]): void {
-    if (this.#arrow === undefined) {
-      const arrow = document.createElement("button");
-      arrow.type = "button";
-      arrow.textContent = "▾";
-      arrow.setAttribute("aria-label", "打开下拉列表");
-      arrow.dataset.cyValidation = "dropdown-arrow";
-      arrow.style.cssText = [
-        "position:absolute",
-        "z-index:15",
-        "box-sizing:border-box",
-        `width:${ARROW_WIDTH}px`,
-        "padding:0",
-        "border:1px solid #c4c7cc",
-        "border-radius:3px",
-        "background:#f8f9fa",
-        "color:#5f6368",
-        "font:12px/1 system-ui,sans-serif",
-        "cursor:pointer",
-        "pointer-events:auto"
-      ].join(";");
-      // 点箭头不该把焦点从画布上抢走，否则键盘导航立刻失灵
-      arrow.addEventListener("mousedown", (event) => event.preventDefault());
-      this.#arrow = arrow;
-      this.#options.container.append(arrow);
-    }
-    const arrow = this.#arrow;
-    arrow.style.left = `${rect.x + rect.width - ARROW_WIDTH - 1}px`;
-    arrow.style.top = `${rect.y + 1}px`;
-    arrow.style.height = `${Math.max(0, rect.height - 2)}px`;
-    // 每次都重新绑定：条目和目标格随规则、选区变化
-    arrow.onclick = () => {
-      if (this.#list !== undefined) {
-        this.#closeList();
-        return;
-      }
-      this.#openList(rect, items);
+  #rectOf(scene: SceneSnapshot, cell: CellRef): CellRect | null {
+    const merge = this.#options.findMergeAt?.(cell.row, cell.column);
+    const range: CellRange = merge ?? {
+      startRow: cell.row,
+      endRow: cell.row,
+      startColumn: cell.column,
+      endColumn: cell.column
     };
-  }
-
-  #removeArrow(): void {
-    this.#arrow?.remove();
-    this.#arrow = undefined;
+    return visibleRectForRange(scene, range);
   }
 
   // -- 下拉列表 ---------------------------------------------------------
 
-  #openList(rect: CellRect, items: readonly string[]): void {
-    const target = this.#target;
-    if (target === undefined) {
-      return;
-    }
-    const current = this.#options.getCellValue(target.row, target.column);
+  #openList(cell: CellRef, rect: CellRect, items: readonly string[]): void {
+    const current = this.#options.getCellValue(cell.row, cell.column);
     const currentText = current === undefined ? "" : String(current);
 
     const list = document.createElement("div");
@@ -178,6 +184,7 @@ export class ValidationHints {
       "font:13px/1.4 system-ui,sans-serif",
       "pointer-events:auto"
     ].join(";");
+    // 点列表不该把焦点从画布上抢走，否则键盘导航立刻失灵
     list.addEventListener("mousedown", (event) => event.preventDefault());
 
     for (const item of items) {
@@ -206,23 +213,26 @@ export class ValidationHints {
       });
       option.addEventListener("click", () => {
         this.#closeList();
-        this.#options.onPick(target.row, target.column, item);
+        this.#options.onPick(cell.row, cell.column, item);
       });
       list.append(option);
     }
 
     this.#options.container.append(list);
     this.#list = list;
+    this.#listTarget = cell;
     this.#placeList(rect);
-    this.#removePrompt();
 
-    // 点到列表外面或按 Esc 关掉。捕获阶段监听，免得被别处的 stopPropagation 吞掉。
+    // 点到列表外面或按 Esc 关掉（Univer 的 `onClickOutside`）。捕获阶段监听，免得被别处
+    // 的 stopPropagation 吞掉。点在画布箭头上的那一下也会先在这里关掉，把事件记下来，
+    // 见 `toggleList`。
     const onPointerDown = (event: Event): void => {
       const node = event.target as Node | null;
-      if (node !== null && (list.contains(node) || this.#arrow?.contains(node))) {
+      if (node !== null && list.contains(node)) {
         return;
       }
       this.#closeList();
+      this.#closedByPointer = { event, cell };
     };
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
@@ -242,7 +252,7 @@ export class ValidationHints {
       return;
     }
     this.#list.style.left = `${rect.x}px`;
-    this.#list.style.top = `${rect.y + rect.height}px`;
+    this.#list.style.top = `${rect.y + rect.height + LIST_GAP}px`;
     this.#list.style.minWidth = `${rect.width}px`;
   }
 
@@ -251,6 +261,7 @@ export class ValidationHints {
     this.#removeOutsideListeners = undefined;
     this.#list?.remove();
     this.#list = undefined;
+    this.#listTarget = undefined;
   }
 
   // -- 输入提示 ---------------------------------------------------------

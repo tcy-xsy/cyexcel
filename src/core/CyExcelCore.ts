@@ -89,7 +89,14 @@ import {
   type DataValidationResult
 } from "./sheet/validations";
 import type { CellEditorFactory } from "./editors";
-import { ACCEPT, EditorManager, outcomeFromResult, ValidationHints } from "./editors";
+import {
+  ACCEPT,
+  EditorManager,
+  isInDropdownArrowZone,
+  outcomeFromResult,
+  ValidationHints,
+  visibleRectForRange
+} from "./editors";
 import { EventBus } from "./events";
 import {
   DomHeaderManager,
@@ -1059,6 +1066,7 @@ export class CyExcelCore {
       ...(options.dataValidation?.showInvalidMarks !== false
         ? { isCellInvalid: (row: number, column: number) => this.#isCellInvalid(row, column) }
         : {}),
+      hasCellDropdown: (row, column) => this.#hasDropdown(row, column),
       ...(options.showGridLines !== undefined ? { showGridLines: options.showGridLines } : {})
     });
     this.#selectionRenderer = new SelectionLayerRenderer({
@@ -1281,6 +1289,16 @@ export class CyExcelCore {
       priority: 300,
       route: (context) => this.#routeBodyFill(context)
     });
+    // list 规则的下拉箭头（画在画布上，见 ContentLayerRenderer 的 hasCellDropdown）：
+    // 点在箭头的命中区里就打开列表，不走后面的自定义 renderer、链接、选区。优先级在填充柄
+    // 之下、自定义 renderer 之上：填充柄在选区角上，箭头在格子右侧，几乎不会撞；而 list
+    // 格子上的 renderer 不该抢走箭头的点击。
+    this.#inputRouter.register({
+      id: "body-validation-dropdown",
+      surface: "body",
+      priority: 250,
+      route: (context) => this.#routeBodyDropdownArrow(context)
+    });
     this.#inputRouter.register({
       id: "body-canvas-cell",
       surface: "body",
@@ -1475,6 +1493,8 @@ export class CyExcelCore {
       this.#scroller.removeEventListener("contextmenu", this.#handleContextMenu);
       this.#headerCanvas.removeEventListener("pointermove", this.#handleHeaderPointerHover);
       this.#rowHeaderCanvas.removeEventListener("pointermove", this.#handleRowHeaderPointerHover);
+      this.#contentCanvas.removeEventListener("pointermove", this.#handleBodyPointerHover);
+      this.#contentCanvas.removeEventListener("pointerleave", this.#handleBodyPointerLeave);
     });
     this.#contentCanvas.addEventListener("dblclick", this.#handleDblClick);
     this.#contentCanvas.addEventListener("keydown", this.#handleKeyDown);
@@ -1495,6 +1515,9 @@ export class CyExcelCore {
     this.#headerCanvas.addEventListener("pointermove", this.#handleHeaderPointerHover);
     // Same story for a 0-width row header canvas — see CyExcelCoreOptions.rowHeaderWidth.
     this.#rowHeaderCanvas.addEventListener("pointermove", this.#handleRowHeaderPointerHover);
+    // 悬停在下拉箭头上时手型光标（Univer 的 `onPointerEnter` 设 POINTER）
+    this.#contentCanvas.addEventListener("pointermove", this.#handleBodyPointerHover);
+    this.#contentCanvas.addEventListener("pointerleave", this.#handleBodyPointerLeave);
 
     // 顶部部件必须**最后**创建：工具栏一构造就会读选区与样式来算按钮状态，
     // 放在前面会读到还没赋值的 #selectionModel。core 只给槽位与布局，部件本身
@@ -1744,6 +1767,16 @@ export class CyExcelCore {
       (row, column) => this.#store.getCell(row, column) as CellValue | undefined,
       (row, column) => this.#validateOptions(row, column)
     );
+  }
+
+  /** 这一格该不该画下拉箭头：`list` 规则，且没关 `showDropDown`。绘制时每格每帧调一次。 */
+  #hasDropdown(row: number, column: number): boolean {
+    const rules = this.#sheet.validations();
+    if (rules.length === 0) {
+      return false;
+    }
+    const rule = findRuleAt(rules, row, column);
+    return rule !== undefined && rule.criteria.type === "list" && rule.showDropDown !== false;
   }
 
   /** 绘制时每个可见格每帧调一次：没有规则时只是一次长度判断。 */
@@ -2376,6 +2409,8 @@ export class CyExcelCore {
     this.#scroller.removeEventListener("contextmenu", this.#handleContextMenu);
     this.#headerCanvas.removeEventListener("pointermove", this.#handleHeaderPointerHover);
     this.#rowHeaderCanvas.removeEventListener("pointermove", this.#handleRowHeaderPointerHover);
+    this.#contentCanvas.removeEventListener("pointermove", this.#handleBodyPointerHover);
+    this.#contentCanvas.removeEventListener("pointerleave", this.#handleBodyPointerLeave);
 
     this.#hooks.dispose();
     this.#events.dispose();
@@ -2950,6 +2985,82 @@ export class CyExcelCore {
       context.frame
     );
     return began ? handleInput(undefined) : declineInput();
+  }
+
+  /**
+   * `point` 落在哪一格的下拉箭头命中区里，返回那一格（合并单元格返回锚点）；没有则
+   * `undefined`。路由和悬停光标共用这一个判定，"画在哪、点哪里"不会各算各的。
+   */
+  #dropdownArrowTargetAt(scene: SceneSnapshot, point: SurfacePoint<"body">): { row: number; column: number } | undefined {
+    if (this.#sheet.validations().length === 0) {
+      return undefined;
+    }
+    const hit = scene.hitTestCellGeometry(point);
+    if (!hit) {
+      return undefined;
+    }
+    const merge = findMergeAt(this.#sheet.merges(), hit.cell.row, hit.cell.column);
+    const anchor = merge ? { row: merge.startRow, column: merge.startColumn } : hit.cell;
+    if (!this.#hasDropdown(anchor.row, anchor.column)) {
+      return undefined;
+    }
+    const rect = merge ? visibleRectForRange(scene, merge) : hit.rect;
+    return rect !== null && isInDropdownArrowZone(rect, point) ? { row: anchor.row, column: anchor.column } : undefined;
+  }
+
+  #routeBodyDropdownArrow(context: CorePointerInputContext) {
+    const { event, frame } = context;
+    if (event.button !== 0 || frame.structureVersion === undefined || this.#editorManager.isEditing()) {
+      return declineInput();
+    }
+    const target = this.#dropdownArrowTargetAt(frame.scene, context.point as SurfacePoint<"body">);
+    if (target === undefined) {
+      return declineInput();
+    }
+    const structureVersion = frame.structureVersion;
+    this.#interactionFrames.enqueueIntent(() => {
+      if (structureVersion !== this.#structure.version) {
+        return;
+      }
+      // 点箭头同时选中这一格（否则列表开在一个没被选中的格子上，接着键盘一动就错位），
+      // 再开或关列表。事件传下去，让"点外面关闭"与"再点箭头关闭"不打架。
+      this.#selectionModel.moveActiveTo(target.row, target.column, false);
+      this.#renderScheduler.invalidateSelection();
+      this.#contentCanvas.focus({ preventScroll: true });
+      this.#validationHints.toggleList(this.#scene, target, event);
+    });
+    return handleInput(undefined);
+  }
+
+  /** 光标当前是不是被我们设成了手型——只在变化时写样式，别每次 pointermove 都碰 DOM。 */
+  #dropdownCursorActive = false;
+
+  #handleBodyPointerHover = (event: PointerEvent): void => {
+    // 拖选、拖填充柄时不管光标
+    if (event.buttons !== 0) {
+      return;
+    }
+    let over = false;
+    if (this.#sheet.validations().length > 0 && !this.#editorManager.isEditing()) {
+      over =
+        this.#dispatchInteraction("body-pointer-hover", (frame) => {
+          const point = frame.surfaces.clientToSurface(clientPoint(event.clientX, event.clientY), "body");
+          return point !== undefined && point !== null && this.#dropdownArrowTargetAt(frame.scene, point) !== undefined;
+        }) ?? false;
+    }
+    this.#setDropdownCursor(over);
+  };
+
+  #handleBodyPointerLeave = (): void => {
+    this.#setDropdownCursor(false);
+  };
+
+  #setDropdownCursor(active: boolean): void {
+    if (active === this.#dropdownCursorActive) {
+      return;
+    }
+    this.#dropdownCursorActive = active;
+    this.#contentCanvas.style.cursor = active ? "pointer" : "";
   }
 
   /** A custom renderer only owns the input when its single hitTest call returns an action. */

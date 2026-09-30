@@ -792,3 +792,96 @@ describe("ContentLayerRenderer — invalid-data mark", () => {
     expect(saves).toBe(restores);
   });
 });
+
+describe("ContentLayerRenderer — dropdown arrow", () => {
+  function triangles(ctx: RecordingCanvasContext): Array<readonly unknown[]> {
+    return ctx.calls.filter((call) => call.method === "moveTo").map((call) => call.args);
+  }
+
+  it("draws a down-pointing triangle centred in the arrow zone of each dropdown cell only", () => {
+    const ctx = new RecordingCanvasContext();
+    const layout = createLayout(2, 2); // rowHeight 20, columnWidths [50, 50]
+    const renderer = createContentRenderer({
+      ctx,
+      layout,
+      getCellValue: () => "x",
+      hasCellDropdown: (row, column) => row === 0 && column === 1
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
+
+    renderer.paintContent({ kind: "full" });
+
+    // (0, 1)：x 50..100、y 0..20；区宽 18 → 中心 x = 100 - 9 = 91，y = 10
+    expect(triangles(ctx)).toEqual([[87.5, 8]]);
+    const lineTos = ctx.calls.filter((call) => call.method === "lineTo").map((call) => call.args);
+    expect(lineTos).toEqual([
+      [94.5, 8],
+      [91, 12.5] // 尖朝下
+    ]);
+  });
+
+  it("is independent of the invalid mark: both can appear on the same cell", () => {
+    const ctx = new RecordingCanvasContext();
+    const renderer = createContentRenderer({
+      ctx,
+      layout: createLayout(1, 1),
+      getCellValue: () => "x",
+      isCellInvalid: () => true,
+      hasCellDropdown: () => true
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 50, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    expect(ctx.calls.filter((call) => call.method === "fill")).toHaveLength(2);
+  });
+
+  it("uses the merged rect's right edge for a merged cell, painted once", () => {
+    const ctx = new RecordingCanvasContext();
+    const merge = { startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 };
+    const renderer = createContentRenderer({
+      ctx,
+      layout: createLayout(3, 2),
+      getCellValue: () => "x",
+      getMergesInRange: (range) => mergesIntersectingRange([merge], range),
+      hasCellDropdown: (row, column) => row === 0 && column === 0
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 60 });
+
+    renderer.paintContent({ kind: "full" });
+
+    // 合并区 x 0..100、y 0..40 → 中心 (91, 20)
+    expect(triangles(ctx)).toEqual([[87.5, 18]]);
+  });
+
+  it("paints nothing extra when no cell has a dropdown, or when the option is absent", () => {
+    const layout = createLayout(2, 2);
+    const none = new RecordingCanvasContext();
+    const a = createContentRenderer({ ctx: none, layout, getCellValue: () => "x", hasCellDropdown: () => false });
+    a.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
+    a.paintContent({ kind: "full" });
+
+    const absent = new RecordingCanvasContext();
+    const b = createContentRenderer({ ctx: absent, layout, getCellValue: () => "x" });
+    b.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 40 });
+    b.paintContent({ kind: "full" });
+
+    expect(triangles(none)).toEqual([]);
+    expect(none.calls).toEqual(absent.calls);
+  });
+
+  it("keeps save/restore balanced", () => {
+    const ctx = new RecordingCanvasContext();
+    const renderer = createContentRenderer({
+      ctx,
+      layout: createLayout(1, 2),
+      getCellValue: () => "x",
+      hasCellDropdown: () => true
+    });
+    renderer.setViewport({ scrollTop: 0, scrollLeft: 0, width: 100, height: 20 });
+
+    renderer.paintContent({ kind: "full" });
+
+    expect(ctx.calls.filter((c) => c.method === "save")).toHaveLength(ctx.calls.filter((c) => c.method === "restore").length);
+  });
+});

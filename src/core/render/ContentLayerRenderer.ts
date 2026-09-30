@@ -11,6 +11,8 @@ import {
   CELL_PADDING,
   FROZEN_SEPARATOR_COLOR,
   FROZEN_SEPARATOR_THICKNESS,
+  DROPDOWN_ARROW_COLOR,
+  DROPDOWN_ARROW_ZONE,
   GRID_LINE_COLOR,
   INVALID_MARK_COLOR,
   INVALID_MARK_SIZE,
@@ -72,6 +74,12 @@ export interface ContentLayerRendererOptions {
    * 每帧对每个可见格调用一次，实现必须便宜——没有规则时应当是一次数组长度判断。
    */
   readonly isCellInvalid?: (row: number, column: number) => boolean;
+  /**
+   * 这一格要不要画下拉箭头（数据验证的 `list` 规则）。和"无效"角标一样画在 painter 之外，
+   * 常驻、不看选区——同 Univer 的 `DropdownWidget`：箭头是绘制的一部分，点击由画布的
+   * 命中测试处理。每帧对每个可见格调用一次，实现必须便宜。
+   */
+  readonly hasCellDropdown?: (row: number, column: number) => boolean;
 }
 
 function defaultPainter(context: CellPaintContext): void {
@@ -123,6 +131,7 @@ export class ContentLayerRenderer {
   readonly #showGridLines: boolean;
   readonly #getMergesInRange: ContentLayerRendererOptions["getMergesInRange"];
   readonly #isCellInvalid: ContentLayerRendererOptions["isCellInvalid"];
+  readonly #hasCellDropdown: ContentLayerRendererOptions["hasCellDropdown"];
 
   constructor(options: ContentLayerRendererOptions) {
     this.#ctx = options.ctx;
@@ -136,6 +145,7 @@ export class ContentLayerRenderer {
     this.#showGridLines = options.showGridLines ?? true;
     this.#getMergesInRange = options.getMergesInRange;
     this.#isCellInvalid = options.isCellInvalid;
+    this.#hasCellDropdown = options.hasCellDropdown;
   }
 
   paintContent(dirty: DirtyState, scene: SceneSnapshot = this.#getScene()): void {
@@ -309,6 +319,7 @@ export class ContentLayerRenderer {
       this.#paintGridLine(rect);
       this.#paintBorder(rect, style);
       this.#paintInvalidMark(row, column, rect);
+      this.#paintDropdownArrow(row, column, rect);
       return;
     }
     this.#ctx.restore();
@@ -323,6 +334,29 @@ export class ContentLayerRenderer {
     this.#paintGridLine(rect);
     this.#paintBorder(rect, style);
     this.#paintInvalidMark(row, column, rect);
+    this.#paintDropdownArrow(row, column, rect);
+  }
+
+  /**
+   * 右侧居中的向下小三角。箭头中心落在命中区（`DROPDOWN_ARROW_ZONE`）的正中，格子比
+   * 命中区还窄时贴着格子边缘。自己 save/restore，理由同无效角标。
+   */
+  #paintDropdownArrow(row: number, column: number, rect: CellRect): void {
+    if (this.#hasCellDropdown === undefined || !this.#hasCellDropdown(row, column)) {
+      return;
+    }
+    const zone = Math.min(DROPDOWN_ARROW_ZONE, rect.width);
+    const centerX = rect.x + rect.width - zone / 2;
+    const centerY = rect.y + rect.height / 2;
+    this.#ctx.save();
+    this.#ctx.fillStyle = DROPDOWN_ARROW_COLOR;
+    this.#ctx.beginPath();
+    this.#ctx.moveTo(centerX - 3.5, centerY - 2);
+    this.#ctx.lineTo(centerX + 3.5, centerY - 2);
+    this.#ctx.lineTo(centerX, centerY + 2.5);
+    this.#ctx.closePath();
+    this.#ctx.fill();
+    this.#ctx.restore();
   }
 
   /** 右上角的红色小三角。自己 save/restore：不能把 fillStyle 漏给下一格。 */
