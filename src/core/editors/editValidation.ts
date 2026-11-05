@@ -6,7 +6,7 @@ import type { DataValidationResult } from "../sheet/validations";
  *
  * 与 Univer 一致，只有**停止**级（`errorStyle: "stop"`，默认）会拦：
  * - `accept`：照常提交。违规但不是停止级的值也走这里——只会被标上红色小三角。
- * - `reject`：不提交，弹出模态对话框说明原因；关掉之后回到编辑器，输入内容还在。
+ * - `reject`：不提交，弹出模态对话框说明原因；关闭时放弃本次修改，保留原值并退出编辑。
  *
  * 警告、信息两档不弹确认、也不提示：Univer 的拦截器只处理 `STOP`，其余直接放行。
  */

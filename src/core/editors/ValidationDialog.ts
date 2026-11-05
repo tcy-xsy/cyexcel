@@ -10,15 +10,18 @@ const OK_LABEL = "确定";
  *
  * 挂在 `document.body` 上而不是编辑层：模态框要盖住整个页面（含工具栏），而且不该被
  * 表格的滚动、裁剪影响。代价是编辑器会在对话框拿到焦点时失焦，所以 `EditorManager` 在
- * 对话框开着的整个期间挡掉提交，等它关掉、焦点还回编辑器之后才放开——见它的注释。
+ * 对话框开着的整个期间挡掉提交，关闭时放弃无效修改并退出编辑——见它的注释。
  *
  * 这一层在 node 里测不了（没有 DOM），由 playground 手验；"什么时候弹"是
  * `EditorManager` 的事，那部分用假呈现器测。
  */
 export function createDomValidationPresenter(): ValidationPresenter {
   let backdrop: HTMLDivElement | undefined;
+  let releaseFocus: (() => void) | undefined;
 
   const hide = (): void => {
+    releaseFocus?.();
+    releaseFocus = undefined;
     backdrop?.remove();
     backdrop = undefined;
   };
@@ -61,6 +64,9 @@ export function createDomValidationPresenter(): ValidationPresenter {
 
       const body = document.createElement("div");
       body.textContent = request.message;
+      const hint = document.createElement("div");
+      hint.textContent = "本次修改未保存，关闭后保留原值。";
+      hint.style.cssText = "margin-top:8px;color:#5f6368;font-size:12px";
 
       const footer = document.createElement("div");
       footer.style.cssText = "display:flex;justify-content:flex-end;margin-top:16px";
@@ -87,7 +93,7 @@ export function createDomValidationPresenter(): ValidationPresenter {
         request.onClose();
       };
       ok.addEventListener("click", close);
-      dialog.addEventListener("keydown", (event) => {
+      const onKeyDown = (event: KeyboardEvent): void => {
         if (event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
@@ -96,10 +102,23 @@ export function createDomValidationPresenter(): ValidationPresenter {
           // 对话框里只有一个可聚焦的东西：Tab 也别让焦点漏到后面的表格里
           event.preventDefault();
         }
-      });
+      };
+      const onFocusIn = (event: FocusEvent): void => {
+        // A click that triggered focusout can still focus the canvas after
+        // show() returns. Keep keyboard actions inside the modal as well.
+        if (event.target instanceof Node && !dialog.contains(event.target)) {
+          ok.focus();
+        }
+      };
+      document.addEventListener("keydown", onKeyDown, true);
+      document.addEventListener("focusin", onFocusIn);
+      releaseFocus = () => {
+        document.removeEventListener("keydown", onKeyDown, true);
+        document.removeEventListener("focusin", onFocusIn);
+      };
 
       footer.append(ok);
-      dialog.append(heading, body, footer);
+      dialog.append(heading, body, hint, footer);
       overlay.append(dialog);
       document.body.append(overlay);
       backdrop = overlay;

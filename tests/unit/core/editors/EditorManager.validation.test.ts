@@ -157,7 +157,7 @@ describe("EditorManager validation — stop (reject)", () => {
     expect(fake.last()).toMatchObject({ title: "数量无效", message: "需要整数" });
   });
 
-  it("hands focus back to the editor when the dialog is closed, then validates again on the next attempt", async () => {
+  it("abandons the invalid draft on close and allows a fresh valid edit", async () => {
     let accept = false;
     const { manager, fake, events, commits } = setup(() => (accept ? { kind: "accept" } : reject));
     manager.startEdit(0, 0);
@@ -165,10 +165,12 @@ describe("EditorManager validation — stop (reject)", () => {
     events.length = 0;
 
     fake.last()?.onClose();
-    expect(events).toEqual(["focus"]);
-    expect(manager.isEditing()).toBe(true);
+    expect(events).toEqual(["destroy"]);
+    expect(manager.isEditing()).toBe(false);
+    expect(commits).toEqual([]);
 
     accept = true;
+    manager.startEdit(0, 0);
     await manager.commitEdit();
     expect(commits).toEqual(["typed"]);
     expect(manager.isEditing()).toBe(false);
@@ -191,7 +193,7 @@ describe("EditorManager validation — stop (reject)", () => {
   it("closing the dialog does not raise it again when the removed OK button fires a focusout", async () => {
     // 回归：点「确定」→ 按钮被摘掉 → 浏览器发 focusout → 曾被当成"点到别处去了"而重新校验、
     // 再弹出同一个对话框，看上去就是点了没反应。
-    const { manager, fake, commits, validated } = setup(reject, { focusoutOnHide: true });
+    const { manager, container, fake, commits, validated } = setup(reject, { focusoutOnHide: true });
     manager.startEdit(0, 0);
     await manager.commitEdit();
 
@@ -202,11 +204,12 @@ describe("EditorManager validation — stop (reject)", () => {
     expect(fake.shown).toHaveLength(1);
     expect(validated).toHaveLength(1);
     expect(commits).toEqual([]);
-    expect(manager.isEditing()).toBe(true);
+    expect(manager.isEditing()).toBe(false);
 
-    // 关掉之后提交仍然可用：再来一次会重新弹出
+    // Leaving the cell after acknowledging must not resubmit the rejected draft.
+    container.dispatch("focusout", { relatedTarget: null });
     await manager.commitEdit();
-    expect(fake.shown).toHaveLength(2);
+    expect(fake.shown).toHaveLength(1);
   });
 
   it("Escape still cancels the edit and hides the dialog", async () => {

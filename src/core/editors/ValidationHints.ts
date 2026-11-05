@@ -2,7 +2,7 @@ import type { CellRect } from "../layout";
 import type { SceneSnapshot } from "../scene";
 import type { CellValue } from "../sheet/types";
 import type { CellRange } from "../types";
-import { describeDropdownItems, type DataValidationRule } from "../sheet/validations";
+import { describeDropdownItems, type DataValidationRule, type ValidationErrorStyle } from "../sheet/validations";
 import { visibleRectForRange } from "./visibleCellRect";
 
 export interface ValidationHintsOptions {
@@ -36,7 +36,7 @@ interface CellRef {
  * list 格也关，免得列表悬在上一格旁边）；选一项后关闭并写入。
  *
  * **错误提示同 Univer 的 `DataValidationAlertController`：** 鼠标停在违规的格子上，
- * 在格子旁弹一个宽 200 的小提示（标题「错误」加规则的错误信息）；移开、滚动、选区变化、
+ * 在格子旁显示与规则级别对应的轻量提示；移开、滚动、选区变化、
  * 开始编辑都收起。什么时候弹由调用方决定（去抖、判断违规），这里只管画。
  *
  * **为什么列表项用 `<button>`。** 核心的指针路由把 `input/select/textarea/button/option`
@@ -135,39 +135,53 @@ export class ValidationHints {
   }
 
   /** 在 `cell` 旁显示错误提示（鼠标停在违规格子上）。列表开着时不显示，免得盖住它。 */
-  showAlert(scene: SceneSnapshot, cell: CellRef, message: string): void {
+  showAlert(scene: SceneSnapshot, cell: CellRef, message: string, errorStyle: ValidationErrorStyle = "stop"): void {
     const rect = this.#rectOf(scene, cell);
     if (rect === null || this.#list !== undefined) {
       return;
     }
     this.hideAlert();
+    const appearance = {
+      stop: { title: "输入无效", color: "#b3261e", border: "#f1c8c5" },
+      warning: { title: "注意", color: "#946200", border: "#f2d49b" },
+      information: { title: "提示", color: "#526277", border: "#d6dee8" }
+    }[errorStyle];
+    // The editor layer is only a positioning origin; its own box is 0 x 0.
+    // Use the Scene's body bounds for both sizing and edge clamping.
+    const { width, height } = scene.getSurface("body").rootRect;
     const bubble = document.createElement("div");
-    bubble.setAttribute("role", "alert");
+    bubble.setAttribute("role", "tooltip");
     bubble.dataset.cyValidation = "alert";
+    bubble.dataset.severity = errorStyle;
     bubble.style.cssText = [
       "position:absolute",
       "z-index:14",
       "box-sizing:border-box",
-      "width:200px",
+      `width:${Math.min(240, Math.max(0, width - 8))}px`,
       "padding:8px 10px",
       "background:#fff",
-      "border:1px solid #fe4b4b",
-      "border-radius:4px",
-      "box-shadow:0 2px 8px rgba(0,0,0,.18)",
+      `border:1px solid ${appearance.border}`,
+      "border-radius:6px",
+      "box-shadow:0 2px 8px rgba(32,33,36,.08)",
       "font:12px/1.5 system-ui,sans-serif",
+      "overflow-wrap:anywhere",
       "color:#202124",
       // 只是提示：不接指针事件，不挡住下面的单元格
       "pointer-events:none"
     ].join(";");
     const heading = document.createElement("div");
-    heading.style.cssText = "font-weight:600;color:#d93025";
-    heading.textContent = "错误";
+    heading.style.cssText = `font-weight:600;margin-bottom:3px;color:${appearance.color}`;
+    heading.textContent = appearance.title;
     const body = document.createElement("div");
     body.textContent = message;
     bubble.append(heading, body);
     bubble.style.left = `${rect.x}px`;
     bubble.style.top = `${rect.y + rect.height + LIST_GAP}px`;
     this.#options.container.append(bubble);
+    bubble.style.left = `${Math.max(4, Math.min(rect.x, width - bubble.offsetWidth - 4))}px`;
+    if (rect.y + rect.height + LIST_GAP + bubble.offsetHeight > height) {
+      bubble.style.top = `${Math.max(4, rect.y - bubble.offsetHeight - LIST_GAP)}px`;
+    }
     this.#alert = bubble;
   }
 

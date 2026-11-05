@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Data validation interactions</title>
+    <style>#app { width: 640px; height: 360px; }</style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createSheet } from "/src/createSheet.ts";
+      import { matrixToWorkbookSnapshot } from "/src/core/index.ts";
+      const sheet = createSheet(document.getElementById("app"), {
+        toolbar: false,
+        columns: [
+          { width: 150, header: "Task" },
+          { width: 90, header: "Quantity", type: "number" },
+          { width: 120, header: "Status" },
+          { width: 100, header: "Note" }
+        ],
+        snapshot: matrixToWorkbookSnapshot([["First", 8, "Open", "short"], ["Second", 250, "Done", "short"]]),
+        rowHeight: 30,
+        headerHeight: 28,
+        rowHeaderWidth: 48
+      });
+      sheet.setDataValidation({ startRow: 0, endRow: 1, startColumn: 1, endColumn: 1 }, {
+        criteria: { type: "whole", operator: "between", value1: 1, value2: 100 },
+        errorStyle: "stop",
+        errorTitle: "Invalid quantity",
+        errorMessage: "Enter an integer from 1 to 100"
+      });
+      sheet.setDataValidation({ startRow: 0, endRow: 1, startColumn: 2, endColumn: 2 }, {
+        criteria: { type: "list", items: ["Open", "Done"] }
+      });
+      sheet.setDataValidation({ startRow: 0, endRow: 0, startColumn: 3, endColumn: 3 }, {
+        criteria: { type: "textLength", operator: "lessThanOrEqual", value1: 5 },
+        errorStyle: "warning"
+      });
+      sheet.setDataValidation({ startRow: 1, endRow: 1, startColumn: 3, endColumn: 3 }, {
+        criteria: { type: "textLength", operator: "lessThanOrEqual", value1: 5 },
+        errorStyle: "information",
+        errorMessage: "Consider a shorter note"
+      });
+      window.validationSheet = sheet;
+    </script>
+  </body>
+</html>

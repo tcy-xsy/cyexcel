@@ -77,7 +77,7 @@ export class EditorManager {
   #active: ActiveEdit | null = null;
   #composing = false;
   /**
-   * The rejection dialog is open (or has just closed and focus is being handed back):
+   * The rejection dialog is open:
    * further commit attempts are ignored. Opening it steals focus from the editor, and
    * removing its focused OK button fires another `focusout`; both look like "clicked
    * elsewhere" to `#handleFocusOut`, which would re-validate and pop the dialog again.
@@ -188,21 +188,18 @@ export class EditorManager {
     const outcome = this.#validateCommit?.(row, column, value) ?? ACCEPT;
 
     if (outcome.kind === "reject") {
-      // 停止：什么都不提交，弹模态对话框说明原因；关掉之后回到编辑器，输入内容还在。
+      // Reject this write. Acknowledging the error abandons the draft so
+      // clicking another cell cannot submit the same invalid value again.
       this.#dialogOpen = true;
       this.#presenter ??= createDomValidationPresenter();
       this.#presenter.show({
         ...(outcome.title !== undefined ? { title: outcome.title } : {}),
         message: outcome.message,
         onClose: () => {
-          // **`#dialogOpen` 必须撑到最后才复位**：关对话框会把持有焦点的「确定」按钮摘掉，
-          // 浏览器随即发一次 `focusout`（`relatedTarget` 为空），先复位的话
-          // `#handleFocusOut` 会当成"点到别处去了"，重新校验、又弹出同一个对话框。
-          this.#presenter?.hide();
           if (this.#active?.editor === editor) {
-            editor.focus();
+            // cancelEdit clears #active before removing focused DOM nodes.
+            this.cancelEdit();
           }
-          this.#dialogOpen = false;
         }
       });
       return;

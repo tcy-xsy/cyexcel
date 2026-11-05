@@ -13,7 +13,7 @@ import {
 
 const columns = [
   { width: 150, header: "任务" },
-  { width: 90, header: "数量" },
+  { width: 90, header: "数量", type: "number" },
   { width: 120, header: "状态" },
   { width: 100, header: "优先级" },
   { width: 120, header: "交付日期" },
@@ -68,7 +68,7 @@ const rules: readonly DataValidationRule[] = [
     criteria: { type: "date", operator: "greaterThanOrEqual", value1: serialFromISODate("2026-01-01") ?? 0 },
     errorStyle: "warning",
     errorTitle: "日期偏早",
-    errorMessage: "交付日期早于 2026-01-01，仍要保存吗？"
+    errorMessage: "交付日期早于 2026-01-01，请核对日期"
   },
   {
     id: "dv-note",
@@ -153,7 +153,7 @@ sheet.getDataValidationAt(row, column);       // 这一格所在的规则`)
   root.append(styles.root);
   root.append(
     apiTable([
-      { name: "stop（默认）", type: "拒绝", description: "不提交，弹出模态对话框（标题、错误信息、一个「确定」按钮）；点确定回到编辑器，输入内容还在。对话框开着的时候，回车、失焦等提交动作都被挡住。" },
+      { name: "stop（默认）", type: "拒绝", description: "不提交，弹出模态对话框说明原因；点「确定」或按 Esc 放弃本次无效修改，保留原值并退出编辑，可以继续选择其他单元格。对话框开着的时候，回车、失焦等提交动作都被挡住。" },
       { name: "warning", type: "仅标记", description: "值照常提交，违规的格子右上角出现红色小三角。" },
       { name: "information", type: "仅标记", description: "同 warning。" }
     ])
@@ -218,7 +218,8 @@ sheet.setDataValidation(range, { criteria: { type: "custom", name: "even" } });`
     paragraph(
       "设置规则不会检查已有数据是否合规。findInvalidCells() 列出违规的格子，对应 Excel 的“圈释无效数据”；" +
         "validateCell() 检查单格。关掉红色小三角用 dataValidation: { showInvalidMarks: false }。" +
-        "鼠标停在违规的格子上时，会在格子旁弹出这条规则的错误信息（停留 100ms 后出现，移开、滚动、开始编辑都会收起）。"
+        "鼠标停在违规的格子上时，会在格子旁显示规则说明（停留 400ms 后出现，移开、滚动、开始编辑都会收起）。" +
+        "停止级显示“输入无效”，警告级显示“注意”，信息级显示“提示”，不会都当成错误。"
     )
   );
   root.append(check.root);
