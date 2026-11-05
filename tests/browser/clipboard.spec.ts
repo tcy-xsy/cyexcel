@@ -143,7 +143,7 @@ test("pasting into a clipboard.paste:false column leaves its existing value unch
   expect(await getCell(page, 0, 3)).toBe(100); // "locked" column: unchanged, not the pasted 999
 });
 
-test("the programmatic copy() API fully serializes an array cell in raw mode, not just its preview", async ({
+test("the programmatic copy() API escapes tabs, newlines and quotes in a raw text cell", async ({
   page,
   context
 }) => {
@@ -157,7 +157,7 @@ test("the programmatic copy() API fully serializes an array cell in raw mode, no
     return navigator.clipboard.readText();
   });
 
-  expect(result).toBe(escapeTsvCell(JSON.stringify(["red", "green", "blue", "yellow"])));
+  expect(result).toBe(escapeTsvCell('red\tgreen\n"blue", yellow'));
 });
 
 test("the programmatic paste() API reads from the system clipboard and commits a single transaction", async ({

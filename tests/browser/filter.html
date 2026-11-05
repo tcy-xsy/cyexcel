@@ -44,11 +44,12 @@
         { width: 120, header: "Name" },
         {
           width: 100,
+          sortable: true,
           header: customHeaders ? { title: "Category", renderer: customCategoryHeaderRenderer } : "Category",
           // `?unfilterable=1` turns this column off at the column level.
           ...(new URLSearchParams(location.search).get("unfilterable") === "1"
             ? { filterable: false }
-            : {})
+            : { filterable: true })
         },
         { width: 80, header: "Score", type: "number" }
       ];

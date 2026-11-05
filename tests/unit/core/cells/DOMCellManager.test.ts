@@ -408,3 +408,19 @@ describe("DOMCellManager — merged cells", () => {
     expect(instances).toHaveLength(2);
   });
 });
+
+
+it("keeps a merged DOM renderer when its anchor row is filtered", () => {
+  const layout = new LayoutEngine({ rowCount: 3, columnCount: 1, rowHeight: 20, columnWidths: [50] });
+  layout.replaceRoot(layout.prepareSetFilteredRows(new Set([0, 1])));
+  const { factory, instances } = createRecordingFactory();
+  const { manager } = createManager({
+    layout,
+    columns: [domColumn(factory)],
+    merges: [{ startRow: 0, endRow: 2, startColumn: 0, endColumn: 0 }]
+  });
+  manager.sync(createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 50, height: 60 }));
+  expect(instances).toHaveLength(1);
+  expect(instances[0]?.contexts[0]?.row).toBe(0);
+  manager.dispose();
+});

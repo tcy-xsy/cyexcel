@@ -15,7 +15,9 @@ export interface CopyPlan {
   readonly rows: number;
   readonly columns: number;
   readonly cells: number;
+  /** Observed byte estimate; oversized plans stop scanning once a limit is exceeded. */
   readonly estimatedBytes: number;
+  /** Whether the inspected prefix contains complex values; oversized plans may skip inspection. */
   readonly containsComplexValues: boolean;
   readonly recommendedMode: "display" | "raw" | "download";
 }

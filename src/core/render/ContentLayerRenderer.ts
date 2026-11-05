@@ -247,7 +247,10 @@ export class ContentLayerRenderer {
         if (!mergeFragment) {
           continue;
         }
-        for (let row = Math.max(merge.startRow, fragment.rows.start); row <= Math.min(merge.endRow, lastRow); row += 1) {
+        for (const row of scene.getRenderableRows({
+          start: Math.max(merge.startRow, fragment.rows.start),
+          count: Math.min(merge.endRow, lastRow) - Math.max(merge.startRow, fragment.rows.start) + 1
+        })) {
           for (
             let column = Math.max(merge.startColumn, fragment.columns.start);
             column <= Math.min(merge.endColumn, lastColumn);
@@ -260,7 +263,7 @@ export class ContentLayerRenderer {
       }
     }
 
-    for (let row = fragment.rows.start; row <= lastRow; row += 1) {
+    for (const row of scene.getRenderableRows(fragment.rows)) {
       for (let column = fragment.columns.start; column <= lastColumn; column += 1) {
         if (mergeCoveredCells.has(`${row},${column}`)) {
           continue;

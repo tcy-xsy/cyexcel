@@ -133,7 +133,10 @@ export class DOMCellManager {
       const coveredCells = new Set<string>();
       const mergeAtAnchor = new Map<string, CellRange>();
       for (const merge of intersectingMerges) {
-        for (let row = Math.max(merge.startRow, fragment.rows.start); row <= Math.min(merge.endRow, lastRow); row += 1) {
+        for (const row of scene.getRenderableRows({
+          start: Math.max(merge.startRow, fragment.rows.start),
+          count: Math.min(merge.endRow, lastRow) - Math.max(merge.startRow, fragment.rows.start) + 1
+        })) {
           for (
             let column = Math.max(merge.startColumn, fragment.columns.start);
             column <= Math.min(merge.endColumn, lastColumn);
@@ -146,13 +149,23 @@ export class DOMCellManager {
           }
         }
         mergeAtAnchor.set(cellKey(merge.startRow, merge.startColumn), merge);
+        // A filtered anchor can still own a merge with visible rows below it.
+        if (this.#getColumn(merge.startColumn).renderer?.kind === "dom") {
+          const mergeFragment = scene.getFragmentsForRange(merge)
+            .find((candidate) => candidate.pane.id === fragment.pane.id);
+          if (mergeFragment) {
+            needed.set(cellKey(merge.startRow, merge.startColumn), {
+              row: merge.startRow, column: merge.startColumn, fragment: mergeFragment
+            });
+          }
+        }
       }
 
       for (let column = fragment.columns.start; column <= lastColumn; column += 1) {
         if (this.#getColumn(column).renderer?.kind !== "dom") {
           continue;
         }
-        for (let row = fragment.rows.start; row <= lastRow; row += 1) {
+        for (const row of scene.getRenderableRows(fragment.rows)) {
           const key = cellKey(row, column);
           if (coveredCells.has(key)) {
             continue;

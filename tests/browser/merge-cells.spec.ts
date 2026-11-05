@@ -60,9 +60,9 @@ test("mergeCells clears every non-anchor cell and keeps the anchor; undo restore
   await mergeCells(page, { startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 });
 
   expect(await getCell(page, 0, 0)).toBe("0a"); // anchor untouched
-  expect(await getCell(page, 0, 1)).toBeNull();
-  expect(await getCell(page, 1, 0)).toBeNull();
-  expect(await getCell(page, 1, 1)).toBeNull();
+  expect(await getCell(page, 0, 1)).toBeUndefined();
+  expect(await getCell(page, 1, 0)).toBeUndefined();
+  expect(await getCell(page, 1, 1)).toBeUndefined();
   // Outside the merged range, nothing changed.
   expect(await getCell(page, 0, 2)).toBe("0c");
 
@@ -74,8 +74,8 @@ test("mergeCells clears every non-anchor cell and keeps the anchor; undo restore
 
   await page.evaluate(() => (window as unknown as FixtureWindow).__sheet?.redo());
 
-  expect(await getCell(page, 0, 1)).toBeNull();
-  expect(await getCell(page, 1, 1)).toBeNull();
+  expect(await getCell(page, 0, 1)).toBeUndefined();
+  expect(await getCell(page, 1, 1)).toBeUndefined();
 });
 
 test("mergeCells rejects a range partially overlapping an existing merge; unmergeCells frees it up for a new one", async ({
@@ -111,7 +111,7 @@ test("mergeCells rejects a range partially overlapping an existing merge; unmerg
   // merges cleanly.
   await mergeCells(page, { startRow: 1, startColumn: 1, endRow: 2, endColumn: 2 });
 
-  expect(await getCell(page, 1, 2)).toBeNull();
-  expect(await getCell(page, 2, 1)).toBeNull();
-  expect(await getCell(page, 2, 2)).toBeNull();
+  expect(await getCell(page, 1, 2)).toBeUndefined();
+  expect(await getCell(page, 2, 1)).toBeUndefined();
+  expect(await getCell(page, 2, 2)).toBeUndefined();
 });

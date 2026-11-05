@@ -70,10 +70,14 @@ export class CopyPlanner {
     const columns = range.endColumn - range.startColumn + 1;
     const cells = rows * columns;
 
+    if (cells > this.#maxCells) {
+      return { range, rows, columns, cells, estimatedBytes: 0, containsComplexValues: false, recommendedMode: "download" };
+    }
+
     let estimatedBytes = 0;
     let containsComplexValues = false;
 
-    for (let row = range.startRow; row <= range.endRow; row += 1) {
+    scan: for (let row = range.startRow; row <= range.endRow; row += 1) {
       for (let column = range.startColumn; column <= range.endColumn; column += 1) {
         if (this.#getColumn(column).clipboard.copy === false) {
           continue;
@@ -86,6 +90,9 @@ export class CopyPlanner {
         estimatedBytes += estimateCellBytes(value);
         if (!containsComplexValues && isComplexValue(value)) {
           containsComplexValues = true;
+        }
+        if (estimatedBytes > this.#maxBytes) {
+          break scan;
         }
       }
     }

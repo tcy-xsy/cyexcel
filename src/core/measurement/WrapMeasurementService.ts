@@ -153,8 +153,7 @@ export class WrapMeasurementService {
   visibleUnmeasuredRows(scene: SceneSnapshot): readonly number[] {
     const rows = new Set<number>();
     for (const pane of scene.getPanes("body")) {
-      for (let index = 0; index < pane.rows.count; index += 1) {
-        const row = pane.rows.start + index;
+      for (const row of scene.getRenderableRows(pane.rows)) {
         if (!this.#measuredRows.has(row)) {
           rows.add(row);
         }

@@ -350,6 +350,22 @@ function buildBalanced(nodes: readonly Node[], start = 0, end = nodes.length): N
   return branch(buildBalanced(nodes, start, middle) as Node, buildBalanced(nodes, middle, end) as Node);
 }
 
+function* nonZeroRows(node: Node | null, base: number, start: number, end: number): IterableIterator<number> {
+  if (node === null || node.totalHeight === 0 || base >= end || base + node.rowCount <= start) {
+    return;
+  }
+  if (node.kind === "branch") {
+    yield* nonZeroRows(node.left, base, start, end);
+    yield* nonZeroRows(node.right, base + node.left.rowCount, start, end);
+    return;
+  }
+  for (let row = Math.max(start, base); row < Math.min(end, base + node.rowCount); row += 1) {
+    if (node.kind === "uniform" || (node.values[row - base] as number) > 0) {
+      yield row;
+    }
+  }
+}
+
 /**
  * Immutable row geometry backed by a persistent rope. Uniform spans stay
  * compressed; edits copy one 512-row leaf plus the path to it.
@@ -428,6 +444,13 @@ export class RowMetrics {
 
   rowAtOffset(offset: number): number {
     return rowAtOffset(this.#root, offset);
+  }
+
+  /** Iterates drawable rows, pruning entire filtered subtrees without expanding them. */
+  nonZeroRows(start = 0, count = this.rowCount - start): IterableIterator<number> {
+    assertCount("start", start);
+    assertCount("count", count);
+    return nonZeroRows(this.#root, 0, start, Math.min(this.rowCount, start + count));
   }
 
   withHeight(row: number, height: number): RowMetrics {

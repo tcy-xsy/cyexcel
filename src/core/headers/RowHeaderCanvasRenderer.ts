@@ -55,8 +55,7 @@ export class RowHeaderCanvasRenderer {
     this.#ctx.clearRect(0, 0, rowSurface.rootRect.width, menuSurface.rootRect.height);
 
     for (const paneFragment of scene.getRowHeaderFragments(0, scene.rowCount - 1)) {
-      for (let offset = 0; offset < paneFragment.rows.count; offset += 1) {
-        const row = paneFragment.rows.start + offset;
+      for (const row of scene.getRenderableRows(paneFragment.rows)) {
         const fragment = scene.getRowHeaderFragments(row, row)[0];
         if (fragment) {
           this.#paintRow(row, fragment, rowSurface.rootRect.y);

@@ -226,3 +226,15 @@ describe("RowMetrics.withFilteredRows", () => {
     expect(() => metrics.withFilteredRows(new Set([5]))).toThrow(RangeError);
   });
 });
+
+
+describe("RowMetrics non-zero traversal", () => {
+  it("skips compressed runs of a billion zero-height rows and respects bounds", () => {
+    const metrics = RowMetrics.uniform(1_000_000_000, 0)
+      .withHeights(new Map([[0, 20], [512, 30], [999_999_999, 40]]));
+    expect([...metrics.nonZeroRows()]).toEqual([0, 512, 999_999_999]);
+    expect([...metrics.nonZeroRows(1, 512)]).toEqual([512]);
+    expect([...metrics.nonZeroRows(513, 999_999_486)]).toEqual([]);
+    expect([...metrics.nonZeroRows(999_999_999, 0)]).toEqual([]);
+  });
+});

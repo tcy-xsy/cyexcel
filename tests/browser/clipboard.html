@@ -36,11 +36,11 @@
         { type: "number", width: 80 },
         { width: 80, clipboard: { copy: false } },
         { type: "number", width: 80, clipboard: { paste: false } },
-        { type: "array", width: 160 }
+        { type: "text", width: 160 }
       ];
       const data = [
-        { name: "Alice", age: 30, secret: "s1", locked: 100, tags: ["red", "green", "blue", "yellow"] },
-        { name: "Bob", age: 40, secret: "s2", locked: 200, tags: ["x"] }
+        { name: "Alice", age: 30, secret: "s1", locked: 100, tags: 'red\tgreen\n"blue", yellow' },
+        { name: "Bob", age: 40, secret: "s2", locked: 200, tags: "x" }
       ];
 
       const sheet = new CyExcelCore(container, {

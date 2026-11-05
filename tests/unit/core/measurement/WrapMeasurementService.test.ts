@@ -491,3 +491,13 @@ describe("WrapMeasurementService measured-row cache bound", () => {
     expect(beforeOldest - service.measuredRowCount).toBe(0);
   });
 });
+
+
+it("does not enqueue filtered rows for wrap measurement", () => {
+  const layout = createLayout(100_000);
+  layout.replaceRoot(layout.prepareSetFilteredRows(new Set(
+    Array.from({ length: 99_998 }, (_, index) => index + 1)
+  )));
+  const { service, scene } = createService({ layout, sceneHeight: 100 });
+  expect(service.visibleUnmeasuredRows(scene)).toEqual([0, 99_999]);
+});

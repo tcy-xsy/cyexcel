@@ -194,6 +194,12 @@ export interface SceneRowHeaderHit {
   readonly localPoint: SceneLocalPoint;
 }
 
+function* indexRangeItems(range: IndexRange): IterableIterator<number> {
+  for (let index = range.start; index < range.start + range.count; index += 1) {
+    yield index;
+  }
+}
+
 function assertNonNegativeInteger(name: string, value: number): void {
   if (!Number.isSafeInteger(value) || value < 0) {
     throw new RangeError(`${name} must be a non-negative safe integer: ${value}`);
@@ -328,6 +334,10 @@ export class SceneSnapshot {
 
   getRowHeight(row: number): number {
     return this.#skeleton.getRowHeight(row);
+  }
+
+  getRenderableRows(range: IndexRange): IterableIterator<number> {
+    return this.#skeleton.rowMetrics.nonZeroRows(range.start, range.count);
   }
 
   /** Column-axis geometry without requiring a synthetic body-cell address. */
@@ -845,8 +855,10 @@ export class SceneSnapshot {
       }
     }
 
-    for (let offset = 0; offset < range.count; offset += 1) {
-      const index = range.start + offset;
+    const indices = axis === "row"
+      ? this.getRenderableRows(range)
+      : indexRangeItems(range);
+    for (const index of indices) {
       const start = axis === "row"
         ? this.#skeleton.getRowOffset(index) + pane.translation.y
         : this.#skeleton.getColumnLeft(index) + pane.translation.x;

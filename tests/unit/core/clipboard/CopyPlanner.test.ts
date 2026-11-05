@@ -8,6 +8,34 @@ function columnWithPolicy(copy = true): Pick<RuntimeColumn, "clipboard"> {
 }
 
 describe("CopyPlanner", () => {
+  it("rejects a huge cell count without reading cells, policies or merges", () => {
+    const unexpectedRead = (): never => { throw new Error("oversized selection was scanned"); };
+    const planner = new CopyPlanner({
+      getCellValue: unexpectedRead,
+      getColumn: unexpectedRead,
+      findMergeAt: unexpectedRead,
+      maxCells: 100_000,
+      maxBytes: 1_000_000
+    });
+
+    expect(planner.plan({ startRow: 0, startColumn: 0, endRow: 999_999, endColumn: 99 }))
+      .toMatchObject({ cells: 100_000_000, estimatedBytes: 0, recommendedMode: "download" });
+  });
+
+  it("stops inspecting cells as soon as the byte limit is exceeded", () => {
+    let reads = 0;
+    const planner = new CopyPlanner({
+      getCellValue: () => { reads += 1; return "12345"; },
+      getColumn: () => columnWithPolicy(),
+      maxCells: 100_000,
+      maxBytes: 9
+    });
+
+    expect(planner.plan({ startRow: 0, startColumn: 0, endRow: 999, endColumn: 9 }))
+      .toMatchObject({ estimatedBytes: 10, recommendedMode: "download" });
+    expect(reads).toBe(2);
+  });
+
   it("reports rows/columns/cells for a plain rectangular range", () => {
     const planner = new CopyPlanner({
       getCellValue: () => "x",

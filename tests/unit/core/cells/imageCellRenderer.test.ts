@@ -38,6 +38,17 @@ afterEach(() => {
 const rect = { x: 0, y: 0, width: 20, height: 20 };
 
 describe("createImageCellRenderer", () => {
+  it("draws only once after repeated loading repaints of the same canvas slot", async () => {
+    const ctx = new RecordingCanvasContext();
+    const renderer = createImageCellRenderer({ cache: new ImageCache() });
+    for (let index = 0; index < 100; index += 1) {
+      renderer.paint({ ctx, rect, row: 0, column: {} as never, value: "a" });
+    }
+    await Promise.resolve();
+
+    expect(ctx.calls.filter((call) => call.method === "drawImage")).toHaveLength(1);
+  });
+
   it("paints a placeholder immediately for a URL that hasn't loaded yet", () => {
     const ctx = new RecordingCanvasContext();
     const cache = new ImageCache();

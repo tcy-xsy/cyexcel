@@ -1,5 +1,5 @@
 import type { Canvas2DLike } from "../render";
-import { ImageCache, sharedImageCache } from "../render/ImageCache";
+import { type ImageCache, sharedImageCache } from "../render/ImageCache";
 import type { CanvasCellRenderer, CellRenderContext } from "./types";
 
 export interface ImageCellRendererOptions {
@@ -105,7 +105,7 @@ export function createImageCellRenderer(options: ImageCellRendererOptions = {}):
         } else if (settled.status === "error") {
           drawPlaceholder(ctx, x, y, width, height);
         }
-      });
+      }, { owner: ctx, key: `${rect.x},${rect.y},${rect.width},${rect.height}` });
 
       if (entry.status === "loaded") {
         drawContained(ctx, entry.image, x, y, width, height);

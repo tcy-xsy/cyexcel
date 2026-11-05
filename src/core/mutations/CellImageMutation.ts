@@ -1,4 +1,4 @@
-import type { CellRange, Patch } from "../types";
+import type { Patch } from "../types";
 import type { SheetModel } from "../sheet/SheetModel";
 import type { PreparedSheetMutation } from "../sheet/SheetTransaction";
 import type { CellRecord } from "../sheet/types";

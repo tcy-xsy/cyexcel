@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   LayoutEngine,
@@ -1147,4 +1147,29 @@ describe("ContentLayerRenderer — text is clipped to its own cell", () => {
       expect(ctx.calls[clipAt - 1]).toMatchObject({ method: "rect", args: cellRects[i] });
     });
   });
+});
+
+
+it("only resolves drawable cells across a large filtered gap, including merged coverage", () => {
+  const layout = createLayout(100_000, 2);
+  layout.replaceRoot(layout.prepareSetFilteredRows(new Set(
+    Array.from({ length: 99_998 }, (_, index) => index + 1)
+  )));
+  const scene = createScene(layout, { scrollTop: 0, scrollLeft: 0, width: 100, height: 100 });
+  const readRect = vi.spyOn(SceneSnapshot.prototype, "getCellRectInPane");
+  const painted: string[] = [];
+  const renderer = new ContentLayerRenderer({
+    ctx: new RecordingCanvasContext(),
+    getScene: () => scene,
+    getCellValue: () => "value",
+    painter: ({ row, column }) => { painted.push(`${row}:${column}`); },
+    getMergesInRange: () => [{ startRow: 0, endRow: 99_999, startColumn: 0, endColumn: 0 }]
+  });
+  try {
+    renderer.paintContent({ kind: "full" });
+    expect(painted).toEqual(["0:0", "0:1", "99999:1"]);
+    expect(readRect.mock.calls.length).toBeLessThan(30);
+  } finally {
+    readRect.mockRestore();
+  }
 });
