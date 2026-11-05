@@ -4,6 +4,27 @@ import { SheetModel } from "../../../../src/core/sheet";
 import { CellValueType } from "../../../../src/core/sheet/types";
 
 describe("SheetModel", () => {
+  it("owns immutable validation ranges and list items, shared by transaction clones", () => {
+    const model = SheetModel.createEmpty();
+    const items = ["a"];
+    const range = { startRow: 0, startColumn: 0, endRow: 0, endColumn: 0 };
+    model.setValidations([{ id: "list", ranges: [range], criteria: { type: "list", items } }]);
+    items[0] = "b";
+    range.endRow = 20;
+    const rules = model.validations();
+    expect(rules[0]?.ranges[0]?.endRow).toBe(0);
+    expect(rules[0]?.criteria).toEqual({ type: "list", items: ["a"] });
+    expect(Object.isFrozen(rules)).toBe(true);
+    expect(Object.isFrozen(rules[0]?.ranges[0])).toBe(true);
+    expect(model.clone().validations()).toBe(rules);
+    const restored = SheetModel.fromSnapshot(model.toSnapshot());
+    expect(Object.isFrozen(restored.validations())).toBe(true);
+    expect(Object.isFrozen(restored.validations()[0]?.criteria)).toBe(true);
+    model.insertRows(0, 1);
+    expect(model.validations()[0]?.ranges[0]?.startRow).toBe(1);
+    expect(Object.isFrozen(model.validations()[0]?.ranges[0])).toBe(true);
+  });
+
   it("starts empty with the coordinate space coming from blank counts alone", () => {
     const model = SheetModel.createEmpty({ blankRows: 1000, blankColumns: 26 });
     expect(model.rowCount()).toBe(1000);

@@ -48,8 +48,8 @@ export interface PreparedSheetMutation {
  * `insertRows` / `applyRowPlan` / `IndexedTableRegistry.applyRowPlan` 代码，本文件里
  * 一行新的结构代数都没有。
  *
- * 克隆的代价是 O(占用行数) 而不是 O(格子数)——行桶按引用共享、写时才私有化，见
- * `CellMatrix.clone`。
+ * 格子矩阵的克隆是 O(1)：共享分块行索引和行桶，写时仅私有化索引路径及目标桶，见
+ * `CellMatrix.clone`。元数据与插件侧表仍沿用各自的克隆协议。
  *
  * ## 它满足 `MutationCoordinator` 的三条要求
  *
@@ -203,6 +203,7 @@ export class SheetTransaction implements TransactionReadView {
    * 的形状，并让 dispose 之后的读被拦下来而不是悄悄给一个过期答案。
    */
   dispose(): void {
+    this.#shadow.disposeFormulas();
     this.#disposed = true;
   }
 

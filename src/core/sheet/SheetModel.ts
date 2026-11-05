@@ -30,6 +30,23 @@ import {
 } from "./validations";
 import { validateAxisChange } from "../layout/structuralChange";
 import { assertValidRowOrder } from "../layout/rowOrder";
+import type { FormulaCell, FormulaEngine, FormulaEngineFactory } from "../formula/types";
+
+const ownedValidationRules = new WeakSet<readonly DataValidationRule[]>();
+
+function freezeValidationRules(rules: readonly DataValidationRule[]): readonly DataValidationRule[] {
+  if (ownedValidationRules.has(rules)) return rules;
+  const frozen = Object.freeze(rules.map(rule => {
+    const criteria = rule.criteria.type === "list"
+      ? Object.freeze({ ...rule.criteria, items: Object.freeze([...rule.criteria.items]),
+        ...(rule.criteria.colors === undefined ? {} : { colors: Object.freeze({ ...rule.criteria.colors }) }) })
+      : Object.freeze({ ...rule.criteria });
+    return Object.freeze({ ...rule, criteria,
+      ranges: Object.freeze(rule.ranges.map(range => Object.freeze({ ...range }))) });
+  }));
+  ownedValidationRules.add(frozen);
+  return frozen;
+}
 
 /**
  * extent（最大占用下标加一）换算成 `resolveCoordinateSpace` 要的 `maxOccupied`。
@@ -76,6 +93,50 @@ export interface SheetModelOptions {
  * 本阶段不接线到 `TableStore` / `LayoutEngine` / `CyExcelCore`——那是阶段 3。
  */
 export class SheetModel {
+  #formulaFactory: FormulaEngineFactory | undefined;
+  #formulaEngine: FormulaEngine | undefined;
+  readonly #formulaInvalidations = new Map<string, FormulaCell>();
+
+  enableFormulas(factory: FormulaEngineFactory): void {
+    this.#formulaEngine?.dispose();
+    this.#formulaEngine = undefined;
+    this.#formulaFactory = factory;
+  }
+
+  get formulasEnabled(): boolean {
+    return this.#formulaFactory !== undefined;
+  }
+
+  getFormulaError(row: number, column: number): string | undefined {
+    if (this.#matrix.get(row, column)?.f === undefined) return undefined;
+    this.getCell(row, column);
+    return this.#formulaEngine?.getError(row, column);
+  }
+
+  takeFormulaInvalidations(): readonly FormulaCell[] {
+    const cells = [...this.#formulaInvalidations.values()];
+    this.#formulaInvalidations.clear();
+    return cells;
+  }
+
+  disposeFormulas(): void {
+    this.#formulaEngine?.dispose();
+    this.#formulaEngine = undefined;
+    this.#formulaInvalidations.clear();
+  }
+
+  #invalidateFormula(row: number, column: number): void {
+    for (const cell of this.#formulaEngine?.invalidate(row, column) ?? []) {
+      this.#formulaInvalidations.set(`${cell.row}:${cell.column}`, cell);
+    }
+  }
+
+  #assertFormulaStructureSupported(): void {
+    if (this.formulasEnabled && this.#matrix.formulaCount() > 0) {
+      throw new CyExcelError(CyExcelErrorCode.MutationNotSupported,
+        "Row/column structural edits and sorting are not yet supported while formulas exist");
+    }
+  }
   readonly #matrix: CellMatrix;
   readonly #tables = new IndexedTableRegistry();
   readonly #rowData: IndexedTable<RowMeta>;
@@ -112,7 +173,7 @@ export class SheetModel {
       new IndexedTable<ColumnMeta>("columnData", "column", init.columnData)
     );
     this.#mergeData = init.mergeData;
-    this.#validationData = init.dataValidations;
+    this.#validationData = freezeValidationRules(init.dataValidations);
     this.#id = init.id;
     this.#name = init.name;
     this.#blankRows = init.blankRows;
@@ -201,11 +262,16 @@ export class SheetModel {
         copy.registerTable(table.clone());
       }
     }
+    if (this.#formulaFactory) copy.enableFormulas(this.#formulaFactory);
     return copy;
   }
 
   /** 裸值，不是记录（ADR 0004 §3.6）。 */
   getCell(row: number, column: number): CellValue | undefined {
+    if (this.#formulaFactory && this.#matrix.get(row, column)?.f !== undefined) {
+      this.#formulaEngine ??= this.#formulaFactory({ getRecord: (r, c) => this.#matrix.get(r, c) });
+      return this.#formulaEngine.getValue(row, column);
+    }
     return this.#matrix.get(row, column)?.v;
   }
 
@@ -222,7 +288,7 @@ export class SheetModel {
     for (const [row, bucket] of this.#matrix.rows()) {
       for (const key of Object.keys(bucket)) {
         const column = Number(key);
-        yield { row, column, value: (bucket[column] as CellRecord).v };
+        yield { row, column, value: this.getCell(row, column) };
       }
     }
   }
@@ -255,15 +321,19 @@ export class SheetModel {
   /** 只改值，保留该格已有的 `t`/`s`/`f`/`si`。 */
   setCell(row: number, column: number, value: CellValue | undefined): void {
     const existing = this.#matrix.get(row, column);
-    this.#matrix.set(row, column, existing ? { ...existing, v: value } : { v: value });
+    this.setRecord(row, column, existing ? { ...existing, v: value } : { v: value });
   }
 
   setRecord(row: number, column: number, record: CellRecord): void {
+    const previous = this.#matrix.get(row, column);
     this.#matrix.set(row, column, record);
+    if (!Object.is(previous?.v, record.v) || previous?.f !== record.f || previous?.t !== record.t) this.#invalidateFormula(row, column);
   }
 
   deleteCell(row: number, column: number): void {
+    const previous = this.#matrix.get(row, column);
     this.#matrix.delete(row, column);
+    if (previous !== undefined) this.#invalidateFormula(row, column);
   }
 
   /**
@@ -341,7 +411,7 @@ export class SheetModel {
    * 收拢。在这里顺手输出它们会让同一条数据在快照里出现两次。
    */
   toSnapshot(): SheetSnapshot {
-    return serializeSheet({
+    const snapshot = serializeSheet({
       id: this.#id,
       name: this.#name,
       blankRows: this.#blankRows,
@@ -355,6 +425,21 @@ export class SheetModel {
       dataValidations: this.#validationData,
       ...(this.#freeze !== undefined ? { freeze: this.#freeze } : {})
     });
+    if (!this.formulasEnabled || this.#matrix.formulaCount() === 0) return snapshot;
+    const cellData: Record<number, Record<number, CellRecord>> = {};
+    for (const [row, bucket] of this.#matrix.rows()) {
+      const cells = { ...bucket };
+      for (const key of Object.keys(cells)) {
+        const column = Number(key), record = cells[column]!;
+        if (record.f === undefined) continue;
+        const value = this.getCell(row, column);
+        const { t: _type, fe: _error, ...base } = record;
+        const error = this.getFormulaError(row, column);
+        cells[column] = { ...base, v: value, ...(error === undefined ? {} : { fe: error }) };
+      }
+      cellData[row] = cells;
+    }
+    return { ...snapshot, cellData };
   }
 
   /**
@@ -467,26 +552,29 @@ export class SheetModel {
    * `moveColumns(0, 2, 1)` 算出 `insertAt = -1`，产出负的列键。
    */
   insertRows(start: number, count: number): void {
+    this.#assertFormulaStructureSupported();
     const space = this.rowCount();
     validateAxisChange({ axis: "row", operation: "insert", start, count }, space);
     this.#mergeData = relocateMergesForInsert(this.#mergeData, "row", start, count);
-    this.#validationData = relocateValidationsForInsert(this.#validationData, "row", start, count);
+    this.setValidations(relocateValidationsForInsert(this.#validationData, "row", start, count));
     const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildInsertRowsPlan(extent, start, count), extent);
     this.#pinRowSpace(space + count);
   }
 
   deleteRows(start: number, count: number): void {
+    this.#assertFormulaStructureSupported();
     const space = this.rowCount();
     validateAxisChange({ axis: "row", operation: "delete", start, count }, space);
     this.#mergeData = relocateMergesForDelete(this.#mergeData, "row", start, count);
-    this.#validationData = relocateValidationsForDelete(this.#validationData, "row", start, count);
+    this.setValidations(relocateValidationsForDelete(this.#validationData, "row", start, count));
     const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildDeleteRowsPlan(extent, start, count), extent);
     this.#pinRowSpace(space - count);
   }
 
   moveRows(start: number, count: number, target: number): void {
+    this.#assertFormulaStructureSupported();
     const space = this.rowCount();
     validateAxisChange(
       { axis: "row", operation: "move", start, count, target, targetSpace: "pre-removal" },
@@ -497,7 +585,7 @@ export class SheetModel {
       throw new CyExcelError(CyExcelErrorCode.MergeSpansMoveBoundary, "moveRows would split a merged range");
     }
     this.#mergeData = relocated.merges;
-    this.#validationData = relocateValidationsForMove(this.#validationData, "row", start, count, target);
+    this.setValidations(relocateValidationsForMove(this.#validationData, "row", start, count, target));
     const extent = this.#rowExtentIncludingTables();
     this.#applyRowPlan(buildMoveRowsPlan(extent, start, count, target), extent);
     this.#pinRowSpace(space);
@@ -519,6 +607,7 @@ export class SheetModel {
    * 幂等，多调一次没有副作用。
    */
   reorderRows(order: Int32Array): void {
+    this.#assertFormulaStructureSupported();
     const space = this.rowCount();
     const extent = this.#rowExtentIncludingTables();
     if (extent > order.length) {
@@ -542,10 +631,11 @@ export class SheetModel {
    * 0–4 列时全部 `< 10`，原样不动。所以列轴只补上面那道参数校验。
    */
   insertColumns(start: number, count: number): void {
+    this.#assertFormulaStructureSupported();
     const space = this.columnCount();
     validateAxisChange({ axis: "column", operation: "insert", start, count }, space);
     this.#mergeData = relocateMergesForInsert(this.#mergeData, "column", start, count);
-    this.#validationData = relocateValidationsForInsert(this.#validationData, "column", start, count);
+    this.setValidations(relocateValidationsForInsert(this.#validationData, "column", start, count));
     const shift = buildInsertColumnsShift(start, count);
     this.#matrix.insertColumns(start, count);
     this.#tables.applyColumnShift(shift);
@@ -553,10 +643,11 @@ export class SheetModel {
   }
 
   deleteColumns(start: number, count: number): void {
+    this.#assertFormulaStructureSupported();
     const space = this.columnCount();
     validateAxisChange({ axis: "column", operation: "delete", start, count }, space);
     this.#mergeData = relocateMergesForDelete(this.#mergeData, "column", start, count);
-    this.#validationData = relocateValidationsForDelete(this.#validationData, "column", start, count);
+    this.setValidations(relocateValidationsForDelete(this.#validationData, "column", start, count));
     const shift = buildDeleteColumnsShift(start, count);
     this.#matrix.deleteColumns(start, count);
     this.#tables.applyColumnShift(shift);
@@ -564,6 +655,7 @@ export class SheetModel {
   }
 
   moveColumns(start: number, count: number, target: number): void {
+    this.#assertFormulaStructureSupported();
     const space = this.columnCount();
     validateAxisChange(
       { axis: "column", operation: "move", start, count, target, targetSpace: "pre-removal" },
@@ -577,7 +669,7 @@ export class SheetModel {
       );
     }
     this.#mergeData = relocated.merges;
-    this.#validationData = relocateValidationsForMove(this.#validationData, "column", start, count, target);
+    this.setValidations(relocateValidationsForMove(this.#validationData, "column", start, count, target));
     const shift = buildMoveColumnsShift(start, count, target);
     this.#matrix.moveColumns(start, count, target);
     this.#tables.applyColumnShift(shift);
@@ -682,11 +774,7 @@ export class SheetModel {
    * 排序（`reorderRows`）不碰规则：规则记的是区域而不是行，排序前后覆盖范围不变。
    */
   setValidations(rules: readonly DataValidationRule[]): void {
-    this.#validationData = Object.freeze(
-      rules.map((rule) =>
-        Object.freeze({ ...rule, ranges: Object.freeze(rule.ranges.map((range) => Object.freeze({ ...range }))) })
-      )
-    );
+    this.#validationData = freezeValidationRules(rules);
   }
 
   occupiedCount(): number {

@@ -1,6 +1,7 @@
 import { CyExcelError, CyExcelErrorCode } from "../errors";
 import { remapIndex } from "../layout/structuralChange";
 import { serialFromISODate } from "../style/dateSerial";
+import { canIndexValidationRules, findIndexedValidationRule } from "./ValidationRuleIndex";
 import type { CellRange } from "../types";
 import {
   axisInterval,
@@ -397,6 +398,9 @@ export function findRuleAt(
   row: number,
   column: number
 ): DataValidationRule | undefined {
+  if (rules.length > 8 && canIndexValidationRules(rules)) {
+    return findIndexedValidationRule(rules, row, column);
+  }
   return rules.find((rule) => rule.ranges.some((range) => containsCell(range, row, column)));
 }
 
@@ -616,10 +620,22 @@ const TYPE_TEXT = {
 } as const;
 
 /** 没有自定义 `errorMessage` 时的默认文案。 */
+const listMessages = new WeakMap<readonly string[], string>();
+const listValues = new WeakMap<readonly string[], ReadonlySet<string>>();
+
 export function defaultValidationMessage(criteria: DataValidationCriteria): string {
   switch (criteria.type) {
-    case "list":
-      return `请从列表中选择：${criteria.items.join("、")}`;
+    case "list": {
+      if (!Object.isFrozen(criteria.items)) {
+        return `请从列表中选择：${criteria.items.join("、")}`;
+      }
+      let message = listMessages.get(criteria.items);
+      if (message === undefined) {
+        message = `请从列表中选择：${criteria.items.join("、")}`;
+        listMessages.set(criteria.items, message);
+      }
+      return message;
+    }
     case "custom":
       return "输入的值不符合规则";
     default: {
@@ -664,8 +680,17 @@ function judge(rule: DataValidationRule, value: CellValue, options: ValidateOpti
         ? true
         : defaultValidationMessage(criteria);
     }
-    case "list":
-      return criteria.items.includes(String(value)) ? true : defaultValidationMessage(criteria);
+    case "list": {
+      if (!Object.isFrozen(criteria.items)) {
+        return criteria.items.includes(String(value)) ? true : defaultValidationMessage(criteria);
+      }
+      let values = listValues.get(criteria.items);
+      if (values === undefined) {
+        values = new Set(criteria.items);
+        listValues.set(criteria.items, values);
+      }
+      return values.has(String(value)) ? true : defaultValidationMessage(criteria);
+    }
     case "custom": {
       const fn = options.getCustomValidator?.(criteria.name);
       if (fn === undefined) {

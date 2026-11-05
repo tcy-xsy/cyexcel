@@ -245,3 +245,4 @@ export {
 } from "./menu";
 export type { ShortcutHandler } from "./shortcuts";
 export type { CyExcelPlugin, PluginContext } from "./plugins";
+export type { FormulaEngine, FormulaEngineFactory, FormulaModelAccess, FormulaCell } from "./formula/types";

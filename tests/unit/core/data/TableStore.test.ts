@@ -48,6 +48,45 @@ describe("TableStore.setCell", () => {
 });
 
 describe("TableStore.setRange", () => {
+  it("does not bump the revision or emit patches when an empty range is cleared again", () => {
+    const { store } = createStore();
+    const range = { startRow: 0, startColumn: 0, endRow: 2, endColumn: 2 };
+    const empty = Array.from({ length: 3 }, () => Array.from({ length: 3 }, () => undefined));
+    store.setRange(range, empty);
+    const result = store.setRange(range, empty);
+    expect(result.version).toBe(1);
+    expect(result.patches).toEqual([]);
+    expect(result.changeSet.changes).toEqual([]);
+    const session = store.beginMutationSession("clear-again");
+    session.stage(store.createSetRangeMutation(range, empty));
+    const prepared = session.seal();
+    expect(prepared.estimatedHistoryBytes).toBe(0);
+    const receipt = store.coordinator.commit(prepared);
+    expect(receipt.noop).toBe(true);
+    expect(receipt.historyBytes).toBe(0);
+    expect(receipt.forward).toEqual([]);
+    expect(receipt.inverse).toEqual([]);
+  });
+
+  it("compares against earlier writes in the same transaction", () => {
+    const { store } = createStore();
+    const session = store.beginMutationSession("repeat-value");
+    session.stage(store.createSetCellMutation(0, 0, "new"));
+    session.stage(store.createSetCellMutation(0, 0, "new"));
+    const prepared = session.seal();
+    expect(prepared.participants).toHaveLength(1);
+    const receipt = store.coordinator.commit(prepared);
+    expect(receipt.forward).toHaveLength(1);
+    expect(store.getCell(0, 0)).toBe("new");
+  });
+
+  it("does not skip removal of style, formula or image fields when values match", () => {
+    const { sheet, store } = createStore();
+    sheet.setRecord(0, 0, { v: "A", s: "style1", f: "=1", img: "image.png" });
+    const result = store.setCell(0, 0, "A");
+    expect(result.version).toBe(1);
+    expect(sheet.getRecord(0, 0)).toEqual({ v: "A" });
+  });
   it("emits exactly one range-value patch for the whole range", () => {
     const { store } = createStore();
 

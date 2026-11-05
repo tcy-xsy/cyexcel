@@ -63,6 +63,8 @@ import {
   type SearchOptions
 } from "./search";
 import { formatCellText } from "./style/formatCellText";
+import { sharedImageCache } from "./render/ImageCache";
+import type { FormulaEngineFactory } from "./formula/types";
 import { buildCopyHtml, CopyStyleCache, styleAt, type CopiedStyles } from "./clipboard/styleClipboard";
 import { assertValidCoordinate, assertValidRange } from "./validation";
 import { CyExcelError, CyExcelErrorCode } from "./errors";
@@ -204,6 +206,8 @@ export interface CyExcelHeaderActionEvent {
 }
 
 export interface CyExcelCoreOptions {
+  /** Optional formula calculator. Workbook shells enable the bundled adapter by default. */
+  readonly formulaEngine?: FormulaEngineFactory | false;
   readonly columns?: readonly CyExcelColumnConfig[];
   /**
    * 初始数据，**一份快照**（ADR 0004 §3.1「模型即快照」）。省略就是一张
@@ -305,7 +309,7 @@ export interface CyExcelCoreOptions {
 }
 
 /** 鼠标停在违规格子上多久之后弹错误提示（同 Univer 的 `debounceTime(100)`）。 */
-const HOVER_ALERT_DELAY_MS = 100;
+const HOVER_ALERT_DELAY_MS = 400;
 const DEFAULT_ROW_HEIGHT = 24;
 const AUTO_HEIGHT_MAX_SYNC_PASSES = 2;
 
@@ -823,6 +827,12 @@ export class CyExcelCore {
   #disposed = false;
   /** 自定义校验函数，按名字索引。实例级，不进快照。 */
   readonly #customValidators = new Map<string, CustomValidatorFn>();
+  #lastValidationLookup: {
+    readonly rules: readonly DataValidationRule[];
+    readonly row: number;
+    readonly column: number;
+    readonly rule: DataValidationRule | undefined;
+  } | undefined;
   /** Top widgets (toolbar/formula bar) constructed from `options.topWidgets` — disposed alongside `this`. */
   #topWidgetHandles: readonly TopWidgetHandle[] = [];
   #topWidgetHost: HTMLDivElement | undefined;
@@ -878,9 +888,11 @@ export class CyExcelCore {
       this.#columns.length
     );
     this.#sheet = sheet;
+    if (options.formulaEngine) sheet.enableFormulas(options.formulaEngine);
     this.#layout = buildLayout(options, this.#columns, sheet, initialDimensions);
 
     const initialization = new InitializationRollback();
+    initialization.defer(() => sheet.disposeFormulas());
     try {
     const topWidgetFactories = options.topWidgets ?? [];
     const dom = createDom(
@@ -1042,6 +1054,7 @@ export class CyExcelCore {
     const headerCtx = this.#headerCanvas.getContext("2d") as Canvas2DLike;
     const rowHeaderCtx = this.#rowHeaderCanvas.getContext("2d") as Canvas2DLike;
     const contentCtx = this.#contentCanvas.getContext("2d") as Canvas2DLike;
+    initialization.defer(() => sharedImageCache.release(contentCtx));
     const selectionCtx = this.#selectionCanvas.getContext("2d") as Canvas2DLike;
     this.#headerCanvasSurface = new CanvasSurface(this.#headerCanvas, headerCtx);
     this.#rowHeaderCanvasSurface = new CanvasSurface(this.#rowHeaderCanvas, rowHeaderCtx);
@@ -1388,9 +1401,15 @@ export class CyExcelCore {
         if (rule === undefined) {
           return ACCEPT;
         }
-        return outcomeFromResult(
-          validateValue(rule, this.#parseEditedValue(row, column, value), this.#validateOptions(row, column))
-        );
+        let parsed = this.#parseEditedValue(row, column, value);
+        if (this.#sheet.formulasEnabled && typeof parsed === "string" && parsed.startsWith("=")) {
+          const preview = this.#sheet.clone();
+          try {
+            preview.setRecord(row, column, { v: undefined, f: parsed });
+            parsed = preview.getCell(row, column);
+          } finally { preview.disposeFormulas(); }
+        }
+        return outcomeFromResult(validateValue(rule, parsed, this.#validateOptions(row, column)));
       },
       // Pure forwarding to whatever the column's own CellType declares —
       // EditorManager itself never decides which editor a column gets, and
@@ -1398,10 +1417,13 @@ export class CyExcelCore {
       // createEditor()/serialize() just falls back to EditorManager's own
       // defaults (see doc/progress.md's editor-pluggability patch).
       resolveEditor: (row, column) => {
+        if (this.getCellFormula(row, column) !== undefined) return undefined;
         const runtimeColumn = this.#columnManager.getColumn(column);
         return runtimeColumn.createEditor?.({ row, column: runtimeColumn });
       },
       serializeCellValue: (row, column, value: CellValue | undefined) => {
+        const formula = this.getCellFormula(row, column);
+        if (formula !== undefined) return formula.startsWith("=") ? formula : `=${formula}`;
         const runtimeColumn = this.#columnManager.getColumn(column);
         return runtimeColumn.serialize
           ? runtimeColumn.serialize(value, { row, column: runtimeColumn })
@@ -1489,7 +1511,6 @@ export class CyExcelCore {
 
     this.#resizeCanvases();
     this.#syncViewport();
-    this.#renderScheduler.invalidateAll();
 
     initialization.defer(() => {
       this.#contentCanvas.removeEventListener("dblclick", this.#handleDblClick);
@@ -1644,6 +1665,19 @@ export class CyExcelCore {
     return this.#store.getCell(row, column);
   }
 
+  getCellFormula(row: number, column: number): string | undefined {
+    return this.#sheet.getRecord(row, column)?.f;
+  }
+
+  getCellFormulaError(row: number, column: number): string | undefined {
+    return this.#sheet.getFormulaError(row, column);
+  }
+
+  /** Current document data and styles, without transient selection or viewport state. */
+  toSnapshot(): WorkbookSnapshot {
+    return this.#workbook.toSnapshot();
+  }
+
   /** Coordinate-space row count, including trailing blank rows. */
   getRowCount(): number {
     return this.#sheet.rowCount();
@@ -1783,7 +1817,7 @@ export class CyExcelCore {
     if (rules.length === 0) {
       return undefined;
     }
-    const rule = findRuleAt(rules, row, column);
+    const rule = this.#validationRuleAt(row, column, rules);
     return rule === undefined
       ? undefined
       : describeCellDropdown(rule, this.#store.getCell(row, column) as CellValue | undefined);
@@ -1795,12 +1829,22 @@ export class CyExcelCore {
     if (rules.length === 0) {
       return false;
     }
-    const rule = findRuleAt(rules, row, column);
+    const rule = this.#validationRuleAt(row, column, rules);
     return (
       rule !== undefined &&
       !validateValue(rule, this.#store.getCell(row, column) as CellValue | undefined, this.#validateOptions(row, column))
         .valid
     );
+  }
+
+  #validationRuleAt(row: number, column: number, rules: readonly DataValidationRule[]): DataValidationRule | undefined {
+    const cached = this.#lastValidationLookup;
+    if (cached?.rules === rules && cached.row === row && cached.column === column) {
+      return cached.rule;
+    }
+    const rule = findRuleAt(rules, row, column);
+    this.#lastValidationLookup = { rules, row, column, rule };
+    return rule;
   }
 
   #validateOptions(row: number, column: number): ValidateOptions {
@@ -2378,7 +2422,6 @@ export class CyExcelCore {
       this.#headerGestures.cancel(true);
       this.#resizeCanvases();
       this.#syncViewport();
-      this.#renderScheduler.invalidateAll();
     });
   }
 
@@ -2403,6 +2446,8 @@ export class CyExcelCore {
     this.#editorManager.dispose();
     this.#domCellManager.dispose();
     this.#domHeaderManager.dispose();
+    this.#sheet.disposeFormulas();
+    sharedImageCache.release(this.#contentCanvas.getContext("2d") as Canvas2DLike);
     this.#renderScheduler.dispose();
     this.#clipboardService.dispose();
     this.#store.coordinator.dispose();
@@ -2516,6 +2561,7 @@ export class CyExcelCore {
     if (value.trim() === "") {
       return undefined;
     }
+    if (this.#sheet.formulasEnabled && (value.startsWith("=") || value.startsWith("'="))) return value;
     const runtimeColumn = this.#columnManager.getColumn(column);
     return runtimeColumn.parse ? runtimeColumn.parse(value, { row, column: runtimeColumn }) : value;
   }
@@ -2541,10 +2587,15 @@ export class CyExcelCore {
     // Capture the receipt-derived facts before any finalizer runs. A DOM
     // renderer or auto-height change may synchronously dispatch another
     // command and advance CommandManager.lastChangeSet reentrantly.
-    const changeSet =
+    let changeSet =
       this.#commandManager.lastChangeSet?.modelVersion === this.#store.version
         ? this.#commandManager.lastChangeSet
         : createChangeSet(this.#store.version, changes);
+    const formulaCells = this.#sheet.takeFormulaInvalidations();
+    if (formulaCells.length) {
+      changeSet = createChangeSet(changeSet.modelVersion, [...changeSet.changes,
+        ...formulaCells.map(cell => ({ type: "cell-value" as const, ...cell }))]);
+    }
     // One pass over the change list instead of the three this method used to
     // make, and the measurement cache's own invalidation rules now live with
     // the cache rather than being spelled out here.
@@ -3098,7 +3149,7 @@ export class CyExcelCore {
   };
 
   /**
-   * 鼠标停在违规的格子上，去抖 100ms 后在格子旁弹出错误提示（同 Univer 的
+   * 鼠标停在违规的格子上，去抖 400ms 后在格子旁显示提示（同 Univer 的
    * `DataValidationAlertController`：订阅悬停格、`debounceTime(100)`、无效才弹）。
    * 换格、离开、按下鼠标都会先收起旧的。同一格内移动不重复安排。
    */
@@ -3127,7 +3178,7 @@ export class CyExcelCore {
       );
       if (!result.valid) {
         this.#runFinalizer("validation-alert", () =>
-          this.#validationHints.showAlert(this.#scene, cell, result.message ?? "输入的值不符合规则")
+          this.#validationHints.showAlert(this.#scene, cell, result.message ?? "输入的值不符合规则", result.errorStyle)
         );
       }
     }, HOVER_ALERT_DELAY_MS);
@@ -3556,7 +3607,6 @@ export class CyExcelCore {
     }
     this.#recenterScroll();
     this.#syncViewport();
-    this.#renderScheduler.invalidateAll();
   };
 
   #routeHeaderResize(

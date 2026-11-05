@@ -1,9 +1,71 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { CellMatrix } from "../../../../src/core/sheet";
 import { CellValueType } from "../../../../src/core/sheet/types";
 
 describe("CellMatrix", () => {
+  it("tracks formula counts independently across copy-on-write snapshots", () => {
+    const matrix = new CellMatrix();
+    matrix.set(0, 0, { v: undefined, f: '=1' });
+    matrix.set(2, 2, { v: undefined, f: '=2' });
+    const copy = matrix.clone();
+    matrix.set(0, 0, { v: 1 });
+    matrix.delete(2, 2);
+    expect(matrix.formulaCount()).toBe(0);
+    expect(copy.formulaCount()).toBe(2);
+    copy.deleteColumns(0, 1);
+    expect(copy.formulaCount()).toBe(1);
+    copy.applyRowPlan(new Int32Array());
+    expect(copy.formulaCount()).toBe(0);
+  });
+  it("clones without enumerating rows and detaches writes across multiple snapshots", () => {
+    const matrix = new CellMatrix();
+    for (const row of [0, 1023, 1024, 100_000, 1_048_576]) matrix.set(row, 0, { v: row });
+    const keys = vi.spyOn(Object, "keys");
+    let first: CellMatrix;
+    let second: CellMatrix;
+    try {
+      first = matrix.clone();
+      second = first.clone();
+      expect(keys).not.toHaveBeenCalled();
+    } finally {
+      keys.mockRestore();
+    }
+    matrix.set(1024, 0, { v: "live" });
+    first.delete(100_000, 0);
+    second.set(1_048_576, 0, { v: "second" });
+    expect(first.get(1024, 0)?.v).toBe(1024);
+    expect(second.get(100_000, 0)?.v).toBe(100_000);
+    expect(matrix.get(1_048_576, 0)?.v).toBe(1_048_576);
+    expect([...first.rows()].map(([row]) => row)).toEqual([0, 1023, 1024, 1_048_576]);
+  });
+
+  it("clears the rightmost column without scanning all remaining row buckets per cell", () => {
+    const matrix = new CellMatrix();
+    for (let row = 0; row < 2_000; row += 1) matrix.set(row, 4, { v: row });
+    const keys = vi.spyOn(Object, "keys");
+    try {
+      for (let row = 0; row < 2_000; row += 1) matrix.delete(row, 4);
+      expect(matrix.maxOccupiedColumn()).toBeUndefined();
+      expect(matrix.maxOccupiedRow()).toBeUndefined();
+      expect(keys.mock.calls.length).toBeLessThan(6_000);
+    } finally {
+      keys.mockRestore();
+    }
+  });
+
+  it("refreshes dirty boundaries correctly after adding cells and cloning", () => {
+    const matrix = new CellMatrix();
+    matrix.set(10, 10, { v: 1 });
+    matrix.set(2, 2, { v: 2 });
+    matrix.delete(10, 10);
+    const copy = matrix.clone();
+    matrix.set(4, 4, { v: 4 });
+    expect(matrix.maxOccupiedRow()).toBe(4);
+    expect(matrix.maxOccupiedColumn()).toBe(4);
+    expect(copy.maxOccupiedRow()).toBe(2);
+    expect(copy.maxOccupiedColumn()).toBe(2);
+  });
   it("returns undefined for an unoccupied cell instead of throwing", () => {
     const matrix = new CellMatrix();
     expect(matrix.get(50, 5)).toBeUndefined();

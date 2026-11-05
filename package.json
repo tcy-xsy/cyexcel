@@ -24,6 +24,10 @@
       "import": "./dist/register.js",
       "require": "./dist/cyexcel.umd.cjs"
     },
+    "./formula": {
+      "types": "./dist/types/formula/index.d.ts",
+      "import": "./dist/formula.js"
+    },
     "./toolbar": {
       "types": "./dist/types/toolbar.d.ts",
       "import": "./dist/toolbar.js"
@@ -32,6 +36,7 @@
   "files": [
     "dist",
     "README.md",
+    "THIRD_PARTY_NOTICES.txt",
     "LICENSE"
   ],
   "sideEffects": [
@@ -73,6 +78,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.1",
+    "@rollup/plugin-commonjs": "^29.0.3",
     "@rollup/plugin-node-resolve": "^16.0.3",
     "@rollup/plugin-typescript": "^12.3.0",
     "@types/node": "^26.1.2",
@@ -89,6 +95,7 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
+    "fast-formula-parser": "1.0.19",
     "numfmt": "3.2.6"
   }
 }

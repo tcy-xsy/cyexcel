@@ -63,6 +63,8 @@ export interface CellRecord {
   readonly s?: string;
   /** 公式串 */
   readonly f?: string;
+  /** Cached formula error; absent for a valid result or an ordinary text cell. */
+  readonly fe?: string;
   /** 共享公式 id */
   readonly si?: string;
   /**

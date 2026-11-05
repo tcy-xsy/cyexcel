@@ -330,14 +330,17 @@ export function estimateSheetMutationBytes(mutation: SheetMutation): number {
       return BASE_BYTES + (mutation.record === undefined ? 0 : RECORD_BYTES);
     case "set-range": {
       let records = 0;
+      let slots = 0;
       for (const line of mutation.records) {
+        slots += line.length;
         for (const record of line) {
           if (record !== undefined) {
             records += 1;
           }
         }
       }
-      return BASE_BYTES + records * RECORD_BYTES;
+      // Empty entries still retain reference slots and a container for every row.
+      return BASE_BYTES + records * RECORD_BYTES + mutation.records.length * 32 + slots * 8;
     }
     case "insert-rows":
       return BASE_BYTES + countRowCells(mutation.rows) * RECORD_BYTES;

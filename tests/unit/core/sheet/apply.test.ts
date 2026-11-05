@@ -96,6 +96,14 @@ describe("applySheetMutation — 坐标空间", () => {
  *    `restore-rows` 得比 `delete-rows` 贵两个数量级，否则这个闸门形同虚设。
  */
 describe("estimateSheetMutationBytes", () => {
+  it("charges array slots even when a captured range contains only empty cells", () => {
+    const records = Array.from({ length: 100 }, () => Array.from({ length: 100 }, () => undefined));
+    expect(estimateSheetMutationBytes({
+      type: "set-range",
+      range: { startRow: 0, startColumn: 0, endRow: 99, endColumn: 99 },
+      records
+    })).toBeGreaterThanOrEqual(80_000);
+  });
   const everyMember: readonly SheetMutation[] = [
     { type: "set-cell", row: 0, column: 0, record: { v: 1 } },
     { type: "set-range", range: { startRow: 0, startColumn: 0, endRow: 1, endColumn: 1 }, records: [[{ v: 1 }]] },

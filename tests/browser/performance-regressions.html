@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Rendering performance regressions</title>
+    <style>#app { width: 960px; height: 480px; }</style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { CyExcelCore, matrixToWorkbookSnapshot } from "/src/core/index.ts";
+      import { ContentLayerRenderer } from "/src/core/render/ContentLayerRenderer.ts";
+      import { SceneSnapshot } from "/src/core/scene/SceneSnapshot.ts";
+      const metrics = { paints: 0, lookups: 0 };
+      const paint = ContentLayerRenderer.prototype.paintContent;
+      ContentLayerRenderer.prototype.paintContent = function (...args) {
+        metrics.paints += 1;
+        return paint.apply(this, args);
+      };
+      const cellRect = SceneSnapshot.prototype.getCellRectInPane;
+      SceneSnapshot.prototype.getCellRectInPane = function (...args) {
+        metrics.lookups += 1;
+        return cellRect.apply(this, args);
+      };
+      window.regressionMetrics = metrics;
+      window.regressionSheet = new CyExcelCore(document.getElementById("app"), {
+        snapshot: matrixToWorkbookSnapshot(Array.from({ length: 100000 }, (_, row) => [row]), { blankColumns: 9 }),
+        columns: Array.from({ length: 10 }, () => ({ width: 80 })),
+        rowHeight: 24
+      });
+    </script>
+  </body>
+</html>

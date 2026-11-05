@@ -10,6 +10,7 @@ import {
   collectInvalidCells,
   describeCellDropdown,
   describeDropdownItems,
+  defaultValidationMessage,
   findRuleAt,
   intersectRanges,
   relocateValidationsForDelete,
@@ -29,6 +30,11 @@ function range(startRow: number, startColumn: number, endRow: number, endColumn:
 
 function whole(id: string, ranges: readonly CellRange[], value1 = 0, value2 = 10): DataValidationRule {
   return { id, ranges, criteria: { type: "whole", operator: "between", value1, value2 } };
+}
+
+function freezeRules(rules: DataValidationRule[]): readonly DataValidationRule[] {
+  return Object.freeze(rules.map(rule => Object.freeze({ ...rule,
+    ranges: Object.freeze(rule.ranges.map(r => Object.freeze(r))) })));
 }
 
 /** 把一组规则展开成 "行,列 -> 规则 id" 的映射，便于逐格比较覆盖范围。 */
@@ -89,6 +95,60 @@ describe("findRuleAt / rulesIntersecting", () => {
   it("lists only rules that intersect the window", () => {
     expect(rulesIntersecting(rules, range(4, 4, 7, 7)).map((r) => r.id)).toEqual(["b"]);
     expect(rulesIntersecting(rules, range(20, 20, 30, 30))).toEqual([]);
+  });
+
+  it("indexes large rule sets without scanning offscreen ranges on each lookup", () => {
+    let reads = 0;
+    const many = freezeRules(Array.from({ length: 10_000 }, (_, column) => whole(String(column), [{
+      get startRow() { reads += 1; return 0; },
+      endRow: 100,
+      startColumn: column,
+      endColumn: column
+    }])));
+    expect(findRuleAt(many, 50, 9999)?.id).toBe("9999");
+    reads = 0;
+    expect(findRuleAt(many, 75, 8000)?.id).toBe("8000");
+    expect(reads).toBeLessThan(50);
+    expect(findRuleAt(many, 101, 8000)).toBeUndefined();
+    const changed = freezeRules([...many, whole("new", [range(101, 8000, 102, 8000)])]);
+    expect(findRuleAt(changed, 101, 8000)?.id).toBe("new");
+  });
+
+  it("preserves first-match precedence and multi-range lookup in the index", () => {
+    const indexed = freezeRules([
+      whole("first", [range(4, 4, 6, 6), range(90, 90, 99, 99)]),
+      whole("overlap", [range(0, 0, 10, 10)]),
+      ...Array.from({ length: 20 }, (_, i) => whole(String(i), [range(i + 20, 0, i + 20, 2)]))
+    ]);
+    for (let row = 0; row < 105; row += 1) {
+      for (let column = 0; column < 105; column += 1) {
+        const expected = indexed.find(rule => rule.ranges.some(r =>
+          row >= r.startRow && row <= r.endRow && column >= r.startColumn && column <= r.endColumn));
+        expect(findRuleAt(indexed, row, column)).toBe(expected);
+      }
+    }
+  });
+
+  it("observes changes to mutable public rule arrays and nested ranges", () => {
+    const target = range(0, 0, 0, 0);
+    const mutable = Array.from({ length: 9 }, (_, i) => whole(String(i), [i === 0 ? target : range(i, 0, i, 0)]));
+    expect(findRuleAt(mutable, 0, 0)?.id).toBe("0");
+    Object.assign(target, { startRow: 20, endRow: 20 });
+    expect(findRuleAt(mutable, 0, 0)).toBeUndefined();
+    expect(findRuleAt(mutable, 20, 0)?.id).toBe("0");
+    mutable[0] = whole("replacement", [range(20, 0, 20, 0)]);
+    expect(findRuleAt(mutable, 20, 0)?.id).toBe("replacement");
+  });
+
+  it("observes list item replacements without stale membership or messages", () => {
+    const items = ["a"];
+    const rule: DataValidationRule = { id: "list", ranges: [range(0, 0, 0, 0)], criteria: { type: "list", items } };
+    expect(validateValue(rule, "a").valid).toBe(true);
+    expect(defaultValidationMessage(rule.criteria)).toContain("a");
+    items[0] = "b";
+    expect(validateValue(rule, "a").valid).toBe(false);
+    expect(validateValue(rule, "b").valid).toBe(true);
+    expect(defaultValidationMessage(rule.criteria)).toBe("请从列表中选择：b");
   });
 });
 

@@ -11,7 +11,7 @@ import {
 } from "../mutations";
 import { rowValuesToCells, valueToRecord } from "../sheet/import";
 import type { SheetMutation } from "../sheet/mutation";
-import type { CellValue } from "../sheet/types";
+import type { CellRecord, CellValue } from "../sheet/types";
 import type { DataValidationRule } from "../sheet/validations";
 import { changesForSheetMutation, type SheetAxisSpace } from "../sheet/patches";
 import type { SheetModel } from "../sheet/SheetModel";
@@ -35,19 +35,42 @@ class TableSheetMutation implements Mutation {
   readonly changes: readonly Patch[];
   readonly #sheet: SheetModel;
   readonly #mutation: SheetMutation;
+  readonly #preservePresentation: boolean;
 
-  constructor(sheet: SheetModel, mutation: SheetMutation, changes: readonly Patch[]) {
+  constructor(sheet: SheetModel, mutation: SheetMutation, changes: readonly Patch[], preservePresentation = false) {
     this.#sheet = sheet;
     this.#mutation = mutation;
+    this.#preservePresentation = preservePresentation;
     this.type = `data:${mutation.type}`;
     this.changes = Object.freeze([...changes]);
   }
 
   prepare(context: MutationPrepareContext): PreparedMutationParticipant {
+    let mutation = this.#mutation;
+    if (this.#preservePresentation) {
+      if (mutation.type === "set-cell") {
+        mutation = { ...mutation, record: preservePresentation(context.readRecord(this.#sheet, mutation.row, mutation.column), mutation.record) };
+      } else if (mutation.type === "set-range") {
+        const range = mutation.range;
+        mutation = { ...mutation, records: mutation.records.map((line, row) => line.map((record, column) =>
+          preservePresentation(context.readRecord(this.#sheet, range.startRow + row, range.startColumn + column), record))) };
+      }
+    }
     // 施加**之前**的坐标空间要先读下来：`prepareData` 返回时预览已经吃过这条变更了。
     const before = spaceOf(context);
-    assertValueWriteIsInsideSpace(this.#mutation, before);
-    const prepared = context.prepareData(this.#sheet, this.#mutation);
+    assertValueWriteIsInsideSpace(mutation, before);
+    if (!valueWriteHasEffect(this.#sheet, mutation, context)) {
+      return {
+        hasEffect: false,
+        forward: this,
+        inverse: this,
+        estimatedBytes: 0,
+        commit: () => {},
+        rollback: () => {},
+        dispose: () => {}
+      };
+    }
+    const prepared = context.prepareData(this.#sheet, mutation);
     const space = unionSpace(before, spaceOf(context));
 
     const forward = new TableSheetMutation(
@@ -70,6 +93,41 @@ class TableSheetMutation implements Mutation {
       dispose: () => prepared.dispose()
     };
   }
+}
+
+function preservePresentation(previous: CellRecord | undefined, record: CellRecord | undefined): CellRecord | undefined {
+  if (previous?.s === undefined && previous?.img === undefined) return record;
+  return {
+    v: undefined,
+    ...(previous.s === undefined ? {} : { s: previous.s }),
+    ...(previous.img === undefined ? {} : { img: previous.img }),
+    ...record
+  };
+}
+
+function sameRecord(left: CellRecord | undefined, right: CellRecord | undefined): boolean {
+  if (left === right) return true;
+  if (left === undefined || right === undefined) return false;
+  const keys = Object.keys(left) as (keyof CellRecord)[];
+  return keys.length === Object.keys(right).length && keys.every((key) => Object.is(left[key], right[key]));
+}
+
+function valueWriteHasEffect(sheet: SheetModel, mutation: SheetMutation, context: MutationPrepareContext): boolean {
+  if (mutation.type === "set-cell") {
+    assertValidCoordinate(mutation.row, mutation.column);
+    return !sameRecord(context.readRecord(sheet, mutation.row, mutation.column), mutation.record);
+  }
+  if (mutation.type === "set-range") {
+    assertValidRange(mutation.range);
+    const { startRow, startColumn, endRow, endColumn } = mutation.range;
+    for (let row = startRow; row <= endRow; row += 1) {
+      for (let column = startColumn; column <= endColumn; column += 1) {
+        if (!sameRecord(context.readRecord(sheet, row, column), mutation.records[row - startRow]?.[column - startColumn])) return true;
+      }
+    }
+    return false;
+  }
+  return true;
 }
 
 function spaceOf(context: MutationPrepareContext): SheetAxisSpace {
@@ -208,15 +266,9 @@ export class TableStore {
   }
 
   /**
-   * 只带值的一条变更**整条替换**记录，不与该格已有的 `t`/`s`/`f`/`si` 合并。
-   *
-   * 今天这样是对的：4B 之后没有任何活路径产出带这些字段的记录（样式属阶段 5、公式
-   * 不在范围内），所以此刻做合并等于给一条还不存在的状态写代码。
-   *
-   * **等到有了那些字段，合并必须发生在事务里、读影子的 `getRecord`**——不能在这里
-   * 读活模型：同一个事务里连写两次同一格时，第二条会拿到一份还没被第一条更新过的
-   * 旧样式，把第一条的结果悄悄盖掉。届时的落点是给 `TableSheetMutation.prepare` 一条
-   * "带值的 set-cell"变体，在 `prepareData` 之前就地问影子要记录。
+   * Formula-enabled writes replace the value/formula while retaining presentation.
+   * Presentation is read from the transaction shadow during prepare, so batched
+   * writes preserve earlier style changes in the same transaction.
    */
   createSetCellMutation(row: number, column: number, value: CellValue | null | undefined): Mutation {
     // 这里只查形状；"在不在坐标空间里"要等到 prepare 才知道——同一个事务里可以
@@ -224,8 +276,9 @@ export class TableStore {
     assertValidCoordinate(row, column);
     return new TableSheetMutation(
       this.#sheet,
-      { type: "set-cell", row, column, record: valueToRecord(value) },
-      [{ type: "cell-value", row, column }]
+      { type: "set-cell", row, column, record: this.#valueRecord(value) },
+      [{ type: "cell-value", row, column }],
+      this.#sheet.formulasEnabled
     );
   }
 
@@ -244,9 +297,18 @@ export class TableStore {
     }
     return new TableSheetMutation(
       this.#sheet,
-      { type: "set-range", range, records: values.map((row) => row.map(valueToRecord)) },
-      [{ type: "range-value", range }]
+      { type: "set-range", range, records: values.map((row) => row.map(value => this.#valueRecord(value))) },
+      [{ type: "range-value", range }],
+      this.#sheet.formulasEnabled
     );
+  }
+
+  #valueRecord(value: CellValue | null | undefined): CellRecord | undefined {
+    if (this.#sheet.formulasEnabled && typeof value === "string") {
+      if (value.startsWith("=")) return { v: undefined, f: value };
+      if (value.startsWith("'=")) return { v: value.slice(1), t: 4 };
+    }
+    return valueToRecord(value);
   }
 
   /**
