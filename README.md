@@ -6,9 +6,14 @@ mutation (so undo/redo and clipboard paste are never special-cased), and the
 sheet owns its data outright in a sparse cell matrix — your rows are *imported*
 into it once, not adapted behind an interface.
 
-Zero runtime dependencies. `cyexcel/core` never touches the Custom Elements
+`cyexcel/core` never touches the Custom Elements
 registry, so it works equally well as a plain library call or embedded inside
 any framework's own component model.
+
+Workbook shells enable formulas using the MIT-licensed `fast-formula-parser`.
+The core accepts an optional calculator through `formulaEngine`, so importing
+`cyexcel/core` does not import the parser. See [formula support](doc/formulas.md)
+for setup, supported functions, and current limitations.
 
 ## Install
 
@@ -55,6 +60,23 @@ about `<script type="importmap">`, so it 500s on the bare `"react"`/`"vue"`
 specifiers those two examples rely on the *browser* to resolve).
 
 ## Entry points
+
+`createWorkbook(container, options)` provides sheet tabs with add and switch
+controls. Click a tab's close icon to delete its sheet after confirmation, or call
+`workbook.deleteSheet(sheetId)` directly. Deletion cannot be undone and always
+leaves at least one sheet. Deleting the active sheet selects its right neighbor,
+or its left neighbor when there is no sheet to the right. An unknown ID or an
+attempt to delete the last sheet throws a `RangeError`.
+Double-click a tab (or press F2 while it is focused) to rename it inline. Enter
+or blur saves the name; Escape cancels. Blank input keeps the previous name.
+`workbook.renameSheet(sheetId, name)` also supports renaming programmatically;
+it trims whitespace and throws a `RangeError` for a blank name or unknown ID.
+
+The default workbook toolbar exports all sheets to `.xlsx`, including sheets
+that have not been opened. `await workbook.exportExcel({ fileName: "report.xlsx" })`
+uses the current tab names, styles, merges and built-in validation rules. Pass
+`download: false` to receive a Blob, or `includeHeaders: false` to omit custom
+column headers. See [Excel export](doc/excel-export.md) for supported features and limitations.
 
 | Import | Use it for |
 | --- | --- |

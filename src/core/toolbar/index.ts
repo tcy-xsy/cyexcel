@@ -6,7 +6,11 @@ export { createDialog, type DialogHandle, type DialogOptions } from "./createDia
 export { findReplaceDialog } from "./dialogs";
 export {
   exportSheetToExcel,
-  type ExcelExportOptions
+  exportWorkbookToExcel,
+  excelSourceFromSheet,
+  type ExcelExportOptions,
+  type ExcelExportColumn,
+  type ExcelSheetExportSource
 } from "./exportExcel";
 export { commonValue, everyCellHas, resolveItemState, MAX_PROBED_CELLS } from "./state";
 export {

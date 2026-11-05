@@ -23,6 +23,8 @@ export interface ToolbarContext {
   readonly range: CellRange;
   /** 某一格解析后的样式（列默认 + 格样式合并） */
   styleOf(row: number, column: number): CellStyle | undefined;
+  /** Workbook shells can replace single-sheet export with whole-workbook export. */
+  exportExcel?(): Promise<void>;
 }
 
 export type ToolbarItemType = "button" | "toggle" | "select" | "color" | "panel" | "dialog";
@@ -81,6 +83,7 @@ export interface ToolbarItemState {
 }
 
 export interface ToolbarOptions {
+  readonly exportExcel?: () => Promise<void>;
   /** 整体替换默认 schema。 */
   readonly schema?: ToolbarSchema;
   /** 在默认 schema 之外追加项。与 `schema` 同时给时，追加到给定的那份上。 */

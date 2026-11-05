@@ -17,8 +17,7 @@ export interface FormulaBarHandle {
  * # 显示的是原始值，不是格式化后的文本
  *
  * 与 Excel 一致：单元格里显示 `1,234.00`，编辑栏里是 `1234`。Step 24 的
- * `formatCellText` 只作用于绘制路径，这里直接读 `getCell()`。将来有了公式，
- * 这里显示的会是公式串本身，同一条规则。
+ * `formatCellText` 只作用于绘制路径；这里显示公式原文或普通单元格的实际值。
  */
 /** 作为 `CyExcelCoreOptions.topWidgets` 的一项使用。 */
 export function formulaBarWidget() {
@@ -60,7 +59,7 @@ export function createFormulaBar(sheet: CyExcelCore, container: HTMLElement): Fo
       range.startRow < sheet.getRowCount() &&
       range.startColumn < sheet.getColumnCount();
     const value = hasActiveCell
-      ? sheet.getCell(range.startRow, range.startColumn)
+      ? sheet.getCellFormula(range.startRow, range.startColumn) ?? sheet.getCell(range.startRow, range.startColumn)
       : undefined;
     input.value = value === null || value === undefined ? "" : String(value);
     editing = hasActiveCell ? { row: range.startRow, column: range.startColumn } : null;

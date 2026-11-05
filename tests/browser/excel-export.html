@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Excel workbook export</title>
+    <style>#app { width: 960px; height: 480px; }</style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createWorkbook } from "/src/createWorkbook.ts";
+      import { matrixToWorkbookSnapshot } from "/src/core/index.ts";
+      import { defaultToolbarSchema } from "/src/core/toolbar/schema.ts";
+      const second = matrixToWorkbookSnapshot([["unmounted", 7], ["second-last", 8]]);
+      const secondId = second.sheetOrder[0];
+      second.sheets[secondId].dataValidations = [{ id: "decimal", ranges: [{ startRow: 0, startColumn: 1, endRow: 1, endColumn: 1 }], criteria: { type: "decimal", operator: "greaterThan", value1: 0 } }];
+      const workbook = createWorkbook(document.getElementById("app"), {
+        toolbar: { schema: defaultToolbarSchema.filter(item => item.id === "export-excel") },
+        formulaBar: false,
+        columns: [{ header: "Name", width: 160 }, { header: "Value", width: 120 }],
+        sheets: [
+          { name: "First", snapshot: matrixToWorkbookSnapshot([["first", 1], ["middle", 2], ["last", 3]]) },
+          { name: "Second", snapshot: second },
+          { name: "Deleted", snapshot: matrixToWorkbookSnapshot([["must not export", 1]]) }
+        ]
+      });
+      const active = workbook.getActiveSheet();
+      active.mergeCells({ startRow: 0, startColumn: 0, endRow: 0, endColumn: 1 });
+      active.setCellStyle(2, 1, { bold: true, color: "#ff8000", numFmt: "0.00" });
+      active.setDataValidation({ startRow: 1, startColumn: 1, endRow: 2, endColumn: 1 }, {
+        criteria: { type: "list", items: ['a,b', 'say "yes"', "long".repeat(80)] }, errorStyle: "warning"
+      });
+      workbook.renameSheet("sheet-001", "销售汇总");
+      workbook.renameSheet("sheet-002", "未打开的表");
+      workbook.deleteSheet("sheet-003");
+      window.exportWorkbookForTest = workbook;
+    </script>
+  </body>
+</html>

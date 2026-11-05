@@ -25,11 +25,14 @@ describe("published tarball contents", () => {
     expect(files).toContain("package.json");
     expect(files).toContain("README.md");
     expect(files).toContain("LICENSE");
+    expect(files).toContain("THIRD_PARTY_NOTICES.txt");
   });
 
   it("includes the built dist/ output", () => {
     expect(files).toContain("dist/index.js");
     expect(files).toContain("dist/core.js");
+    expect(files).toContain("dist/formula.js");
+    expect(files).toContain("dist/types/formula/index.d.ts");
     expect(files).toContain("dist/cyexcel.umd.cjs");
     expect(files.some((file) => file.startsWith("dist/types/"))).toBe(true);
   });

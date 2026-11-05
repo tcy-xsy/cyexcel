@@ -400,9 +400,10 @@ export const defaultToolbarSchema: ToolbarSchema = Object.freeze([
     type: "button",
     icon: icons.exportExcel,
     label: "导出 Excel",
-    tooltip: "导出当前 Sheet 的已用区域（.xlsx）",
+    tooltip: "导出 Excel 文件（.xlsx）",
     run: async (ctx) => {
-      await exportSheetToExcel(ctx.sheet, {}, (row, column) => ctx.styleOf(row, column));
+      if (ctx.exportExcel) await ctx.exportExcel();
+      else await exportSheetToExcel(ctx.sheet, {}, (row, column) => ctx.styleOf(row, column));
     }
   },
 

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="UTF-8" /><title>Formula integration</title>
+    <style>#app { width: 960px; height: 480px; }</style>
+  </head>
+  <body><div id="app"></div>
+    <script type="module">
+      import { createWorkbook } from "/src/createWorkbook.ts";
+      import { matrixToWorkbookSnapshot } from "/src/core/index.ts";
+      const second = matrixToWorkbookSnapshot([[7, 0]]);
+      second.sheets[second.sheetOrder[0]].cellData[0][1] = { v: -1, f: '=A1*3' };
+      const workbook = createWorkbook(document.getElementById('app'), {
+        toolbar: false,
+        columns: [{ header: 'Input', width: 150, type: 'number' }, { header: 'Total', width: 150 }, { header: 'Next', width: 150 }],
+        rowHeight: 30,
+        sheets: [
+          { name: 'Formula', snapshot: matrixToWorkbookSnapshot([[2, 0, 0], [3, 0, 0]]) },
+          { name: 'Unopened', snapshot: second }
+        ]
+      });
+      const sheet = workbook.getActiveSheet();
+      sheet.setCell(0, 1, '=SUM(A1:A2)');
+      sheet.setCell(0, 2, '=B1*2');
+      sheet.setDataValidation({ startRow: 0, endRow: 1, startColumn: 0, endColumn: 0 }, {
+        criteria: { type: 'whole', operator: 'between', value1: 1, value2: 100 }, errorStyle: 'stop'
+      });
+      window.formulaWorkbook = workbook;
+    </script>
+  </body>
+</html>

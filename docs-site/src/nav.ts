@@ -7,6 +7,7 @@ import stylesExamplePage from "./pages/examples/styles";
 import linksAndImagesExamplePage from "./pages/examples/links-and-images";
 import searchExamplePage from "./pages/examples/search";
 import validationExamplePage from "./pages/examples/validation";
+import formulasExamplePage from "./pages/examples/formulas";
 import toolbarExamplePage from "./pages/examples/toolbar";
 import workbookExamplePage from "./pages/examples/workbook";
 import performanceExamplePage from "./pages/examples/performance";
@@ -44,6 +45,7 @@ export const navGroups: readonly NavGroup[] = [
       { label: "链接与图片单元格", route: "/examples/links-and-images", module: linksAndImagesExamplePage },
       { label: "查找与替换", route: "/examples/search", module: searchExamplePage },
       { label: "数据验证", route: "/examples/validation", module: validationExamplePage },
+      { label: "公式计算", route: "/examples/formulas", module: formulasExamplePage },
       { label: "工具栏", route: "/examples/toolbar", module: toolbarExamplePage },
       { label: "多 Sheet 工作簿", route: "/examples/workbook", module: workbookExamplePage },
       { label: "十万行性能", route: "/examples/performance", module: performanceExamplePage }

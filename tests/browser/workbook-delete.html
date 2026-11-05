@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Workbook deletion fixture</title>
+    <style>#app { width: 640px; height: 360px; }</style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createWorkbook } from "/src/createWorkbook.ts";
+      window.workbookForTest = createWorkbook(document.getElementById("app"), {
+        toolbar: false,
+        formulaBar: false,
+        newSheetRows: 10,
+        sheets: [{ name: "First" }, { name: "Second" }, { name: "Third" }]
+      });
+    </script>
+  </body>
+</html>

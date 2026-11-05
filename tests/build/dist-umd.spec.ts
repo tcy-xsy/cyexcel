@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+import type * as CyExcelAPI from "../../src/index";
 
 interface FixtureWindow {
   __cyexcelDistUmdReady?: boolean;
@@ -31,4 +32,24 @@ test("the global UMD bundle exposes CyExcelCore (not just defineCyExcel) and cre
   });
 
   expect(hasPaintedPixel).toBe(true);
+});
+
+test("the global workbook bundles its formula parser and recalculates without external globals", async ({ page }) => {
+  await gotoFixture(page);
+  const result = await page.evaluate(() => {
+    const api = (window as unknown as { CyExcel: typeof CyExcelAPI }).CyExcel;
+    const container = document.createElement('div');
+    container.style.cssText = 'width:600px;height:300px';
+    document.body.append(container);
+    const workbook = api.createWorkbook(container, { toolbar: false,
+      snapshot: api.matrixToWorkbookSnapshot([[3, 0]]) });
+    const sheet = workbook.getActiveSheet();
+    sheet.setCell(0, 1, '=SUM(A1,4)');
+    const before = sheet.getCell(0, 1);
+    sheet.setCell(0, 0, 8);
+    const after = sheet.getCell(0, 1);
+    workbook.dispose();
+    return [before, after];
+  });
+  expect(result).toEqual([7, 12]);
 });

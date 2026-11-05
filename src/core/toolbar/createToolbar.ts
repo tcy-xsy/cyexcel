@@ -66,6 +66,7 @@ export function createToolbar(
 
   const context = (): ToolbarContext => ({
     sheet,
+    ...(options.exportExcel === undefined ? {} : { exportExcel: options.exportExcel }),
     range: sheet.selection.range,
     styleOf: (row, column) => sheet.getCellStyle(row, column)
   });
