@@ -235,3 +235,18 @@ describe("CellMatrix", () => {
     }
   });
 });
+
+describe("CellMatrix range traversal", () => {
+  it("returns only occupied buckets for both narrow and very sparse wide ranges", () => {
+    const matrix = new CellMatrix();
+    matrix.set(0, 0, { v: 1 });
+    matrix.set(5, 0, { v: 2 });
+    matrix.set(999999, 0, { v: 3 });
+    expect([...matrix.rowsInRange(4, 5)].map(([row]) => row)).toEqual([5]);
+    expect([...matrix.rowsInRange(1, 1000000)].map(([row]) => row)).toEqual([5, 999999]);
+    const clone = matrix.clone();
+    matrix.delete(5, 0);
+    expect([...clone.rowsInRange(4, 5)].map(([row]) => row)).toEqual([5]);
+    expect([...matrix.rowsInRange(4, 5)]).toEqual([]);
+  });
+});

@@ -3,6 +3,9 @@ export { ContextMenuService, type ContextMenuServiceOptions } from "./ContextMen
 export { DefaultMenuRenderer } from "./DefaultMenuRenderer";
 export { createBasicContextMenuPlugin } from "./basicMenuPlugin";
 export type {
+  SheetMenuAction,
+  SheetMenuState,
+  SheetMenuCommands,
   ContextMenuTarget,
   ContextMenuContext,
   ContextMenuItem,

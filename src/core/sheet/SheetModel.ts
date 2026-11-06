@@ -107,6 +107,19 @@ export class SheetModel {
     return this.#formulaFactory !== undefined;
   }
 
+  get hasFormulas(): boolean {
+    return this.#matrix.formulaCount() > 0;
+  }
+
+  *recordsInRange(range: CellRange): Generator<{ row: number; column: number; record: CellRecord }> {
+    for (const [row, bucket] of this.#matrix.rowsInRange(range.startRow, range.endRow)) {
+      for (const key of Object.keys(bucket)) {
+        const column = Number(key);
+        if (column >= range.startColumn && column <= range.endColumn) yield { row, column, record: bucket[column]! };
+      }
+    }
+  }
+
   getFormulaError(row: number, column: number): string | undefined {
     if (this.#matrix.get(row, column)?.f === undefined) return undefined;
     this.getCell(row, column);

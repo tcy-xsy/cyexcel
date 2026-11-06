@@ -149,7 +149,8 @@ import {
   type ViewportState
 } from "./layout";
 import { InitializationRollback } from "./lifecycle";
-import { ContextMenuService, classifyContextMenuTarget } from "./menu";
+import { ContextMenuService, classifyContextMenuTarget, createBasicContextMenuPlugin } from "./menu";
+import type { SheetMenuAction, SheetMenuState } from "./menu/types";
 import { DeferredMutationQueue } from "./model";
 import { PluginManager, type CyExcelPlugin } from "./plugins";
 import {
@@ -206,6 +207,8 @@ export interface CyExcelHeaderActionEvent {
 }
 
 export interface CyExcelCoreOptions {
+  /** Install the standard spreadsheet menu. Core defaults to false; UI presets default to true. */
+  readonly contextMenu?: boolean;
   /** Optional formula calculator. Workbook shells enable the bundled adapter by default. */
   readonly formulaEngine?: FormulaEngineFactory | false;
   readonly columns?: readonly CyExcelColumnConfig[];
@@ -549,7 +552,7 @@ function createBrowserClipboardIO(): ClipboardIO {
         textarea.value = text;
         textarea.focus();
         textarea.select();
-        document.execCommand("copy");
+        if (!document.execCommand("copy")) throw new DOMException("Clipboard copy was denied", "NotAllowedError");
       });
     },
     async readText() {
@@ -558,7 +561,7 @@ function createBrowserClipboardIO(): ClipboardIO {
       } catch {
         return withHiddenTextarea((textarea) => {
           textarea.focus();
-          document.execCommand("paste");
+          if (!document.execCommand("paste")) throw new DOMException("Clipboard paste was denied", "NotAllowedError");
           return textarea.value;
         });
       }
@@ -1004,9 +1007,16 @@ export class CyExcelCore {
       deleteColumns: (start, count) => this.deleteColumns(start, count),
       moveColumns: (start, count, target) => this.moveColumns(start, count, target),
       hideColumn: (column) => this.hideColumn(column),
+      sheetMenu: {
+        getState: (range, column) => this.#getSheetMenuState(range, column),
+        run: (action, range, column, signal) => this.#runSheetMenuAction(action, range, column, signal)
+      },
       registerShortcut: (combo, handler) => this.registerShortcut(combo, handler)
     });
     initialization.defer(() => this.#pluginManager.dispose());
+    if (options.contextMenu && !options.plugins?.some(plugin => plugin.name === "cyexcel:basic-context-menu")) {
+      this.#pluginManager.use(createBasicContextMenuPlugin());
+    }
     for (const plugin of options.plugins ?? []) {
       this.#pluginManager.use(plugin);
     }
@@ -1705,6 +1715,128 @@ export class CyExcelCore {
     this.#enqueueOrRunMutation(() =>
       this.#applyCommandNow(new SetCellCommand(row, column, value))
     );
+  }
+
+  /** Clear values, formulas and images, retaining formatting and validation; one undo step. */
+  clearContents(range: CellRange = this.selection.range): void {
+    assertValidRange(range);
+    this.#enqueueOrRunMutation(() => {
+      const cells = [...this.#sheet.recordsInRange(range)].filter(({ record }) =>
+        record.v !== undefined || record.f !== undefined || record.img !== undefined);
+      const changes = this.#commandManager.transaction(() => {
+        for (const { row, column, record } of cells) {
+          this.#commandManager.execute(new SetCellCommand(row, column, undefined));
+          if (!this.#sheet.formulasEnabled && record.s !== undefined) {
+            const style = this.#workbook.styles().get(record.s);
+            if (style) this.#commandManager.execute(new SetStyleCommand({ startRow: row, endRow: row, startColumn: column, endColumn: column }, style));
+          }
+          if (record.img !== undefined) this.#commandManager.execute(new SetCellImageCommand(row, column, undefined));
+        }
+      });
+      this.#publishCommitReceipt(changes);
+    });
+  }
+
+  #hiddenMenuColumns(): number[] {
+    const columns: number[] = [];
+    for (let column = 0; column < this.getColumnCount(); column++) {
+      if (this.#sheet.getColumnMeta(column)?.hd) columns.push(column);
+    }
+    return columns;
+  }
+
+  #getSheetMenuState(range: CellRange, column: number): SheetMenuState {
+    const merges = mergesIntersectingRange(this.#sheet.merges(), range);
+    const runtimeColumn = this.getColumn(column);
+    const hidden = new Set(this.#hiddenMenuColumns());
+    const sample = this.getCellStyle(range.startRow, range.startColumn);
+    let bold = sample?.bold === true, italic = sample?.italic === true;
+    if ((range.endRow - range.startRow + 1) * (range.endColumn - range.startColumn + 1) <= 2000) {
+      for (let row = range.startRow; row <= range.endRow && (bold || italic); row++) {
+        for (let col = range.startColumn; col <= range.endColumn && (bold || italic); col++) {
+          const style = this.getCellStyle(row, col);
+          bold &&= style?.bold === true;
+          italic &&= style?.italic === true;
+        }
+      }
+    }
+    return {
+      structureEnabled: !this.#sheet.formulasEnabled || !this.#sheet.hasFormulas,
+      canCut: !Array.from({ length: range.endColumn - range.startColumn + 1 }, (_, index) =>
+        this.getColumn(range.startColumn + index)).some(column => column.clipboard.copy === false),
+      canMerge: (range.startRow !== range.endRow || range.startColumn !== range.endColumn) &&
+        merges.every(merge => merge.startRow >= range.startRow && merge.endRow <= range.endRow &&
+          merge.startColumn >= range.startColumn && merge.endColumn <= range.endColumn),
+      hasMerge: merges.length > 0,
+      canSort: runtimeColumn.sortable,
+      canFilter: runtimeColumn.filterable,
+      hasFilter: this.filterState !== null,
+      hasHiddenColumns: hidden.size > 0,
+      canHideColumns: Array.from({ length: this.getColumnCount() }, (_, index) => index)
+        .some(index => !hidden.has(index) && (index < range.startColumn || index > range.endColumn)),
+      bold,
+      italic
+    };
+  }
+
+  async #runSheetMenuAction(action: SheetMenuAction, range: CellRange, column: number, signal: AbortSignal): Promise<void> {
+    if (signal.aborted) return;
+    switch (action) {
+      case "cut": {
+        if (this.#getSheetMenuState(range, column).canCut === false) throw new Error("选区包含禁止复制的列，无法剪切。");
+        const version = this.#store.version;
+        const result = await this.copy({ range, signal });
+        if (result.status === "oversized") throw new Error("所选区域过大，请缩小选区后剪切。");
+        if (result.status === "copied" && !signal.aborted) {
+          if (version !== this.#store.version) throw new Error("数据已变化，已保留原单元格，请重新剪切。");
+          this.clearContents(range);
+        }
+        break;
+      }
+      case "clear-contents": this.clearContents(range); break;
+      case "clear-formats": {
+        const patch = Object.fromEntries(STYLE_KEYS.map(key => [key, null])) as CellStylePatch;
+        this.#enqueueOrRunMutation(() => {
+          const cells = [...this.#sheet.recordsInRange(range)].filter(({ record }) => record.s !== undefined);
+          this.#publishCommitReceipt(this.#commandManager.transaction(() => {
+            for (const { row, column } of cells) this.#commandManager.execute(new SetStyleCommand(
+              { startRow: row, endRow: row, startColumn: column, endColumn: column }, patch));
+          }));
+        });
+        break;
+      }
+      case "merge": {
+        const hasOtherValues = [...this.#sheet.recordsInRange(range)].some(({ row, column, record }) =>
+          (row !== range.startRow || column !== range.startColumn) &&
+          ((record.v !== undefined && record.v !== "") || record.f !== undefined || record.img !== undefined));
+        if (!hasOtherValues || window.confirm("合并后仅保留左上角单元格的内容，其他内容将被清除。是否继续？")) this.mergeCells(range);
+        break;
+      }
+      case "unmerge": this.unmergeCells(range); break;
+      case "bold": this.setRangeStyle(range, { bold: !this.#getSheetMenuState(range, column).bold }); break;
+      case "italic": this.setRangeStyle(range, { italic: !this.#getSheetMenuState(range, column).italic }); break;
+      case "align-left": this.setRangeStyle(range, { align: "left" }); break;
+      case "align-center": this.setRangeStyle(range, { align: "center" }); break;
+      case "align-right": this.setRangeStyle(range, { align: "right" }); break;
+      case "sort-asc": this.sortByColumn(column, "asc", { signal }); break;
+      case "sort-desc": this.sortByColumn(column, "desc", { signal }); break;
+      case "filter-value": {
+        const value = this.getCell(range.startRow, column);
+        this.filterByColumn(column, candidate => Object.is(candidate, value));
+        break;
+      }
+      case "clear-filter": this.clearFilter(); break;
+      case "delete-visible-rows": this.deleteVisibleRowsInRange(range.startRow, range.endRow); break;
+      case "show-columns":
+      case "hide-columns": {
+        const columns = action === "show-columns" ? this.#hiddenMenuColumns() :
+          Array.from({ length: range.endColumn - range.startColumn + 1 }, (_, index) => range.startColumn + index);
+        this.#enqueueOrRunMutation(() => this.#publishCommitReceipt(this.#commandManager.transaction(() => {
+          for (const index of columns) this.#commandManager.execute(action === "show-columns" ? new ShowColumnCommand(index) : new HideColumnCommand(index));
+        })));
+        break;
+      }
+    }
   }
 
   /**
@@ -3432,6 +3564,7 @@ export class CyExcelCore {
    * doc/progress.md — Step 9's "不做行号头" scope note no longer applies).
    */
   #handleContextMenu = (event: MouseEvent): void => {
+    if (event.target instanceof Element && event.target.closest('input, textarea, [contenteditable="true"]')) return;
     event.preventDefault();
     this.#dispatchInteraction("context-menu", (frame) => {
       const point = frame.surfaces.clientToSurface(
@@ -3583,6 +3716,36 @@ export class CyExcelCore {
       return;
     }
 
+    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+      event.preventDefault();
+      this.#scrollActiveIntoView();
+      this.#dispatchInteraction("context-menu", frame => {
+        const selection = this.selection;
+        const fragment = frame.scene.getCellFragments(selection.active)[0];
+        if (!fragment) return;
+        const body = frame.scene.getSurface("body").rootRect;
+        this.#contextMenuService.open({ target: "cell", ...selection.active, selection,
+          point: { x: body.x + fragment.rect.x + Math.min(fragment.rect.width, 20),
+            y: body.y + fragment.rect.y + fragment.rect.height } });
+      });
+      return;
+    }
+
+    if ((event.key === "Delete" || event.key === "Backspace") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      if (this.selection.ranges.length !== 1) return;
+      event.preventDefault();
+      this.clearContents();
+      return;
+    }
+
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "x" && this.selection.ranges.length === 1) {
+      event.preventDefault();
+      const range = this.selection.range;
+      void this.#runSheetMenuAction("cut", range, range.startColumn, new AbortController().signal)
+        .catch(error => this.#events.emit("error", { error, eventName: "cut" }));
+      return;
+    }
+
     if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
       const { active } = this.#selectionModel.snapshot;
@@ -3597,6 +3760,7 @@ export class CyExcelCore {
   };
 
   #handleScroll = (): void => {
+    this.#contextMenuService.close();
     this.#headerGestures.cancelResizeOnly(true);
     if (this.#editorManager.isEditing()) {
       if (this.#scrollCommitPolicy === "commit") {

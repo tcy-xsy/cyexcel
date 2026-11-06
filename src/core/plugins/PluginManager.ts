@@ -5,11 +5,13 @@ import type { EventBus } from "../events";
 import type { HookManager } from "../hooks";
 import { LifetimeScope } from "../lifecycle";
 import type { ContextMenuService } from "../menu";
+import type { SheetMenuCommands } from "../menu/types";
 import type { ShortcutHandler } from "../shortcuts";
 import type { Disposer } from "../types";
 import type { CyExcelPlugin, PluginContext } from "./types";
 
 export interface PluginManagerOptions {
+  readonly sheetMenu?: SheetMenuCommands;
   readonly hooks: HookManager;
   readonly events: EventBus;
   readonly contextMenu: ContextMenuService;
@@ -33,6 +35,7 @@ interface InstalledPlugin {
 
 type PluginManagerState = "registering" | "active" | "disposed";
 type RuntimeCapabilityName =
+  | "sheetMenu"
   | "getCell"
   | "copy"
   | "paste"
@@ -97,6 +100,10 @@ export class PluginManager {
     });
     let pluginDisposed = false;
     const context: PluginContext = {
+      ...(this.#options.sheetMenu === undefined ? {} : { sheetMenu: {
+        getState: this.#runtime("sheetMenu", this.#options.sheetMenu.getState, () => pluginDisposed),
+        run: this.#runtime("sheetMenu", this.#options.sheetMenu.run, () => pluginDisposed)
+      } }),
       hooks: {
         tap(hookName, meta, handler) {
           // Pure passthrough to the shared HookManager — the plugin author

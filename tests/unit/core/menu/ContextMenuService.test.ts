@@ -464,3 +464,41 @@ describe("ContextMenuService — getBounds passthrough (menu clipping fix)", () 
     expect(renderers[0]?.mountCalls[0]?.bounds).toBeNull();
   });
 });
+
+describe("ContextMenuService — action eligibility", () => {
+  it("runs a pending clipboard action once and exposes its failure to the renderer", async () => {
+    const { factory, renderers } = createFakeRendererFactory();
+    const service = new ContextMenuService({ container: fakeContainer(), rendererFactory: factory });
+    let reject: (error: Error) => void = () => {};
+    const run = vi.fn(() => new Promise<void>((_resolve, rejectPromise) => { reject = rejectPromise; }));
+    service.registerProvider({ name: "clipboard" }, () => [{ type: "action", id: "cyexcel:paste", label: "Paste", run }]);
+    service.open(fakeContext());
+    const actions = renderers[0]!.mountCalls[0]!.actions;
+    actions.run("cyexcel:paste");
+    actions.run("cyexcel:paste");
+    expect(run).toHaveBeenCalledTimes(1);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      reject(new Error("Denied"));
+      await Promise.resolve();
+      expect(renderers[0]!.updateCalls.at(-1)?.error).toContain("Ctrl+V");
+      expect(service.isOpen()).toBe(true);
+    } finally { consoleError.mockRestore(); service.dispose(); }
+  });
+
+  it("does not execute hidden actions or actions inside a disabled submenu", () => {
+    const { factory, renderers } = createFakeRendererFactory();
+    const service = new ContextMenuService({ container: fakeContainer(), rendererFactory: factory });
+    const run = vi.fn();
+    service.registerProvider({ name: "eligibility" }, () => [
+      { type: "action", id: "hidden", label: "Hidden", hidden: true, run },
+      { type: "submenu", id: "disabled", label: "Disabled", disabled: true,
+        children: [{ type: "action", id: "child", label: "Child", run }] }
+    ]);
+    service.open(fakeContext());
+    const actions = renderers[0]!.mountCalls[0]!.actions;
+    actions.run("hidden"); actions.run("child");
+    expect(run).not.toHaveBeenCalled();
+    service.dispose();
+  });
+});

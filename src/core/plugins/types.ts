@@ -2,6 +2,7 @@ import type { ColumnDefinition as CyExcelColumnConfig } from "../cells";
 import type { ClipboardCopyOptions, ClipboardCopyResult, ClipboardPasteOptions } from "../clipboard";
 import type { HookHandlerMeta } from "../hooks";
 import type { ContextMenuProvider, ContextMenuProviderMeta } from "../menu";
+import type { SheetMenuCommands } from "../menu/types";
 import type { ShortcutHandler } from "../shortcuts";
 import type { Disposer } from "../types";
 
@@ -14,6 +15,7 @@ import type { Disposer } from "../types";
  * that plugin (see PluginManager.use()), not a passthrough.
  */
 export interface PluginContext {
+  readonly sheetMenu?: SheetMenuCommands;
   readonly hooks: {
     tap<TContext = unknown, TValue = unknown>(
       hookName: string,

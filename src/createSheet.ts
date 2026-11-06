@@ -20,7 +20,7 @@ export interface CreateSheetOptions extends CyExcelCoreOptions {
 export function createSheet(container: HTMLElement, options: CreateSheetOptions = {}): CyExcelCore {
   const { toolbar = true, formulaBar = true, ...coreOptions } = options;
   if (coreOptions.topWidgets !== undefined) {
-    return new CyExcelCore(container, coreOptions);
+    return new CyExcelCore(container, { contextMenu: true, ...coreOptions });
   }
 
   const topWidgets: TopWidgetFactory[] = [];
@@ -30,5 +30,5 @@ export function createSheet(container: HTMLElement, options: CreateSheetOptions 
   if (formulaBar !== false) {
     topWidgets.push(formulaBarWidget());
   }
-  return new CyExcelCore(container, { ...coreOptions, topWidgets });
+  return new CyExcelCore(container, { contextMenu: true, ...coreOptions, topWidgets });
 }

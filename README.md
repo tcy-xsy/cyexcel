@@ -61,6 +61,12 @@ specifiers those two examples rely on the *browser* to resolve).
 
 ## Entry points
 
+Sheet and Workbook presets enable a spreadsheet context menu by default.
+Right-click cells, row numbers, or column headers for clipboard, clear,
+insert/delete, formatting, merge, and sort/filter operations. Pass
+`contextMenu: false` to disable it; Core users can opt in with
+`contextMenu: true`. See [context menu behavior](doc/context-menu.md).
+
 `createWorkbook(container, options)` provides sheet tabs with add and switch
 controls. Click a tab's close icon to delete its sheet after confirmation, or call
 `workbook.deleteSheet(sheetId)` directly. Deletion cannot be undone and always

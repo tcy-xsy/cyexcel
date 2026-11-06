@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>Spreadsheet context menu</title>
+<style>#app { width:720px;height:460px; } #outside { margin-top:20px; }</style></head>
+<body><div id="app"></div><button id="outside">Outside</button>
+<script type="module">
+import { createWorkbook } from '/src/createWorkbook.ts';
+import { matrixToWorkbookSnapshot } from '/src/core/index.ts';
+const query = new URLSearchParams(location.search);
+const workbook = createWorkbook(document.getElementById('app'), {
+  toolbar:false, rowHeight:28, headerHeight:28, rowHeaderWidth:48,
+  contextMenu: query.get('menu') !== 'off',
+  columns: Array.from({length:4}, (_,index) => ({width:110,header:['Name','Qty','Group','Note'][index],sortable:true,filterable:true})),
+  snapshot:matrixToWorkbookSnapshot([['Pear',3,'A','one'],['Apple',1,'B','two'],['Banana',2,'A','three'],['Plum',4,'B','four']],{blankRows:36})
+});
+const sheet=workbook.getActiveSheet();
+sheet.setCellStyle(0,0,{bold:true,background:'#fff4cc'});
+sheet.setDataValidation({startRow:0,endRow:3,startColumn:1,endColumn:1},{criteria:{type:'whole',operator:'greaterThan',value1:0}});
+if(query.has('formula')) sheet.setCell(0,3,'=B1*2');
+window.menuWorkbook=workbook;
+</script></body></html>

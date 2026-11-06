@@ -88,6 +88,7 @@ export class HeaderSelectionController {
       }
       if (
         button === 2 &&
+        (selection.snapshot.kind === "column" || selection.snapshot.kind === "all") &&
         hit.column >= selection.snapshot.range.startColumn &&
         hit.column <= selection.snapshot.range.endColumn
       ) {
@@ -113,6 +114,7 @@ export class HeaderSelectionController {
     }
     if (
       button === 2 &&
+      (selection.snapshot.kind === "row" || selection.snapshot.kind === "all") &&
       hit.row >= selection.snapshot.range.startRow &&
       hit.row <= selection.snapshot.range.endRow
     ) {

@@ -341,6 +341,7 @@ export function createWorkbook(
       ...defaultSheetOptions,
       ...overrides,
       formulaEngine: overrides.formulaEngine ?? options.formulaEngine ?? defaultFormulaEngine,
+      contextMenu: overrides.contextMenu ?? options.contextMenu ?? true,
       headerHeight: overrides.headerHeight ?? defaultHeaderHeight,
       rowHeaderWidth: overrides.rowHeaderWidth ?? defaultRowHeaderWidth,
       snapshot: inheritedSnapshot ?? rowsToWorkbookSnapshot([], [], { blankRows: newSheetRows, blankColumns: columnCount })

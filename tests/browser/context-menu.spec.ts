@@ -52,13 +52,8 @@ test("keyboard navigation runs the highlighted action and returns focus to the c
   const box = await getAppBox(page);
 
   await page.mouse.click(box.x + 50, box.y + 36, { button: "right" }); // cell (0, 0)
-  // The cell target's merged menu is [cyexcel:copy, cyexcel:paste, log-cell]
-  // (basicMenuPlugin's provider registers before the fixture's own
-  // "cell-actions" provider) — three ArrowDown presses reaches "log-cell",
-  // which also exercises cycling through multiple items.
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
+  // The extension action follows the standard spreadsheet groups.
+  await page.keyboard.press("End");
   await page.keyboard.press("Enter");
 
   await expect(page.locator('[role="menu"]')).toHaveCount(0);
@@ -165,7 +160,7 @@ test("clicking outside an open context menu closes it without running any action
   await expect(page.locator('[role="menu"]')).toBeVisible();
 
   // A plain left click elsewhere on the grid, well away from the menu.
-  await page.mouse.click(box.x + 50, box.y + 250);
+  await page.mouse.click(box.x + 350, box.y + 250);
 
   await expect(page.locator('[role="menu"]')).toHaveCount(0);
   expect(await getRuns(page)).toEqual([]);

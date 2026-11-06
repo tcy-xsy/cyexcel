@@ -1,4 +1,26 @@
 import type { SelectionSnapshot } from "../interaction";
+import type { CellRange } from "../types";
+
+export type SheetMenuAction = "cut" | "clear-contents" | "clear-formats" | "merge" | "unmerge" | "bold" | "italic" | "align-left" | "align-center" | "align-right" |
+  "sort-asc" | "sort-desc" | "filter-value" | "clear-filter" | "show-columns" | "hide-columns" | "delete-visible-rows";
+export interface SheetMenuState {
+  readonly structureEnabled: boolean;
+  readonly canCut?: boolean;
+  readonly canMerge: boolean;
+  readonly hasMerge: boolean;
+  readonly canSort: boolean;
+  readonly canFilter: boolean;
+  readonly hasFilter: boolean;
+  readonly hasHiddenColumns: boolean;
+  readonly canHideColumns?: boolean;
+  readonly bold: boolean;
+  readonly italic: boolean;
+}
+/** Optional spreadsheet commands exposed to menu plugins, through the normal command path. */
+export interface SheetMenuCommands {
+  getState(range: CellRange, column: number): SheetMenuState;
+  run(action: SheetMenuAction, range: CellRange, column: number, signal: AbortSignal): void | Promise<void>;
+}
 
 export type ContextMenuTarget = "cell" | "row-header" | "column-header" | "corner" | "blank";
 
@@ -26,6 +48,8 @@ export type ContextMenuItem =
       readonly disabled?: boolean;
       readonly checked?: boolean;
       readonly hidden?: boolean;
+      readonly shortcut?: string;
+      readonly description?: string;
       run(context: ContextMenuContext, signal: AbortSignal): void | Promise<void>;
     }
   | {
@@ -33,6 +57,9 @@ export type ContextMenuItem =
       readonly id: string;
       readonly label: string;
       readonly children: readonly ContextMenuItem[];
+      readonly disabled?: boolean;
+      readonly hidden?: boolean;
+      readonly description?: string;
     };
 
 export interface ContextMenuProviderMeta {
@@ -49,6 +76,7 @@ export interface ContextMenuRenderContext {
   readonly items: readonly ContextMenuItem[];
   /** The `id` of the action item currently awaiting its async run(), or null when nothing is in flight. */
   readonly busyItemId: string | null;
+  readonly error?: string;
   /** Where the menu was opened — the same point classifyContextMenuTarget() was given. */
   readonly anchorPoint: { readonly x: number; readonly y: number };
   /**

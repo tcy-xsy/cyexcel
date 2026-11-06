@@ -27,6 +27,7 @@ type ActionItem = Extract<ContextMenuItem, { readonly type: "action" }>;
 
 function findAction(items: readonly ContextMenuItem[], id: string): ActionItem | undefined {
   for (const item of items) {
+    if (item.type !== "separator" && (item.hidden || item.disabled)) continue;
     if (item.type === "action" && item.id === id) {
       return item;
     }
@@ -76,6 +77,7 @@ export class ContextMenuService {
   #activeItems: readonly ContextMenuItem[] = [];
   #activeContext: ContextMenuContext | null = null;
   #busyItemId: string | null = null;
+  #error: string | undefined;
   #activeAbortController: AbortController | null = null;
 
   constructor(options: ContextMenuServiceOptions) {
@@ -135,6 +137,7 @@ export class ContextMenuService {
     this.#activeContext = context;
     this.#activeItems = items;
     this.#busyItemId = null;
+    this.#error = undefined;
 
     const renderer = this.#rendererFactory.create();
     this.#activeRenderer = renderer;
@@ -198,6 +201,7 @@ export class ContextMenuService {
     return {
       items: this.#activeItems,
       busyItemId: this.#busyItemId,
+      ...(this.#error === undefined ? {} : { error: this.#error }),
       anchorPoint: this.#activeContext?.point ?? { x: 0, y: 0 },
       bounds: this.#getBounds?.() ?? null,
       actions: {
@@ -208,6 +212,7 @@ export class ContextMenuService {
   }
 
   #runAction(itemId: string): void {
+    if (this.#busyItemId !== null) return;
     const item = findAction(this.#activeItems, itemId);
     const context = this.#activeContext;
     if (!item || !context || item.disabled) {
@@ -215,6 +220,7 @@ export class ContextMenuService {
     }
 
     const controller = new AbortController();
+    this.#error = undefined;
     this.#activeAbortController = controller;
     let result: void | Promise<void>;
     try {
@@ -259,6 +265,9 @@ export class ContextMenuService {
         console.error(`[cyexcel] context menu action "${itemId}" rejected`, error);
         this.#onActionError?.(itemId, error);
         this.#busyItemId = null;
+        this.#error = /paste/.test(itemId) ? "无法读取剪贴板，请使用 Ctrl+V（Mac：⌘V）粘贴。" :
+          /copy|cut/.test(itemId) ? "剪贴板操作未完成，原数据已保留。可尝试使用键盘快捷键。" :
+          error instanceof Error ? error.message : "操作未完成，请重试。";
         this.#activeRenderer?.update(this.#renderContext());
       }
     );

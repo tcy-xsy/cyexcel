@@ -89,7 +89,7 @@ export class PointerController {
     // selection and does not begin a drag gesture.
     if (
       modifiers.button === 2 &&
-      isWithinRange(row, column, this.#selection.snapshot.range)
+      this.#selection.snapshot.ranges.some(range => isWithinRange(row, column, range))
     ) {
       return;
     }

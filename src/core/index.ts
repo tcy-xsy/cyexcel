@@ -236,6 +236,9 @@ export type {
 export type { EventBus } from "./events";
 export {
   createBasicContextMenuPlugin,
+  type SheetMenuAction,
+  type SheetMenuState,
+  type SheetMenuCommands,
   type ContextMenuService,
   type ContextMenuTarget,
   type ContextMenuContext,

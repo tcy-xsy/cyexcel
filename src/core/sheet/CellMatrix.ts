@@ -121,6 +121,19 @@ export class CellMatrix {
     yield* this.#rows.entries();
   }
 
+  *rowsInRange(start: number, end: number): Generator<[number, Readonly<RowBucket>]> {
+    if (end - start + 1 <= this.#occupied) {
+      for (let row = start; row <= end; row++) {
+        const bucket = this.#rows.get(row);
+        if (bucket) yield [row, bucket];
+      }
+    } else {
+      for (const [row, bucket] of this.#rows.entries()) {
+        if (row >= start && row <= end) yield [row, bucket];
+      }
+    }
+  }
+
   /**
    * 行轴唯一的搬运原语（ADR §3.1）。`plan[newRow]` 是该行的旧下标，
    * `ROW_PLAN_HOLE` 表示新空行；没有被提到的旧行被丢弃。
