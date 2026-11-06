@@ -79,11 +79,11 @@ sheet.undo();
 await workbook.exportExcel({ fileName: "report.xlsx" });
 ```
 
-导出使用当前工作表名称，支持样式、合并区域和内置数据验证规则。`download: false` 返回 Blob，`includeHeaders: false` 不导出自定义列标题。支持范围见 [XLSX 导出](doc/excel-export.md)。
+导出使用当前工作表名称，支持样式、合并区域和内置数据验证规则。`download: false` 返回 Blob，`includeHeaders: false` 不导出自定义列标题。图片、自定义 JavaScript 验证规则及部分高级设置暂不支持导出。
 
 ## 公式与使用限制
 
-工作簿默认通过 MIT 许可的 `fast-formula-parser` 启用公式。核心类可通过 `formulaEngine` 接入可选计算引擎，具体配置见 [公式支持](doc/formulas.md)。
+工作簿默认通过 MIT 许可的 `fast-formula-parser` 启用公式。核心类可通过 `formulaEngine` 接入可选计算引擎，配置示例见文档站的「公式计算」页面。
 
 - 当前支持 12 个基础函数及同工作表引用，暂不支持跨工作表引用。
 - 含公式的工作表暂时限制行列插入、删除、移动及排序，尚未实现结构变更后的引用调整。
@@ -99,12 +99,7 @@ pnpm install
 pnpm docs:dev
 ```
 
-- [右键菜单](doc/context-menu.md)
-- [公式支持](doc/formulas.md)
-- [XLSX 导出](doc/excel-export.md)
-- [架构说明](doc/architecture.md)
-- [API 设计](doc/api-design.md)
-- [自定义与扩展](doc/customization-and-hooks.md)
+文档站包含快速开始、功能示例、API、数据结构及扩展说明，源码位于 [docs-site/](docs-site/)。
 
 `examples/` 包含原生 HTML、ESM、自定义渲染器及 React、Vue 接入示例。先执行 `pnpm build`，再使用 `npx serve examples` 启动静态服务。React、Vue 示例使用浏览器 import map 从 CDN 加载依赖。
 
