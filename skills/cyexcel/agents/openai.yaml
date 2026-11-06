@@ -1,0 +1,3 @@
+interface:
+  display_name: "cyexcel"
+  short_description: "Integrate and extend cyexcel spreadsheet components"

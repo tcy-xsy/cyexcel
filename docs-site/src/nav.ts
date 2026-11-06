@@ -1,6 +1,7 @@
 import type { PageModule } from "./router";
 import overviewPage from "./pages/overview";
 import quickStartPage from "./pages/quick-start";
+import aiSkillsPage from "./pages/ai-skills";
 import basicExamplePage from "./pages/examples/basic";
 import commandsExamplePage from "./pages/examples/commands";
 import stylesExamplePage from "./pages/examples/styles";
@@ -34,7 +35,8 @@ export const navGroups: readonly NavGroup[] = [
     title: "开始",
     links: [
       { label: "Overview", route: "/", module: overviewPage },
-      { label: "Quick Start", route: "/quick-start", module: quickStartPage }
+      { label: "Quick Start", route: "/quick-start", module: quickStartPage },
+      { label: "AI 编程助手", route: "/ai-skills", module: aiSkillsPage }
     ]
   },
   {

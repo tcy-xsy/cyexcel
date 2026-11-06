@@ -103,6 +103,25 @@ pnpm docs:dev
 
 `examples/` 包含原生 HTML、ESM、自定义渲染器及 React、Vue 接入示例。先执行 `pnpm build`，再使用 `npx serve examples` 启动静态服务。React、Vue 示例使用浏览器 import map 从 CDN 加载依赖。
 
+## AI 编程助手 Skill
+
+仓库提供 [cyexcel Skill](skills/cyexcel/SKILL.md)，供 Claude Code 和 Codex 在接入、配置和扩展组件时使用，包含 API 示例、生命周期说明及当前能力限制。
+
+在需要使用组件的项目目录中安装：
+
+```bash
+npx skills add tcy-xsy/cyexcel --skill cyexcel --agent claude-code codex
+```
+
+按安装提示完成配置；添加 `--global` 可安装到用户级目录。安装后重新启动对应助手的会话：
+
+- Claude Code：输入 `/cyexcel`，并描述需要实现的功能。
+- Codex：输入 `$cyexcel`，并描述需要实现的功能。
+
+例如：“使用 cyexcel 创建一个带数量验证、金额公式和 XLSX 导出的采购工作簿。”
+
+Skill 仅提供助手指引，不安装组件运行时，不提供远程操作表格的服务。当前仓库包仍为私有开发版本；未发布 npm 版本时，可在源码仓库执行 `pnpm build` 和 `pnpm pack`，再将生成的压缩包安装到业务项目。
+
 ## 许可证
 
 [MIT](LICENSE)
