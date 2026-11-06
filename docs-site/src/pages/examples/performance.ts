@@ -1,3 +1,4 @@
+import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
 import type { CyExcelCore } from "@cyexcel/core";
 import {
@@ -14,7 +15,7 @@ import {
   section
 } from "../../components/doc";
 
-export default function performanceExamplePage(root: HTMLElement): () => void {
+export default function performanceExamplePage(root: DocElement): void {
   root.append(
     pageHeader(
       "EXAMPLES",
@@ -38,7 +39,7 @@ export default function performanceExamplePage(root: HTMLElement): () => void {
   );
 
   let sheet: CyExcelCore | null = null;
-  const logRef = { current: undefined as HTMLDivElement | undefined };
+  const logRef = { current: undefined as DocElement | undefined };
   const setLog = (text: string): void => {
     if (logRef.current) {
       setText(logRef.current, text);
@@ -51,7 +52,7 @@ export default function performanceExamplePage(root: HTMLElement): () => void {
 
     sheet?.dispose();
     const mountStart = performance.now();
-    sheet = createSheet(demo.mount, {
+    sheet = createSheet(demo.mount.element, {
       columns: performanceColumns,
       snapshot,
       headerHeight: 28,
@@ -80,32 +81,33 @@ export default function performanceExamplePage(root: HTMLElement): () => void {
   }
   logRef.current = demo.log;
 
-  const bootstrapStart = performance.now();
-  const bootstrapSnapshot = buildPerformanceSnapshot(100_000);
-  const bootstrapImportMs = performance.now() - bootstrapStart;
-  const bootstrapMountStart = performance.now();
-  sheet = createSheet(demo.mount, {
-    columns: performanceColumns,
-    snapshot: bootstrapSnapshot,
-    headerHeight: 28,
-    rowHeaderWidth: 48,
-    rowHeight: 28,
-    overscanRows: 4,
-    overscanColumns: 2
-  });
-  const bootstrapMountMs = performance.now() - bootstrapMountStart;
-  setLog([
-    `导入快照：${bootstrapImportMs.toFixed(1)} ms`,
-    `创建核心：${bootstrapMountMs.toFixed(1)} ms`,
-    `数据行：${sheet.getUsedRowCount().toLocaleString("zh-CN")}`,
-    `坐标空间：${sheet.getRowCount().toLocaleString("zh-CN")} 行 × ${sheet.getColumnCount()} 列`
-  ].join("\n"));
+  demo.mount.onMount = () => {
+    const bootstrapStart = performance.now();
+    const bootstrapSnapshot = buildPerformanceSnapshot(100_000);
+    const bootstrapImportMs = performance.now() - bootstrapStart;
+    const bootstrapMountStart = performance.now();
+    sheet = createSheet(demo.mount.element, {
+      columns: performanceColumns,
+      snapshot: bootstrapSnapshot,
+      headerHeight: 28,
+      rowHeaderWidth: 48,
+      rowHeight: 28,
+      overscanRows: 4,
+      overscanColumns: 2
+    });
+    const bootstrapMountMs = performance.now() - bootstrapMountStart;
+    setLog([
+      `导入快照：${bootstrapImportMs.toFixed(1)} ms`,
+      `创建核心：${bootstrapMountMs.toFixed(1)} ms`,
+      `数据行：${sheet.getUsedRowCount().toLocaleString("zh-CN")}`,
+      `坐标空间：${sheet.getRowCount().toLocaleString("zh-CN")} 行 × ${sheet.getColumnCount()} 列`
+    ].join("\n"));
+    return () => sheet?.dispose();
+  };
 
   root.append(
     callout(
       "getUsedRowCount() 返回实际有数据的行数；getRowCount() 返回包含尾部空白行的坐标空间行数。"
     )
   );
-
-  return () => sheet?.dispose();
 }

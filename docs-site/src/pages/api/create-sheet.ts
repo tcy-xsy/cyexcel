@@ -1,8 +1,9 @@
+import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
 import { columns, snapshot } from "../../demo/data";
 import { apiTable, codeBlock, demoBlock, pageHeader, section } from "../../components/doc";
 
-export default function createSheetApiPage(root: HTMLElement): () => void {
+export default function createSheetApiPage(root: DocElement): void {
   root.append(
     pageHeader(
       "API",
@@ -30,16 +31,17 @@ export default function createSheetApiPage(root: HTMLElement): () => void {
   );
 
   const demo = demoBlock({ title: "示例" });
-  demo.mount.classList.add("with-toolbar");
+  demo.mount.addClass("with-toolbar");
   root.append(demo.root);
-  const sheet = createSheet(demo.mount, {
-    columns,
-    snapshot,
-    toolbar: true,
-    formulaBar: true,
-    headerHeight: 28,
-    rowHeaderWidth: 48
-  });
-
-  return () => sheet.dispose();
+  demo.mount.onMount = () => {
+    const sheet = createSheet(demo.mount.element, {
+      columns,
+      snapshot,
+      toolbar: true,
+      formulaBar: true,
+      headerHeight: 28,
+      rowHeaderWidth: 48
+    });
+    return () => sheet.dispose();
+  };
 }

@@ -1,3 +1,4 @@
+import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
 import { columns, snapshot } from "../../demo/data";
 import {
@@ -11,7 +12,8 @@ import {
   section
 } from "../../components/doc";
 
-export default function hooksPage(root: HTMLElement): () => void {
+export default function hooksPage(root: DocElement): void {
+  let sheet: ReturnType<typeof createSheet>;
   root.append(
     pageHeader(
       "EXTEND",
@@ -124,7 +126,7 @@ dispose();`)
     ])
   );
 
-  const logRef = { current: undefined as HTMLDivElement | undefined };
+  const logRef = { current: undefined as DocElement | undefined };
   const setLog = (text: string): void => {
     if (logRef.current) {
       setText(logRef.current, text);
@@ -148,20 +150,21 @@ dispose();`)
   }
   logRef.current = demo.log;
 
-  demo.mount.classList.add("with-toolbar");
-  const sheet = createSheet(demo.mount, {
-    columns,
-    snapshot,
-    headerHeight: 28,
-    rowHeaderWidth: 48,
-    rowHeight: 30
-  });
-  sheet.hooks.tap("beforeCommand", { name: "docs-audit" }, (context: unknown) => {
-    const typed = context as { command: { type: string } };
-    setLog(`beforeCommand：${typed.command.type}`);
-  });
+  demo.mount.addClass("with-toolbar");
+  demo.mount.onMount = () => {
+    sheet = createSheet(demo.mount.element, {
+      columns,
+      snapshot,
+      headerHeight: 28,
+      rowHeaderWidth: 48,
+      rowHeight: 30
+    });
+    sheet.hooks.tap("beforeCommand", { name: "docs-audit" }, (context: unknown) => {
+      const typed = context as { command: { type: string } };
+      setLog(`beforeCommand：${typed.command.type}`);
+    });
+    return () => sheet.dispose();
+  };
 
   root.append(callout("当前注册表中的 Hook 均为同步 Hook；tapAsync() 会抛 async-hook-not-supported。bail Hook 通过 context.cancel() 取消，waterfall Hook 必须返回转换后的值。Event 只能观察已完成结果，不会回滚或改写。"));
-
-  return () => sheet.dispose();
 }

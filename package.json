@@ -48,7 +48,7 @@
     "dev": "vite --host 127.0.0.1 --port 4173",
     "playground": "vite --host 127.0.0.1 --port 4173 --open /playground/",
     "docs:dev": "vite --config vite.docs.config.ts --open",
-    "docs:build": "vite build --config vite.docs.config.ts",
+    "docs:build": "vite build --config vite.docs.config.ts && node scripts/prerender-docs.mjs",
     "docs:preview": "vite preview --config vite.docs.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",

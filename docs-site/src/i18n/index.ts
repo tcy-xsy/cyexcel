@@ -21,7 +21,12 @@ export function parseDocRoute(hash: string): { locale: Locale; path: string } {
 }
 
 export function docHref(language: Locale, path: string): string {
-  return language === "en" ? `#/en${path === "/" ? "" : path}` : `#${path}`;
+  return `${__DOCS_BASE_PATH__}${language === "en" ? "en/" : ""}${path === "/" ? "" : `${path.slice(1)}/`}`;
+}
+
+export function currentDocRoute(): { locale: Locale; path: string } {
+  if (window.location.hash.startsWith("#/")) return parseDocRoute(window.location.hash);
+  return parseDocRoute(`#/${window.location.pathname.slice(__DOCS_BASE_PATH__.length)}`);
 }
 
 // Longest matches preserve complete sentences and translate concatenated prose

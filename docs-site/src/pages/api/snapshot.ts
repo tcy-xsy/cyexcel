@@ -1,6 +1,7 @@
+import type { DocElement } from "../../components/content";
 import { pageHeader, paragraph, section, apiTable, callout, codeBlock } from "../../components/doc";
 
-export default function snapshotApiPage(root: HTMLElement): void {
+export default function snapshotApiPage(root: DocElement): void {
   root.append(
     pageHeader("API", "matrixToWorkbookSnapshot()", "将二维数组转换为 WorkbookSnapshot，导入后的表格数据与原始数组相互独立。")
   );

@@ -1,3 +1,4 @@
+import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
 import { columns, snapshot } from "../../demo/data";
 import {
@@ -10,7 +11,8 @@ import {
   section
 } from "../../components/doc";
 
-export default function searchExamplePage(root: HTMLElement): () => void {
+export default function searchExamplePage(root: DocElement): void {
+  let sheet: ReturnType<typeof createSheet>;
   root.append(
     pageHeader("EXAMPLES", "查找与替换", "find() 扫描显示文本，replace() 只替换命中的那一段。")
   );
@@ -52,14 +54,15 @@ await sheet.replaceAll("east", "西部");`)
   }
   const log = demo.log;
 
-  demo.mount.classList.add("with-toolbar");
-  const sheet = createSheet(demo.mount, {
-    columns,
-    snapshot,
-    headerHeight: 28,
-    rowHeaderWidth: 48,
-    rowHeight: 30
-  });
-
-  return () => sheet.dispose();
+  demo.mount.addClass("with-toolbar");
+  demo.mount.onMount = () => {
+    sheet = createSheet(demo.mount.element, {
+      columns,
+      snapshot,
+      headerHeight: 28,
+      rowHeaderWidth: 48,
+      rowHeight: 30
+    });
+    return () => sheet.dispose();
+  };
 }

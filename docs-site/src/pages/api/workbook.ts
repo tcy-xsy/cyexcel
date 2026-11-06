@@ -1,9 +1,10 @@
+import type { DocElement } from "../../components/content";
 import { createWorkbook } from "@cyexcel/createWorkbook";
 import { columns, rows } from "../../demo/data";
 import { matrixToWorkbookSnapshot } from "@cyexcel/core";
 import { apiTable, codeBlock, demoBlock, pageHeader, section } from "../../components/doc";
 
-export default function workbookApiPage(root: HTMLElement): () => void {
+export default function workbookApiPage(root: DocElement): void {
   root.append(
     pageHeader(
       "API",
@@ -43,27 +44,28 @@ export default function workbookApiPage(root: HTMLElement): () => void {
   );
 
   const demo = demoBlock({ title: "示例" });
-  demo.mount.classList.add("with-toolbar");
+  demo.mount.addClass("with-toolbar");
   root.append(demo.root);
-  const workbook = createWorkbook(demo.mount, {
-    toolbar: true,
-    formulaBar: true,
-    sheets: [
-      {
-        name: "订单",
-        columns,
-        snapshot: matrixToWorkbookSnapshot(rows),
-        headerHeight: 28,
-        rowHeaderWidth: 48
-      },
-      {
-        name: "汇总",
-        columns,
-        headerHeight: 28,
-        rowHeaderWidth: 48
-      }
-    ]
-  });
-
-  return () => workbook.dispose();
+  demo.mount.onMount = () => {
+    const workbook = createWorkbook(demo.mount.element, {
+      toolbar: true,
+      formulaBar: true,
+      sheets: [
+        {
+          name: "订单",
+          columns,
+          snapshot: matrixToWorkbookSnapshot(rows),
+          headerHeight: 28,
+          rowHeaderWidth: 48
+        },
+        {
+          name: "汇总",
+          columns,
+          headerHeight: 28,
+          rowHeaderWidth: 48
+        }
+      ]
+    });
+    return () => workbook.dispose();
+  };
 }

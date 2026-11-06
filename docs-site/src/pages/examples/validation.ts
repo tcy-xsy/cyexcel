@@ -1,3 +1,4 @@
+import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
 import { matrixToWorkbookSnapshot, serialFromISODate, type DataValidationRule } from "@cyexcel/core";
 import {
@@ -88,7 +89,8 @@ function buildSnapshot() {
   };
 }
 
-export default function validationExamplePage(root: HTMLElement): () => void {
+export default function validationExamplePage(root: DocElement): void {
+  let sheet: ReturnType<typeof createSheet>;
   root.append(
     pageHeader(
       "EXAMPLES",
@@ -257,14 +259,15 @@ sheet.validateCell(2, 1);            // { valid: false, errorStyle: "stop", mess
   }
   const log = demo.log;
 
-  demo.mount.classList.add("with-toolbar");
-  const sheet = createSheet(demo.mount, {
-    columns,
-    snapshot: buildSnapshot(),
-    headerHeight: 28,
-    rowHeaderWidth: 48,
-    rowHeight: 30
-  });
-
-  return () => sheet.dispose();
+  demo.mount.addClass("with-toolbar");
+  demo.mount.onMount = () => {
+    sheet = createSheet(demo.mount.element, {
+      columns,
+      snapshot: buildSnapshot(),
+      headerHeight: 28,
+      rowHeaderWidth: 48,
+      rowHeight: 30
+    });
+    return () => sheet.dispose();
+  };
 }

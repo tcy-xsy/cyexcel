@@ -2,6 +2,8 @@
 
 English | [简体中文](README.zh-CN.md)
 
+[Documentation](https://tcy-xsy.github.io/cyexcel/en/) · [Interactive examples](https://tcy-xsy.github.io/cyexcel/en/examples/basic/)
+
 cyexcel is a framework-independent spreadsheet component for the browser. It uses virtualized Canvas rendering, stores cell data in a sparse matrix, and manages edits through commands, transactions, and undo history.
 
 ## Features
@@ -103,7 +105,7 @@ pnpm install
 pnpm docs:dev
 ```
 
-The site supports English and Simplified Chinese, with guides, interactive examples, API documentation, data structures, and extension topics. Use the language switcher or open the `#/en` route for English. Source files are in [docs-site/](docs-site/).
+The site supports English and Simplified Chinese, with guides, interactive examples, API documentation, data structures, and extension topics. Use the language switcher or open the `/en/` path for English. Existing hash links remain supported. Source files are in [docs-site/](docs-site/).
 
 Build a static deployment with:
 
@@ -111,7 +113,9 @@ Build a static deployment with:
 pnpm docs:build
 ```
 
-Deploy the generated `dist-docs/` directory to a static host such as GitHub Pages, Cloudflare Pages, or Nginx. No backend service is needed for the documentation site. Hash-based routing and relative asset paths support deployment under a subdirectory.
+The build prerenders every Chinese and English documentation page into HTML, including page metadata, canonical and language links, and structured data. It also generates `sitemap.xml` and `robots.txt`. Documentation text is available without JavaScript; interactive examples require JavaScript.
+
+Deploy the generated `dist-docs/` directory to a static host such as GitHub Pages, Cloudflare Pages, or Nginx. No backend service is needed. The default public URL is `https://tcy-xsy.github.io/cyexcel/`. For another host or subdirectory, set `DOCS_SITE_URL` to the full public URL when building. The host must serve each directory's `index.html`. The documentation build runs in Node.js and does not require Playwright or a browser installation.
 
 The `examples/` directory includes plain HTML, ESM, custom renderers, and React/Vue integrations. Run `pnpm build`, then serve the directory with `npx serve examples`. React and Vue examples load their dependencies from a CDN using browser import maps.
 

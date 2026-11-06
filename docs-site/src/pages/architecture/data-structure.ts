@@ -1,6 +1,7 @@
+import type { DocElement } from "../../components/content";
 import { pageHeader, section, codeBlock, apiTable, callout } from "../../components/doc";
 
-export default function dataStructurePage(root: HTMLElement): void {
+export default function dataStructurePage(root: DocElement): void {
   root.append(
     pageHeader(
       "ARCHITECTURE",

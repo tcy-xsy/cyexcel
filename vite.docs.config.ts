@@ -3,12 +3,16 @@ import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 
 const { version } = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version: string };
+const siteUrl = new URL(process.env.DOCS_SITE_URL ?? "https://tcy-xsy.github.io/cyexcel/");
+if (!siteUrl.pathname.endsWith("/")) siteUrl.pathname += "/";
 
-export default defineConfig({
+export default defineConfig(({ command, isPreview }) => ({
   root: "docs-site",
-  base: "./",
+  base: isPreview ? siteUrl.pathname : "./",
   define: {
-    __CYEXCEL_VERSION__: JSON.stringify(version)
+    __CYEXCEL_VERSION__: JSON.stringify(version),
+    __DOCS_SITE_URL__: JSON.stringify(siteUrl.href),
+    __DOCS_BASE_PATH__: JSON.stringify(command === "build" || isPreview ? siteUrl.pathname : "/")
   },
   resolve: {
     alias: [
@@ -30,4 +34,4 @@ export default defineConfig({
     outDir: "../dist-docs",
     emptyOutDir: true
   }
-});
+}));

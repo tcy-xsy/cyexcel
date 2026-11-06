@@ -1,3 +1,4 @@
+import type { DocElement } from "../../components/content";
 import type { CyExcelPlugin } from "@cyexcel/core";
 import { createSheet } from "@cyexcel/createSheet";
 import { columns, snapshot } from "../../demo/data";
@@ -13,7 +14,8 @@ import {
   section
 } from "../../components/doc";
 
-export default function pluginsPage(root: HTMLElement): () => void {
+export default function pluginsPage(root: DocElement): void {
+  let sheet: ReturnType<typeof createSheet>;
   root.append(
     pageHeader(
       "EXTEND",
@@ -110,7 +112,7 @@ const helloPlugin: CyExcelPlugin = {
     ])
   );
 
-  const logRef = { current: undefined as HTMLDivElement | undefined };
+  const logRef = { current: undefined as DocElement | undefined };
   const setLog = (text: string): void => {
     if (logRef.current) {
       setText(logRef.current, text);
@@ -148,17 +150,18 @@ const helloPlugin: CyExcelPlugin = {
   }
   logRef.current = demo.log;
 
-  demo.mount.classList.add("with-toolbar");
-  const sheet = createSheet(demo.mount, {
-    columns,
-    snapshot,
-    plugins: [auditPlugin],
-    headerHeight: 28,
-    rowHeaderWidth: 48,
-    rowHeight: 30
-  });
+  demo.mount.addClass("with-toolbar");
+  demo.mount.onMount = () => {
+    sheet = createSheet(demo.mount.element, {
+      columns,
+      snapshot,
+      plugins: [auditPlugin],
+      headerHeight: 28,
+      rowHeaderWidth: 48,
+      rowHeight: 30
+    });
+    return () => sheet.dispose();
+  };
 
   root.append(callout("PluginManager 会在插件卸载时自动清理 events、hooks、菜单和快捷键注册。"));
-
-  return () => sheet.dispose();
 }

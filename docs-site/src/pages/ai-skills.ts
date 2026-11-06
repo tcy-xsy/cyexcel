@@ -1,6 +1,7 @@
+import type { DocElement } from "../components/content";
 import { callout, codeBlock, pageHeader, paragraph, section } from "../components/doc";
 
-export default function aiSkillsPage(root: HTMLElement): void {
+export default function aiSkillsPage(root: DocElement): void {
   root.append(pageHeader("GUIDES", "AI 编程助手", "通过 cyexcel Skill，为 Claude Code 和 Codex 提供组件接入、配置与扩展指南。"));
 
   const install = section("安装 Skill");

@@ -1,1 +1,3 @@
-export type PageModule = (root: HTMLElement) => void | (() => void);
+import type { DocElement } from "./components/content";
+
+export type PageModule = (root: DocElement) => void;

@@ -1,6 +1,7 @@
+import type { DocElement } from "../../components/content";
 import { pageHeader, paragraph, section, apiTable, callout } from "../../components/doc";
 
-export default function coreApiPage(root: HTMLElement): void {
+export default function coreApiPage(root: DocElement): void {
   root.append(pageHeader("API", "CyExcelCore", "表格核心类，提供渲染、交互与数据操作 API，通过 Command、Mutation 和 History 管理变更。"));
 
   const data = section("数据");

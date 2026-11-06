@@ -2,6 +2,8 @@
 
 [English](README.md) | 简体中文
 
+[在线文档](https://tcy-xsy.github.io/cyexcel/) · [交互示例](https://tcy-xsy.github.io/cyexcel/examples/basic/)
+
 cyexcel 是一个与前端框架无关的表格组件，使用 Canvas 进行视口虚拟化渲染，以稀疏矩阵存储单元格数据，并通过命令、事务和历史记录管理编辑操作。
 
 ## 功能
@@ -103,7 +105,7 @@ pnpm install
 pnpm docs:dev
 ```
 
-文档站支持中英文切换，包含快速开始、功能示例、API、数据结构及扩展说明，源码位于 [docs-site/](docs-site/)。英文页面使用 `#/en` 路由。
+文档站支持中英文切换，包含快速开始、功能示例、API、数据结构及扩展说明，源码位于 [docs-site/](docs-site/)。英文页面使用 `/en/` 路径，已有的哈希链接仍可使用。
 
 构建静态部署文件：
 
@@ -111,7 +113,9 @@ pnpm docs:dev
 pnpm docs:build
 ```
 
-将生成的 `dist-docs/` 目录部署到 GitHub Pages、Cloudflare Pages 或 Nginx 等静态托管服务即可，无需后端服务。文档站使用哈希路由和相对资源路径，支持部署在子目录下。
+构建时会将每篇中英文文档预渲染为 HTML，并生成页面元信息、规范网址、语言关联、结构化数据、`sitemap.xml` 和 `robots.txt`。文档正文无需 JavaScript 即可阅读，交互示例需要 JavaScript。
+
+将生成的 `dist-docs/` 目录部署到 GitHub Pages、Cloudflare Pages 或 Nginx 等静态托管服务即可，无需后端服务。默认公开地址为 `https://tcy-xsy.github.io/cyexcel/`；部署到其他域名或子目录时，在构建时通过 `DOCS_SITE_URL` 设置完整公开地址。托管服务需支持目录下的 `index.html`。文档构建直接在 Node.js 中执行，无需 Playwright 或浏览器安装。
 
 `examples/` 包含原生 HTML、ESM、自定义渲染器及 React、Vue 接入示例。先执行 `pnpm build`，再使用 `npx serve examples` 启动静态服务。React、Vue 示例使用浏览器 import map 从 CDN 加载依赖。
 

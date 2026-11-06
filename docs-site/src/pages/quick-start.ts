@@ -1,3 +1,4 @@
+import type { DocElement } from "../components/content";
 import { createSheet } from "@cyexcel/createSheet";
 import { columns, snapshot } from "../demo/data";
 import {
@@ -9,7 +10,7 @@ import {
   section
 } from "../components/doc";
 
-export default function quickStartPage(root: HTMLElement): () => void {
+export default function quickStartPage(root: DocElement): void {
   root.append(
     pageHeader(
       "QUICK START",
@@ -55,17 +56,18 @@ const sheet = createSheet(document.querySelector("#sheet"), {
     title: "带工具栏的表格",
     description: "使用 createSheet() 创建，包含撤销重做、格式、数据操作和结构操作入口。"
   });
-  demo.mount.classList.add("with-toolbar");
+  demo.mount.addClass("with-toolbar");
   root.append(demo.root);
-  const sheet = createSheet(demo.mount, {
-    columns,
-    snapshot,
-    toolbar: true,
-    formulaBar: true,
-    headerHeight: 28,
-    rowHeaderWidth: 48,
-    rowHeight: 28
-  });
-
-  return () => sheet.dispose();
+  demo.mount.onMount = () => {
+    const sheet = createSheet(demo.mount.element, {
+      columns,
+      snapshot,
+      toolbar: true,
+      formulaBar: true,
+      headerHeight: 28,
+      rowHeaderWidth: 48,
+      rowHeight: 28
+    });
+    return () => sheet.dispose();
+  };
 }

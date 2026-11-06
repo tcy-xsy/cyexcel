@@ -1,3 +1,4 @@
+import type { DocElement } from "../../components/content";
 import { createWorkbook } from "@cyexcel/createWorkbook";
 import {
   columns,
@@ -8,7 +9,7 @@ import {
 import { matrixToWorkbookSnapshot } from "@cyexcel/core";
 import { demoBlock, pageHeader, paragraph, section, codeBlock } from "../../components/doc";
 
-export default function workbookExamplePage(root: HTMLElement): () => void {
+export default function workbookExamplePage(root: DocElement): void {
   root.append(
     pageHeader(
       "EXAMPLES",
@@ -38,28 +39,29 @@ workbook.getActiveSheet().insertRows(0, 1);`)
     title: "底部 Sheet 标签",
     description: "底部标签用于切换工作表，“+”按钮用于添加工作表。行操作通过当前工作表的核心 API 执行。"
   });
-  demo.mount.classList.add("with-toolbar");
+  demo.mount.addClass("with-toolbar");
   root.append(demo.root);
-  const workbook = createWorkbook(demo.mount, {
-    toolbar: true,
-    formulaBar: true,
-    sheets: [
-      {
-        name: "订单明细",
-        columns,
-        snapshot: matrixToWorkbookSnapshot(rows),
-        headerHeight: 28,
-        rowHeaderWidth: 48
-      },
-      {
-        name: "区域汇总",
-        columns: summaryColumns,
-        snapshot: summarySnapshot,
-        headerHeight: 28,
-        rowHeaderWidth: 48
-      }
-    ]
-  });
-
-  return () => workbook.dispose();
+  demo.mount.onMount = () => {
+    const workbook = createWorkbook(demo.mount.element, {
+      toolbar: true,
+      formulaBar: true,
+      sheets: [
+        {
+          name: "订单明细",
+          columns,
+          snapshot: matrixToWorkbookSnapshot(rows),
+          headerHeight: 28,
+          rowHeaderWidth: 48
+        },
+        {
+          name: "区域汇总",
+          columns: summaryColumns,
+          snapshot: summarySnapshot,
+          headerHeight: 28,
+          rowHeaderWidth: 48
+        }
+      ]
+    });
+    return () => workbook.dispose();
+  };
 }

@@ -1,8 +1,9 @@
+import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
 import { columns, snapshot } from "../../demo/data";
 import { codeBlock, demoBlock, pageHeader, paragraph, section } from "../../components/doc";
 
-export default function basicExamplePage(root: HTMLElement): () => void {
+export default function basicExamplePage(root: DocElement): void {
   root.append(pageHeader("EXAMPLES", "基础表格", "用 createSheet() 创建一个带工具栏的可编辑表格。"));
 
   const intro = section("只挂核心");
@@ -25,14 +26,15 @@ const sheet = createSheet(document.querySelector("#sheet"), {
     description: "可以编辑单元格、调整列宽、多选单元格和使用键盘导航。"
   });
   root.append(demo.root);
-  demo.mount.classList.add("with-toolbar");
-  const sheet = createSheet(demo.mount, {
-    columns,
-    snapshot,
-    headerHeight: 28,
-    rowHeaderWidth: 48,
-    rowHeight: 30
-  });
-
-  return () => sheet.dispose();
+  demo.mount.addClass("with-toolbar");
+  demo.mount.onMount = () => {
+    const sheet = createSheet(demo.mount.element, {
+      columns,
+      snapshot,
+      headerHeight: 28,
+      rowHeaderWidth: 48,
+      rowHeight: 30
+    });
+    return () => sheet.dispose();
+  };
 }

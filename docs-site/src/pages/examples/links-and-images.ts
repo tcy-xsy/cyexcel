@@ -1,3 +1,4 @@
+import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
 import { createImageCellRenderer, matrixToWorkbookSnapshot } from "@cyexcel/core";
 import { codeBlock, demoBlock, pageHeader, paragraph, section } from "../../components/doc";
@@ -32,7 +33,7 @@ const rows = PRODUCTS.map((name, index) => [
   undefined
 ]);
 
-export default function linksAndImagesExamplePage(root: HTMLElement): () => void {
+export default function linksAndImagesExamplePage(root: DocElement): void {
   root.append(
     pageHeader(
       "EXAMPLES",
@@ -95,15 +96,16 @@ sheet.setCellImage(row, column, undefined);`));
   });
   root.append(demo.root);
 
-  const sheet = createSheet(demo.mount, {
-    columns,
-    snapshot: matrixToWorkbookSnapshot(rows),
-    headerHeight: 28,
-    rowHeaderWidth: 48,
-    rowHeight: 40
-  });
-  sheet.setCellImage(0, 3, productIconDataUri(0));
-  sheet.setCellImage(2, 3, productIconDataUri(2));
-
-  return () => sheet.dispose();
+  demo.mount.onMount = () => {
+    const sheet = createSheet(demo.mount.element, {
+      columns,
+      snapshot: matrixToWorkbookSnapshot(rows),
+      headerHeight: 28,
+      rowHeaderWidth: 48,
+      rowHeight: 40
+    });
+    sheet.setCellImage(0, 3, productIconDataUri(0));
+    sheet.setCellImage(2, 3, productIconDataUri(2));
+    return () => sheet.dispose();
+  };
 }

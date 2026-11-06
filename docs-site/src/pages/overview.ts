@@ -1,8 +1,9 @@
+import type { DocElement } from "../components/content";
 import { createSheet } from "@cyexcel/createSheet";
 import { columns, snapshot } from "../demo/data";
 import { demoBlock, featureGrid, pageHeader, paragraph, section } from "../components/doc";
 
-export default function overviewPage(root: HTMLElement): () => void {
+export default function overviewPage(root: DocElement): void {
   root.append(
     pageHeader(
       "OVERVIEW",
@@ -34,14 +35,15 @@ export default function overviewPage(root: HTMLElement): () => void {
     description: "支持单元格选择、滚动、编辑和列宽调整。"
   });
   root.append(demo.root);
-  demo.mount.classList.add("with-toolbar");
-  const sheet = createSheet(demo.mount, {
-    columns,
-    snapshot,
-    headerHeight: 28,
-    rowHeaderWidth: 48,
-    rowHeight: 28
-  });
-
-  return () => sheet.dispose();
+  demo.mount.addClass("with-toolbar");
+  demo.mount.onMount = () => {
+    const sheet = createSheet(demo.mount.element, {
+      columns,
+      snapshot,
+      headerHeight: 28,
+      rowHeaderWidth: 48,
+      rowHeight: 28
+    });
+    return () => sheet.dispose();
+  };
 }
