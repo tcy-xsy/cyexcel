@@ -1,6 +1,7 @@
 import { createSheet } from "@cyexcel/createSheet";
 import { columns, snapshot } from "../../demo/data";
 import {
+  setText,
   actionButton,
   codeBlock,
   demoBlock,
@@ -29,15 +30,15 @@ await sheet.replaceAll("east", "西部");`)
   const find = actionButton("查找 East", async () => {
     const matches = await sheet.find("east");
     sheet.findNext();
-    log.textContent = `找到 ${matches?.length ?? 0} 处，已选中第一处`;
+    setText(log, `找到 ${matches?.length ?? 0} 处，已选中第一处`);
   });
   const replace = actionButton("全部替换为“西部”", async () => {
     const count = await sheet.replaceAll("east", "西部");
-    log.textContent = `替换了 ${count ?? 0} 处`;
+    setText(log, `替换了 ${count ?? 0} 处`);
   });
   const reset = actionButton("恢复 East", async () => {
     await sheet.replaceAll("西部", "East");
-    log.textContent = "已恢复原始区域文本";
+    setText(log, "已恢复原始区域文本");
   });
 
   const demo = demoBlock({

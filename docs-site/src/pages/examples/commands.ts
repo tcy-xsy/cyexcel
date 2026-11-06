@@ -1,6 +1,7 @@
 import { createSheet } from "@cyexcel/createSheet";
 import { columns, snapshot } from "../../demo/data";
 import {
+  setText,
   actionButton,
   codeBlock,
   demoBlock,
@@ -27,15 +28,15 @@ sheet.redo();`)
 
   const writeCell = actionButton("写入第 1 行第 2 列", () => {
     sheet.setCell(0, 1, "已确认订单");
-    log.textContent = `第 1 行第 2 列已写入，当前值：${String(sheet.getCell(0, 1))}`;
+    setText(log, `第 1 行第 2 列已写入，当前值：${String(sheet.getCell(0, 1))}`);
   });
   const undo = actionButton("撤销", () => {
     sheet.undo();
-    log.textContent = `已撤销，当前值：${String(sheet.getCell(0, 1))}`;
+    setText(log, `已撤销，当前值：${String(sheet.getCell(0, 1))}`);
   });
   const redo = actionButton("重做", () => {
     sheet.redo();
-    log.textContent = `已重做，当前值：${String(sheet.getCell(0, 1))}`;
+    setText(log, `已重做，当前值：${String(sheet.getCell(0, 1))}`);
   });
 
   const demo = demoBlock({

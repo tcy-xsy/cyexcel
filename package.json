@@ -36,6 +36,7 @@
   "files": [
     "dist",
     "README.md",
+    "README.zh-CN.md",
     "THIRD_PARTY_NOTICES.txt",
     "LICENSE"
   ],

@@ -1,6 +1,7 @@
 import { createSheet } from "@cyexcel/createSheet";
 import { columns, snapshot } from "../../demo/data";
 import {
+  setText,
   actionButton,
   codeBlock,
   demoBlock,
@@ -29,18 +30,18 @@ export default function stylesExamplePage(root: HTMLElement): () => void {
 
   const bold = actionButton("当前选区加粗", () => {
     sheet.setRangeStyle(sheet.selection.range, { bold: true });
-    log.textContent = "已把当前选区设为 bold: true";
+    setText(log, "已把当前选区设为 bold: true");
   });
   const highlight = actionButton("高亮当前选区", () => {
     sheet.setRangeStyle(sheet.selection.range, {
       color: "#0b6bcb",
       background: "#eaf3ff"
     });
-    log.textContent = "已给当前选区应用颜色和背景";
+    setText(log, "已给当前选区应用颜色和背景");
   });
   const clear = actionButton("清除当前选区样式", () => {
     sheet.clearRangeStyle(sheet.selection.range);
-    log.textContent = "已清除当前选区样式";
+    setText(log, "已清除当前选区样式");
   });
 
   const demo = demoBlock({

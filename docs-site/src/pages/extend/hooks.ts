@@ -1,6 +1,7 @@
 import { createSheet } from "@cyexcel/createSheet";
 import { columns, snapshot } from "../../demo/data";
 import {
+  setText,
   actionButton,
   apiTable,
   callout,
@@ -126,7 +127,7 @@ dispose();`)
   const logRef = { current: undefined as HTMLDivElement | undefined };
   const setLog = (text: string): void => {
     if (logRef.current) {
-      logRef.current.textContent = text;
+      setText(logRef.current, text);
     }
   };
   const setCell = actionButton("写入单元格", () => {

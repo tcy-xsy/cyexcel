@@ -2,6 +2,7 @@ import type { CyExcelPlugin } from "@cyexcel/core";
 import { createSheet } from "@cyexcel/createSheet";
 import { columns, snapshot } from "../../demo/data";
 import {
+  setText,
   actionButton,
   apiTable,
   callout,
@@ -112,7 +113,7 @@ const helloPlugin: CyExcelPlugin = {
   const logRef = { current: undefined as HTMLDivElement | undefined };
   const setLog = (text: string): void => {
     if (logRef.current) {
-      logRef.current.textContent = text;
+      setText(logRef.current, text);
     }
   };
   let changeCount = 0;

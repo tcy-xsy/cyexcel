@@ -2,6 +2,7 @@ import "./styles/docs.css";
 import { navGroups } from "./nav";
 import { element } from "./components/doc";
 import type { PageModule } from "./router";
+import { docHref, getLocale, parseDocRoute, setLocale, translate } from "./i18n";
 
 const app = document.querySelector<HTMLElement>("#app");
 
@@ -18,6 +19,9 @@ const menuToggle = element("button", "menu-toggle", "菜单");
 menuToggle.type = "button";
 menuToggle.setAttribute("aria-label", "切换导航");
 const headerMeta = element("div", "header-meta");
+const languageToggle = element("a", "language-toggle", "English");
+languageToggle.hreflang = "en";
+headerMeta.append(languageToggle);
 headerMeta.append(element("span", "header-version", "0.0.0"));
 header.append(brand, headerMeta, menuToggle);
 
@@ -33,15 +37,6 @@ shell.append(header, body, footer);
 app.append(shell);
 
 let cleanup: (() => void) | undefined;
-
-function readRoute(): string {
-  const raw = window.location.hash.replace(/^#/, "");
-  if (raw === "" || raw === "/") {
-    return "/";
-  }
-  const route = raw.startsWith("/") ? raw : `/${raw}`;
-  return route.replace(/\/+$/, "") || "/";
-}
 
 function findRoute(route: string): { label: string; module: PageModule } {
   for (const group of navGroups) {
@@ -60,7 +55,7 @@ function renderSidebar(route: string): void {
     groupRoot.append(element("h2", "sidebar-title", group.title));
     for (const link of group.links) {
       const anchor = element("a", "sidebar-link", link.label);
-      anchor.href = `#${link.route}`;
+      anchor.href = docHref(getLocale(), link.route);
       if (link.route === route) {
         anchor.classList.add("active");
       }
@@ -71,13 +66,22 @@ function renderSidebar(route: string): void {
 }
 
 function render(): void {
-  const route = readRoute();
+  const location = parseDocRoute(window.location.hash);
+  setLocale(location.locale);
+  const route = location.path;
   const page = findRoute(route);
   cleanup?.();
   cleanup = undefined;
   pageRoot.replaceChildren();
   renderSidebar(route);
-  document.title = `${page.label} · cyexcel`;
+  document.documentElement.lang = location.locale === "en" ? "en" : "zh-CN";
+  document.title = `${translate(page.label)} · cyexcel`;
+  brand.href = docHref(location.locale, "/");
+  languageToggle.textContent = location.locale === "en" ? "中文" : "English";
+  languageToggle.href = docHref(location.locale === "en" ? "zh" : "en", route);
+  languageToggle.hreflang = location.locale === "en" ? "zh-CN" : "en";
+  menuToggle.textContent = translate("菜单");
+  menuToggle.setAttribute("aria-label", translate("切换导航"));
   const result = page.module(pageRoot);
   if (typeof result === "function") {
     cleanup = result;

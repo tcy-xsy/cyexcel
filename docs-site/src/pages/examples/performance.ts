@@ -5,6 +5,7 @@ import {
   performanceColumns
 } from "../../demo/performance-data";
 import {
+  setText,
   actionButton,
   callout,
   demoBlock,
@@ -40,7 +41,7 @@ export default function performanceExamplePage(root: HTMLElement): () => void {
   const logRef = { current: undefined as HTMLDivElement | undefined };
   const setLog = (text: string): void => {
     if (logRef.current) {
-      logRef.current.textContent = text;
+      setText(logRef.current, text);
     }
   };
   const rebuild = actionButton("重新加载 100,000 行", () => {

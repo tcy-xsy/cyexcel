@@ -1,3 +1,9 @@
+import { translate } from "../i18n";
+
+export function setText(node: HTMLElement, text: string): void {
+  node.textContent = translate(text);
+}
+
 export function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -8,7 +14,7 @@ export function element<K extends keyof HTMLElementTagNameMap>(
     node.className = className;
   }
   if (text !== undefined) {
-    node.textContent = text;
+    setText(node, text);
   }
   return node;
 }
@@ -45,20 +51,21 @@ export function featureGrid(items: ReadonlyArray<{ title: string; text: string }
 }
 
 export function codeBlock(code: string, language = "ts"): HTMLElement {
+  const localizedCode = translate(code);
   const root = element("figure", "code-block");
   const head = element("div", "code-head");
   const label = element("span", undefined, language);
   const button = element("button", "copy-button", "复制");
   button.type = "button";
   button.addEventListener("click", async () => {
-    await navigator.clipboard.writeText(code);
-    button.textContent = "已复制";
+    await navigator.clipboard.writeText(localizedCode);
+    setText(button, "已复制");
     window.setTimeout(() => {
-      button.textContent = "复制";
+      setText(button, "复制");
     }, 1400);
   });
   const pre = document.createElement("pre");
-  pre.textContent = code;
+  pre.textContent = localizedCode;
   head.append(label, button);
   root.append(head, pre);
   return root;
@@ -87,7 +94,7 @@ export function demoBlock(options: {
   const hasLog = options.actions !== undefined && options.actions.length > 0;
   if (hasLog) {
     const log = element("div", "demo-log");
-    log.textContent = "等待操作…";
+    setText(log, "等待操作…");
     root.append(log);
     return { root, mount, log };
   }

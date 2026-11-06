@@ -91,6 +91,23 @@ a {
   background: #fff;
 }
 
+.language-toggle {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.language-toggle:hover {
+  background: var(--accent-soft);
+}
+
+.language-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .menu-toggle {
   display: none;
   width: 38px;

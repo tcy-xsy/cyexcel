@@ -1,6 +1,7 @@
 import { createSheet } from "@cyexcel/createSheet";
 import { matrixToWorkbookSnapshot, serialFromISODate, type DataValidationRule } from "@cyexcel/core";
 import {
+  setText,
   actionButton,
   apiTable,
   callout,
@@ -226,22 +227,21 @@ sheet.validateCell(2, 1);            // { valid: false, errorStyle: "stop", mess
 
   const write = actionButton("写入一个违规值（只标记）", () => {
     sheet.setCell(4, 1, -5);
-    log.textContent = "已通过 setCell() 将第 5 行数量设置为 -5，并显示无效标记。此操作支持撤销。";
+    setText(log, "已通过 setCell() 将第 5 行数量设置为 -5，并显示无效标记。此操作支持撤销。");
   });
   const find = actionButton("列出无效单元格", () => {
     const invalid = sheet.findInvalidCells();
-    log.textContent =
-      invalid.length === 0
+    setText(log, invalid.length === 0
         ? "未发现无效单元格"
-        : `${invalid.length} 个无效单元格：` + invalid.map(({ row, column }) => `(${row}, ${column})`).join(" ");
+        : `${invalid.length} 个无效单元格：` + invalid.map(({ row, column }) => `(${row}, ${column})`).join(" "));
   });
   const clear = actionButton("清除数量列的规则", () => {
     sheet.clearDataValidation({ startRow: 0, startColumn: 1, endRow: 49, endColumn: 1 });
-    log.textContent = "已清除数量列的规则，红色小三角消失；可以撤销。";
+    setText(log, "已清除数量列的规则，红色小三角消失；可以撤销。");
   });
   const undo = actionButton("撤销", () => {
     sheet.undo();
-    log.textContent = "已撤销。";
+    setText(log, "已撤销。");
   });
 
   const demo = demoBlock({
