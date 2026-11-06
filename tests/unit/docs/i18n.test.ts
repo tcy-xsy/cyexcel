@@ -1,7 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { docHref, parseDocRoute, setLocale, translate } from "../../../docs-site/src/i18n";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { currentDocRoute, docHref, parseDocRoute, setLocale, translate } from "../../../docs-site/src/i18n";
 
-afterEach(() => setLocale("zh"));
+afterEach(() => {
+  setLocale("zh");
+  vi.unstubAllGlobals();
+});
 
 describe("documentation locale routes", () => {
   it.each([
@@ -17,9 +20,11 @@ describe("documentation locale routes", () => {
   });
 
   it("preserves the page when switching language", () => {
+    vi.stubGlobal("__DOCS_BASE_PATH__", "/cyexcel/");
     for (const path of ["/", "/quick-start", "/examples/validation", "/extend/plugins"]) {
       for (const locale of ["zh", "en"] as const) {
-        expect(parseDocRoute(docHref(locale, path))).toEqual({ locale, path });
+        vi.stubGlobal("window", { location: { pathname: docHref(locale, path), hash: "" } });
+        expect(currentDocRoute()).toEqual({ locale, path });
       }
     }
   });
