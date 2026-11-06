@@ -27,7 +27,7 @@ Read [integration.md](references/integration.md) for setup, framework lifecycle 
 
 ## Current scope
 
-The package in this repository is currently private with version `0.0.0`. Check availability before recommending registry installation; installing this Skill does not install the component. Do not change release flags or publish a package as part of ordinary integration.
+The package in this repository is currently private with version `0.1.0`. Check availability before recommending registry installation; installing this Skill does not install the component. Do not change release flags or publish a package as part of ordinary integration.
 
 Formula support is limited to same-sheet references and twelve functions. Cross-sheet references, formula relocation on copy/fill, and XLSX import are unavailable. Formula-containing sheets restrict structural operations and sorting. Report these limits when relevant instead of generating calls for unsupported features.
 

@@ -21,7 +21,7 @@ cyexcel 是一个与前端框架无关的表格组件，使用 Canvas 进行视�
 npm install cyexcel
 ```
 
-以上命令适用于 npm 发布后的版本。当前仓库包为 `0.0.0` 私有开发版本；可先执行 `pnpm install`、`pnpm build` 和 `pnpm pack`，再将生成的 `.tgz` 安装到业务项目。
+以上命令适用于 npm 发布后的版本。当前仓库包为 `0.1.0` 私有开发版本；可先执行 `pnpm install`、`pnpm build` 和 `pnpm pack`，再将生成的 `.tgz` 安装到业务项目。
 
 ## 快速开始
 

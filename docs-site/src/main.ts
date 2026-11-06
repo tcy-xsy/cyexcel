@@ -22,7 +22,7 @@ const headerMeta = element("div", "header-meta");
 const languageToggle = element("a", "language-toggle", "English");
 languageToggle.hreflang = "en";
 headerMeta.append(languageToggle);
-headerMeta.append(element("span", "header-version", "0.0.0"));
+headerMeta.append(element("span", "header-version", __CYEXCEL_VERSION__));
 header.append(brand, headerMeta, menuToggle);
 
 const body = element("div", "docs-body");

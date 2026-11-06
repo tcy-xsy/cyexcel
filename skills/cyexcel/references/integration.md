@@ -2,7 +2,7 @@
 
 ## Package availability
 
-The repository currently declares `private: true` and version `0.0.0`. The Skill contains instructions, not the component runtime. First inspect the consumer's package manifest and installed version. Use an existing workspace dependency or a built local package when registry installation is unavailable.
+The repository currently declares `private: true` and version `0.1.0`. The Skill contains instructions, not the component runtime. First inspect the consumer's package manifest and installed version. Use an existing workspace dependency or a built local package when registry installation is unavailable.
 
 For a source checkout, Node.js 20+ and the declared pnpm version are required:
 
