@@ -199,8 +199,8 @@ export default tseslint.config(
     // Plain browser scripts (loaded via <script type="module">, not built or
     // type-checked). 这里**声明浏览器全局**而不是关掉 no-undef：关掉的话
     // `document` 不报了，但 `undoButton is not defined` 这类真错误也一起不报，
-    // 只能等到运行时在页面上炸——Step 25 删 playground 旧控件时就是这么漏掉两处的。
-    files: ["playground/**/*.js", "examples/**/*.js"],
+    // 保留 no-undef，以便在检查阶段发现未定义的变量。
+    files: ["examples/**/*.js"],
     languageOptions: {
       globals: globals.browser
     }
