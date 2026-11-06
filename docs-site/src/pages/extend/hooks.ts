@@ -58,7 +58,7 @@ dispose();`)
   );
   signature.body.append(
     apiTable([
-      { name: "hookName", type: "string", description: "注册表里的固定名称；未知名称会抛 unknown-hook。" },
+      { name: "hookName", type: "string", description: "注册表中的固定名称；未知名称会抛 unknown-hook。" },
       { name: "meta", type: "{ name: string; priority?: number }", description: "name 用于日志和错误定位；priority 越大越先执行，默认 0。" },
       { name: "handler", type: "context => void 或 (value, context) => TValue", description: "只有 waterfall 使用第二个参数并消费返回值；其他模式返回值忽略。" },
       { name: "返回值", type: "() => void", description: "Disposer，调用后注销这个 tap。" }
@@ -88,7 +88,7 @@ dispose();`)
       {
         name: "beforeTransactionCommit",
         type: "bail",
-        description: "context: { commands, patches, model, transactionId, cancel(reason?), cancelled, reason }。handler 返回 void；取消后整个事务被丢弃。"
+        description: "context: { commands, patches, model, transactionId, cancel(reason?), cancelled, reason }。handler 返回 void；取消后整个事务不提交。"
       },
       {
         name: "beforeRowsChange",
@@ -129,7 +129,7 @@ dispose();`)
       logRef.current.textContent = text;
     }
   };
-  const setCell = actionButton("写入一格", () => {
+  const setCell = actionButton("写入单元格", () => {
     sheet.setCell(0, 1, "Hook 已观察这次写入");
   });
   const insertRow = actionButton("插入一行", () => {
@@ -138,7 +138,7 @@ dispose();`)
 
   const demo = demoBlock({
     title: "beforeCommand 审计",
-    description: "下面每次写入或插入行都会先进入 beforeCommand。",
+    description: "每次写入或插入行均先触发 beforeCommand。",
     actions: [setCell, insertRow]
   });
   root.append(demo.root);
@@ -160,7 +160,7 @@ dispose();`)
     setLog(`beforeCommand：${typed.command.type}`);
   });
 
-  root.append(callout("当前注册表里的 Hook 都是同步 Hook；tapAsync() 会抛 async-hook-not-supported。bail Hook 通过 context.cancel() 取消，waterfall Hook 必须返回转换后的值。Event 只能观察已完成结果，不会回滚或改写。"));
+  root.append(callout("当前注册表中的 Hook 均为同步 Hook；tapAsync() 会抛 async-hook-not-supported。bail Hook 通过 context.cancel() 取消，waterfall Hook 必须返回转换后的值。Event 只能观察已完成结果，不会回滚或改写。"));
 
   return () => sheet.dispose();
 }

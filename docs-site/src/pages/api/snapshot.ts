@@ -2,7 +2,7 @@ import { pageHeader, paragraph, section, apiTable, callout, codeBlock } from "..
 
 export default function snapshotApiPage(root: HTMLElement): void {
   root.append(
-    pageHeader("API", "matrixToWorkbookSnapshot()", "把 Excel 式二维数组导入成 WorkbookSnapshot；导入后两者不再互相影响。")
+    pageHeader("API", "matrixToWorkbookSnapshot()", "将二维数组转换为 WorkbookSnapshot，导入后的表格数据与原始数组相互独立。")
   );
 
   const signature = section("签名");
@@ -15,7 +15,7 @@ export default function snapshotApiPage(root: HTMLElement): void {
   root.append(signature.root);
   root.append(
     apiTable([
-      { name: "matrix", type: "readonly (readonly CellValue[])?[]", description: "第 i 行第 j 列直接落到单元格 (i, j)。" },
+      { name: "matrix", type: "readonly (readonly CellValue[])?[]", description: "第 i 行、第 j 列映射到单元格 (i, j)。" },
       { name: "options.blankRows", type: "number", description: "在数据行之后额外保留的空白行。" },
       { name: "options.blankColumns", type: "number", description: "在最宽数据列之后额外保留的空白列。" }
     ])
@@ -29,7 +29,7 @@ export default function snapshotApiPage(root: HTMLElement): void {
 
   const objectRows = section("对象数组（特殊导入）");
   objectRows.body.append(
-    paragraph("如果数据已经带字段名，可继续用 rowsToWorkbookSnapshot(rows, fields)。fields 是那一次导入的映射参数，不是表格通用数据格式。"),
+    paragraph("对象数组可使用 rowsToWorkbookSnapshot(rows, fields) 导入。fields 指定本次导入的字段顺序，导入后的数据统一存储为快照。"),
     codeBlock(`function rowsToWorkbookSnapshot(
   rows: readonly ImportRow[],
   fields: readonly string[],

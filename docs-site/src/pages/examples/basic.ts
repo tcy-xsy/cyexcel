@@ -7,7 +7,7 @@ export default function basicExamplePage(root: HTMLElement): () => void {
 
   const intro = section("只挂核心");
   intro.body.append(
-    paragraph("createSheet() 也不依赖 Custom Elements registry；默认会同时挂上工具栏和编辑栏。")
+    paragraph("createSheet() 不依赖 Custom Elements 注册表，默认启用工具栏和编辑栏。")
   );
   root.append(intro.root);
   root.append(

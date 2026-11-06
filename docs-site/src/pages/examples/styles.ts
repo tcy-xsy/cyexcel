@@ -45,7 +45,7 @@ export default function stylesExamplePage(root: HTMLElement): () => void {
 
   const demo = demoBlock({
     title: "选中区域应用样式",
-    description: "先在表格里选择一片区域，再点击上面的操作。",
+    description: "选择单元格区域后，可使用操作按钮设置样式。",
     actions: [bold, highlight, clear]
   });
   root.append(demo.root);

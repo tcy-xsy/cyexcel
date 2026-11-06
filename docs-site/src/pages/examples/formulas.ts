@@ -5,7 +5,7 @@ import { codeBlock, demoBlock, pageHeader, paragraph } from "../../components/do
 export default function formulasExamplePage(root: HTMLElement): () => void {
   root.append(pageHeader("EXAMPLES", "公式计算", "修改数量或单价，金额与合计自动重算。双击结果或使用公式栏查看和编辑原文。"));
   root.append(paragraph("首版支持同表 A1 引用及 12 个常用函数。复制与填充使用当前值；含公式时暂不支持行列增删、移动和排序。"));
-  const demo = demoBlock({ title: "采购金额", description: "D1 = B1*C1，D4 = SUM(D1:D3)。可尝试修改 B1，再撤销或重做。" });
+  const demo = demoBlock({ title: "采购金额", description: "D1 = B1*C1，D4 = SUM(D1:D3)。修改 B1 后更新计算结果，支持撤销与重做。" });
   demo.mount.classList.add("with-toolbar");
   root.append(demo.root);
   const workbook = createWorkbook(demo.mount, {

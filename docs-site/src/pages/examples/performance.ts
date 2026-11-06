@@ -18,21 +18,21 @@ export default function performanceExamplePage(root: HTMLElement): () => void {
     pageHeader(
       "EXAMPLES",
       "十万行性能",
-      "100,000 行 × 5 列的真实运行示例。数据仍在内存里，但渲染只处理当前视口附近的单元格。"
+      "包含 100,000 行 × 5 列的数据示例。数据完整保存在内存中，仅绘制当前视口附近的单元格。"
     )
   );
 
-  const intro = section("看的是滚动，不是全量绘制");
+  const intro = section("数据规模与渲染范围");
   intro.body.append(
     paragraph(
-      "下面这张表每次加载都是完整导入 100,000 行。你可以直接拖到末尾、编辑一格、再滚回来，观察是否卡顿。"
+      "示例每次加载时完整导入 100,000 行，支持滚动、编辑及列宽调整，可用于评估不同设备上的交互响应。"
     )
   );
   root.append(intro.root);
 
   root.append(
     callout(
-      "性能提示：CyExcelCore 只虚拟化绘制和命中测试，不会虚拟化数据导入与内存。100,000 行仍会一次性导入快照并常驻内存；移动端或低端设备建议先从 10,000–50,000 行验证，百万级数据请用真实业务数据单独压测导入耗时、内存占用和滚动帧率。"
+      "性能提示：CyExcelCore 只虚拟化绘制和命中测试，不会虚拟化数据导入与内存。100,000 行仍会一次性导入快照并常驻内存；移动端或低端设备建议先从 10,000–50,000 行验证，百万级数据需使用业务数据单独测试导入耗时、内存占用和滚动帧率。"
     )
   );
 
@@ -70,7 +70,7 @@ export default function performanceExamplePage(root: HTMLElement): () => void {
 
   const demo = demoBlock({
     title: "100,000 rows",
-    description: "默认就是十万行，不是占位图。",
+    description: "默认加载 100,000 行数据，支持滚动与编辑。",
     actions: [rebuild]
   });
   root.append(demo.root);

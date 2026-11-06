@@ -14,7 +14,7 @@ export default function quickStartPage(root: HTMLElement): () => void {
     pageHeader(
       "QUICK START",
       "快速开始",
-      "三步接入：安装包、把 Excel 式二维数组导成快照、把快照交给表格组件。"
+      "安装组件，将二维数组转换为数据快照，并使用快照创建表格实例。"
     )
   );
 
@@ -25,8 +25,8 @@ export default function quickStartPage(root: HTMLElement): () => void {
 
   const create = section("创建表格");
   create.body.append(
-    paragraph("最直接的入口是 createSheet()，它会同时挂上工具栏和编辑栏。"),
-    paragraph("数据不是通过二维数组直接绑定进组件，而是先导入成一份 WorkbookSnapshot。")
+    paragraph("createSheet() 用于创建包含工具栏和编辑栏的表格实例。"),
+    paragraph("初始数据通过 WorkbookSnapshot 导入，组件不与原始数组建立响应式绑定。")
   );
   root.append(create.root);
   root.append(
@@ -47,7 +47,7 @@ const sheet = createSheet(document.querySelector("#sheet"), {
 
   root.append(
     callout(
-      "row i / column j 直接落到单元格 (i, j)；没有自定义表头时默认显示 A/B/C。导入后外部数组不会再被写回。"
+      "二维数组的第 i 行、第 j 列映射到单元格 (i, j)。未设置自定义表头时，列标题使用 A、B、C 等字母。表格编辑不会修改原始数组。"
     )
   );
 

@@ -20,7 +20,7 @@ const columns = [
   { width: 200, header: "备注" }
 ];
 
-// 日期列放 ISO 字符串：日期规则对字符串会按日期解析，演示里也就不用再给这一列设数字格式。
+// 日期列使用 ISO 字符串，日期规则按日期解析，无需额外配置数字格式。
 const rows: (string | number | undefined)[][] = [
   ["采购传感器", 40, "进行中", "高", "2026-03-15", "首批到货"],
   ["更换门锁", 12, "待处理", "中", "2025-06-01", ""],
@@ -32,9 +32,8 @@ const rows: (string | number | undefined)[][] = [
 const wholeColumn = (column: number) => ({ startRow: 0, startColumn: column, endRow: 49, endColumn: column });
 
 /**
- * 演示表的规则。放进**快照**而不是启动后再 setDataValidation()：规则本来就是快照的一部分
- * （`dataValidations`），这样初始规则也不会出现在撤销历史里——点“撤销”只会撤销你自己做的事。
- * 日期规则的值在快照里就是序列号，所以这里用 serialFromISODate 换算。
+ * 初始规则通过快照导入，不产生撤销记录。
+ * 日期规则的比较值使用 serialFromISODate 转换为序列号。
  */
 const rules: readonly DataValidationRule[] = [
   {
@@ -93,17 +92,16 @@ export default function validationExamplePage(root: HTMLElement): () => void {
     pageHeader(
       "EXAMPLES",
       "数据验证",
-      "给一片区域设置规则，编辑时按规则拦截或提示，违规的格子用红色小三角标出来。规则是随快照走的区域数据，不是格子的属性。"
+      "按区域配置验证规则，支持无效输入拒绝、单元格标记和悬停提示。规则作为区域数据存储在快照中。"
     )
   );
 
   const setRule = section("设置规则");
   setRule.body.append(
     paragraph(
-      "setDataValidation(range, rule) 给一个或多个区域设置一条规则，返回规则 id。一格至多属于一条规则：" +
-        "后设置的规则会从旧规则里挖掉重叠的部分，被挖空的旧规则整条消失。规则可以撤销，也会随行列的" +
-        "插入、删除、移动一起走。规则也是快照的一部分（sheet.dataValidations），下面的演示表就是把" +
-        "规则直接写在初始快照里，所以它们不在撤销历史里。"
+      "setDataValidation(range, rule) 为一个或多个区域设置规则，并返回规则 ID。每个单元格至多属于一条规则，" +
+        "新规则覆盖的区域会从旧规则中移除，覆盖区域为空的旧规则会被删除。规则修改支持撤销，覆盖范围随行列的" +
+        "插入、删除和移动更新。示例通过初始快照的 sheet.dataValidations 配置规则，因此初始规则不产生撤销记录。"
     )
   );
   root.append(setRule.root);
@@ -117,9 +115,9 @@ export default function validationExamplePage(root: HTMLElement): () => void {
   }
 );
 
-sheet.clearDataValidation(range);             // 清除；被挖空的规则整条消失
+sheet.clearDataValidation(range);             // 清除区域规则，删除覆盖范围为空的规则
 sheet.getDataValidations();                   // 当前全部规则
-sheet.getDataValidationAt(row, column);       // 这一格所在的规则`)
+sheet.getDataValidationAt(row, column);       // 指定单元格所属的规则`)
   );
 
   const types = section("规则类型");
@@ -131,30 +129,29 @@ sheet.getDataValidationAt(row, column);       // 这一格所在的规则`)
       { name: "textLength", type: "文本长度", description: "按值的字符串形式取长度再比较，value 必须是非负整数。" },
       { name: "date", type: "日期", description: "比较序列号。value1 / value2 可以写 \"2026-01-15\"，创建时会换算成序列号；单元格值是字符串时按日期解析。" },
       { name: "time", type: "时间", description: "只比序列号的小数部分，与是哪一天无关。" },
-      { name: "list", type: "序列", description: "值必须在 items 里；可带下拉、显示模式和选项颜色，见下文。" },
-      { name: "custom", type: "自定义", description: "按名字调用你注册的函数，见下文。" }
+      { name: "list", type: "序列", description: "值必须属于 items 列表，支持下拉选项、显示模式和选项颜色。" },
+      { name: "custom", type: "自定义", description: "按名称调用已注册的验证函数，见下文。" }
     ])
   );
   root.append(
     callout(
       "operator 取 between / notBetween / equal / notEqual / greaterThan / greaterThanOrEqual / lessThan / lessThanOrEqual；" +
-        "between 需要 value2。allowBlank 默认 true，空值直接通过。"
+        "between 需要 value2。allowBlank 默认为 true，允许空值。"
     )
   );
 
   const styles = section("三种错误样式");
   styles.body.append(
     paragraph(
-      "errorStyle 决定编辑器提交违规值时怎么办。与 Univer 一致，只有停止级会拒绝输入，警告和信息直接放行、" +
-        "只把违规的格子标红。拒绝只作用于编辑器提交这一条路径：粘贴、填充柄、setCell()、查找替换都不拦截，" +
-        "只把违规的格子标出来。"
+      "errorStyle 定义编辑器提交无效值时的处理方式。停止级拒绝输入，警告级和信息级允许提交，并显示无效标记。" +
+        "输入拒绝仅作用于编辑器提交；粘贴、填充、setCell() 和查找替换允许写入，无效值通过标记提示。"
     )
   );
   root.append(styles.root);
   root.append(
     apiTable([
-      { name: "stop（默认）", type: "拒绝", description: "不提交，弹出模态对话框说明原因；点「确定」或按 Esc 放弃本次无效修改，保留原值并退出编辑，可以继续选择其他单元格。对话框开着的时候，回车、失焦等提交动作都被挡住。" },
-      { name: "warning", type: "仅标记", description: "值照常提交，违规的格子右上角出现红色小三角。" },
+      { name: "stop（默认）", type: "拒绝", description: "拒绝提交并显示模态对话框。点击「确定」或按 Esc 后放弃本次无效修改，保留原值并退出编辑。对话框显示期间不接受重复提交。" },
+      { name: "warning", type: "仅标记", description: "允许提交，无效单元格右上角显示红色三角标记。" },
       { name: "information", type: "仅标记", description: "同 warning。" }
     ])
   );
@@ -162,17 +159,16 @@ sheet.getDataValidationAt(row, column);       // 这一格所在的规则`)
   const list = section("下拉与显示模式");
   list.body.append(
     paragraph(
-      "list 规则的单元格右侧常驻一个下拉箭头，点它打开列表，选一项就是一次普通的单元格写入。" +
-        "箭头画在画布上，悬停时光标变手型；列表点外面、按 Esc 或换到别的格子都会关闭。" +
-        "renderMode 控制怎么画："
+      "list 规则默认在单元格右侧显示下拉箭头，点击可打开选项列表，选择选项后通过单元格写入流程提交。" +
+        "点击列表外部、按 Esc 或切换活动单元格时关闭列表。renderMode 控制显示方式："
     )
   );
   root.append(list.root);
   root.append(
     apiTable([
       { name: "arrow（默认）", type: "文字加箭头", description: "普通文字，右侧一个箭头；文字给箭头留出位置，过长会在箭头前截断。" },
-      { name: "text", type: "仅文字", description: "不画箭头，也不预留空间；选值靠双击输入。" },
-      { name: "custom", type: "胶囊标签", description: "带底色的圆角胶囊，文字和箭头都在里面，点整个胶囊都能打开列表；格子放不下时退回 arrow。" }
+      { name: "text", type: "仅文字", description: "仅显示文字，不预留箭头空间；双击单元格可编辑值。" },
+      { name: "custom", type: "胶囊标签", description: "使用带底色的圆角标签显示文字和箭头，点击标签可打开列表；单元格空间不足时使用 arrow 模式。" }
     ])
   );
   root.append(
@@ -181,20 +177,20 @@ sheet.getDataValidationAt(row, column);       // 这一格所在的规则`)
     type: "list",
     items: ["待处理", "进行中", "已完成"],
     // 选项颜色：custom 模式是胶囊底色，arrow / text 模式是单元格底色。
-    // 只收 #rgb / #rrggbb / #rrggbbaa。
+    // 支持 #rgb / #rrggbb / #rrggbbaa。
     colors: { 待处理: "#e8eaed", 进行中: "#d2e3fc", 已完成: "#ceead6" }
   },
   renderMode: "custom",
-  showDropDown: true                            // 设成 false 就不画箭头
+  showDropDown: true                            // false 表示隐藏下拉箭头
 });`)
   );
 
   const custom = section("自定义规则");
   custom.body.append(
     paragraph(
-      "规则里只存名字和可 JSON 序列化的 params，所以规则能进快照、能撤销、能随行列移动；判定函数不进快照，" +
-        "由每次创建实例的代码按名字注册。函数必须同步、纯函数，而且要足够便宜——绘制时每帧会对可见格调用。" +
-        "快照里出现没注册的名字时按“有效”处理，别的环境打开同一份快照不会满屏报错。"
+      "自定义规则仅存储名称和可 JSON 序列化的 params，支持快照保存、撤销和行列移动。验证函数不写入快照，" +
+        "需在创建实例时按名称注册。验证函数必须是同步纯函数，并控制计算开销，因为绘制时会对可见单元格调用。" +
+        "快照引用未注册的验证函数时，相关单元格按有效处理。"
     )
   );
   root.append(custom.root);
@@ -209,17 +205,17 @@ sheet.setDataValidation(range, { criteria: { type: "custom", name: "even" } });`
   );
   root.append(
     callout(
-      "依赖其他单元格的自定义规则（比如“列内唯一”），另一格变化时这一格的红色小三角要等到下一次重绘才更新。"
+      "对于依赖其他单元格的自定义规则（如列内唯一），依赖值变化后的验证标记在下一次重绘时更新。"
     )
   );
 
   const check = section("事后检查");
   check.body.append(
     paragraph(
-      "设置规则不会检查已有数据是否合规。findInvalidCells() 列出违规的格子，对应 Excel 的“圈释无效数据”；" +
-        "validateCell() 检查单格。关掉红色小三角用 dataValidation: { showInvalidMarks: false }。" +
-        "鼠标停在违规的格子上时，会在格子旁显示规则说明（停留 400ms 后出现，移开、滚动、开始编辑都会收起）。" +
-        "停止级显示“输入无效”，警告级显示“注意”，信息级显示“提示”，不会都当成错误。"
+      "设置规则不会拒绝或修改已有数据。findInvalidCells() 返回无效单元格坐标，validateCell() 检查指定单元格。" +
+        "dataValidation: { showInvalidMarks: false } 可关闭无效标记。" +
+        "鼠标在无效单元格上停留 400ms 后显示规则说明，移开、滚动或开始编辑时关闭。" +
+        "停止级提示标题为“输入无效”，警告级为“注意”，信息级为“提示”。"
     )
   );
   root.append(check.root);
@@ -230,14 +226,14 @@ sheet.validateCell(2, 1);            // { valid: false, errorStyle: "stop", mess
 
   const write = actionButton("写入一个违规值（只标记）", () => {
     sheet.setCell(4, 1, -5);
-    log.textContent = "已用 setCell() 把第 5 行数量写成 -5：没有被拦截，右上角出现红色小三角；可以撤销。";
+    log.textContent = "已通过 setCell() 将第 5 行数量设置为 -5，并显示无效标记。此操作支持撤销。";
   });
-  const find = actionButton("列出无效格", () => {
+  const find = actionButton("列出无效单元格", () => {
     const invalid = sheet.findInvalidCells();
     log.textContent =
       invalid.length === 0
-        ? "没有无效格"
-        : `${invalid.length} 个无效格：` + invalid.map(({ row, column }) => `(${row}, ${column})`).join(" ");
+        ? "未发现无效单元格"
+        : `${invalid.length} 个无效单元格：` + invalid.map(({ row, column }) => `(${row}, ${column})`).join(" ");
   });
   const clear = actionButton("清除数量列的规则", () => {
     sheet.clearDataValidation({ startRow: 0, startColumn: 1, endRow: 49, endColumn: 1 });
@@ -249,11 +245,10 @@ sheet.validateCell(2, 1);            // { valid: false, errorStyle: "stop", mess
   });
 
   const demo = demoBlock({
-    title: "试一试",
+    title: "数据验证示例",
     description:
-      "双击「数量」输入 abc 或 500（停止：弹出对话框拒绝输入）；双击「交付日期」输入 2025-01-01、" +
-      "「备注」写超过 10 个字（警告、信息：放行，只标红三角）；点「状态」「优先级」的下拉箭头选值；" +
-      "鼠标停在带红三角的格子上看错误提示。表里已经有几处违规值。",
+      "「数量」列拒绝 abc 或 500 等无效输入；「交付日期」早于 2026-01-01 或「备注」超过 10 个字时允许提交，并显示无效标记。" +
+      "「状态」与「优先级」支持下拉选择。示例包含预设无效值，悬停可查看规则说明。",
     actions: [write, find, clear, undo]
   });
   root.append(demo.root);

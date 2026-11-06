@@ -1,102 +1,113 @@
 # cyexcel
 
-A high-performance, framework-agnostic spreadsheet component. Canvas-virtualized
-rendering handles 100K-1M rows, a Command/Transaction layer drives every
-mutation (so undo/redo and clipboard paste are never special-cased), and the
-sheet owns its data outright in a sparse cell matrix — your rows are *imported*
-into it once, not adapted behind an interface.
+cyexcel 是一个与前端框架无关的表格组件，使用 Canvas 进行视口虚拟化渲染，以稀疏矩阵存储单元格数据，并通过命令、事务和历史记录管理编辑操作。
 
-`cyexcel/core` never touches the Custom Elements
-registry, so it works equally well as a plain library call or embedded inside
-any framework's own component model.
+## 功能
 
-Workbook shells enable formulas using the MIT-licensed `fast-formula-parser`.
-The core accepts an optional calculator through `formulaEngine`, so importing
-`cyexcel/core` does not import the parser. See [formula support](doc/formulas.md)
-for setup, supported functions, and current limitations.
+- 单元格编辑、样式设置、合并与取消合并。
+- 行列插入、删除、移动及尺寸调整。
+- 撤销重做、剪贴板、查找替换、排序与筛选。
+- 数据验证、下拉选项、链接与图片单元格。
+- 多工作表管理，支持添加、删除、切换和重命名。
+- 基础公式计算及 XLSX 导出。
 
-## Install
+数据在创建表格时导入快照，导入后的编辑与原始数组相互独立。虚拟化用于绘制和命中测试，数据仍完整保存在内存中。文档站提供 100,000 行 × 5 列示例；实际容量取决于数据内容、设备性能与内存，需结合业务数据评估。
+
+## 安装
 
 ```bash
 npm install cyexcel
 ```
 
-## Quick start
+## 快速开始
 
-```ts
-import { CyExcelCore, matrixToWorkbookSnapshot } from "cyexcel/core";
+挂载容器需要具有可计算的宽度和高度。
 
-// Row i, column j becomes cell (i, j). With no explicit headers, cyexcel
-// uses Excel-style A/B/C column letters.
-const data = [
-  ["A100", "Widget", 9.99],
-  ["A101", "Gadget", 14.5]
-];
-
-const sheet = new CyExcelCore(document.querySelector("#sheet"), {
-  snapshot: matrixToWorkbookSnapshot(data)
-});
-
-sheet.setCell(0, 2, 12.99); // one undoable Command
-sheet.undo();
+```html
+<div id="sheet" style="width: 100%; height: 480px;"></div>
 ```
 
-`matrixToWorkbookSnapshot` is a one-shot import, not a binding: once the sheet is
-constructed, `data` and the sheet share nothing. Editing a cell never writes
-back into your array, and mutating your array never shows up in the table.
+```ts
+import { createSheet, matrixToWorkbookSnapshot } from "cyexcel";
 
-If your source data is a list of objects, `rowsToWorkbookSnapshot(objects,
-fields)` remains available as the field-mapped importer.
+const container = document.querySelector<HTMLElement>("#sheet");
+if (container === null) {
+  throw new Error("Missing sheet container");
+}
 
-`CyExcelCore` paints into whatever container element you give it — there's no
-required Web Component wrapper. See `examples/` for this same pattern wired
-into plain HTML, native ESM, a custom cell renderer, an async data source,
-and minimal React/Vue integrations (both load React/Vue from a CDN via a
-native `<script type="importmap">`, not a bundler — run `pnpm build` first,
-then serve `examples/` with **any plain static file server** — e.g.
-`npx serve examples`, not this repo's own `pnpm dev`/`pnpm playground`. Vite's
-dev server tries to resolve every module's imports itself and doesn't know
-about `<script type="importmap">`, so it 500s on the bare `"react"`/`"vue"`
-specifiers those two examples rely on the *browser* to resolve).
+const sheet = createSheet(container, {
+  snapshot: matrixToWorkbookSnapshot([
+    ["A100", "传感器", 9.99],
+    ["A101", "电源模组", 14.5]
+  ])
+});
 
-## Entry points
+sheet.setCell(0, 2, 12.99);
+sheet.undo();
 
-Sheet and Workbook presets enable a spreadsheet context menu by default.
-Right-click cells, row numbers, or column headers for clipboard, clear,
-insert/delete, formatting, merge, and sort/filter operations. Pass
-`contextMenu: false` to disable it; Core users can opt in with
-`contextMenu: true`. See [context menu behavior](doc/context-menu.md).
+// 页面或组件卸载时调用 sheet.dispose() 释放资源。
+```
 
-`createWorkbook(container, options)` provides sheet tabs with add and switch
-controls. Click a tab's close icon to delete its sheet after confirmation, or call
-`workbook.deleteSheet(sheetId)` directly. Deletion cannot be undone and always
-leaves at least one sheet. Deleting the active sheet selects its right neighbor,
-or its left neighbor when there is no sheet to the right. An unknown ID or an
-attempt to delete the last sheet throws a `RangeError`.
-Double-click a tab (or press F2 while it is focused) to rename it inline. Enter
-or blur saves the name; Escape cancels. Blank input keeps the previous name.
-`workbook.renameSheet(sheetId, name)` also supports renaming programmatically;
-it trims whitespace and throws a `RangeError` for a blank name or unknown ID.
+`createSheet()` 默认启用工具栏、编辑栏和右键菜单。可通过 `toolbar: false`、`formulaBar: false` 和 `contextMenu: false` 分别关闭。
 
-The default workbook toolbar exports all sheets to `.xlsx`, including sheets
-that have not been opened. `await workbook.exportExcel({ fileName: "report.xlsx" })`
-uses the current tab names, styles, merges and built-in validation rules. Pass
-`download: false` to receive a Blob, or `includeHeaders: false` to omit custom
-column headers. See [Excel export](doc/excel-export.md) for supported features and limitations.
+`matrixToWorkbookSnapshot()` 将二维数组的第 i 行、第 j 列映射到单元格 `(i, j)`。未配置表头时，列标题使用 A、B、C 等字母。对象数组可通过 `rowsToWorkbookSnapshot(rows, fields)` 按字段顺序导入。
 
-| Import | Use it for |
+## 模块入口
+
+| 入口 | 说明 |
 | --- | --- |
-| `cyexcel` | `core`'s full export surface, aggregated in one place |
-| `cyexcel/core` | Just the logic/rendering layer — no Custom Elements registry access at all |
-| `cyexcel/register` | Side-effecting: auto-registers `<cy-excel>` on import (currently an empty, unconfigured shell — see `doc/implementation-steps.md` Step 13) |
+| `cyexcel` | 表格、工作簿、快照导入器及工具栏等常用 API |
+| `cyexcel/core` | 核心类、类型及扩展 API，不访问 Custom Elements 注册表，不引入公式解析库 |
+| `cyexcel/toolbar` | 工具栏与编辑栏 API |
+| `cyexcel/formula` | 可选公式引擎 |
+| `cyexcel/register` | 导入时注册 `<cy-excel>` 自定义元素；当前元素不提供完整的表格配置接口 |
 
-## Documentation
+`CyExcelCore` 可挂载到普通 HTML 容器，也可在 React、Vue 等框架的组件生命周期中创建和释放。
 
-- [`doc/architecture.md`](doc/architecture.md) — module layering and rendering pipeline
-- [`doc/api-design.md`](doc/api-design.md) — public API surface
-- [`doc/customization-and-hooks.md`](doc/customization-and-hooks.md) — Hooks, Events, plugins, custom cell renderers
-- [`doc/roadmap.md`](doc/roadmap.md) — milestones and what's implemented so far
+## 工作簿
 
-## License
+`createWorkbook(container, options)` 提供工作表标签及添加、切换、删除和重命名操作。
+
+- 点击标签的关闭按钮，在确认后删除工作表。删除不可撤销，且至少保留一张工作表。
+- 删除当前工作表后，优先切换到右侧相邻工作表；右侧不存在时切换到左侧。
+- 双击标签或在标签获得焦点时按 F2 可编辑名称。Enter 或失焦保存，Escape 取消，空白输入保留原名称。
+- `workbook.deleteSheet(sheetId)` 和 `workbook.renameSheet(sheetId, name)` 提供程序化操作。无效 ID、删除最后一张工作表或传入空白名称时抛出 `RangeError`。
+
+默认工作簿工具栏支持导出全部工作表，包括尚未打开的工作表：
+
+```ts
+await workbook.exportExcel({ fileName: "report.xlsx" });
+```
+
+导出使用当前工作表名称，支持样式、合并区域和内置数据验证规则。`download: false` 返回 Blob，`includeHeaders: false` 不导出自定义列标题。支持范围见 [XLSX 导出](doc/excel-export.md)。
+
+## 公式与使用限制
+
+工作簿默认通过 MIT 许可的 `fast-formula-parser` 启用公式。核心类可通过 `formulaEngine` 接入可选计算引擎，具体配置见 [公式支持](doc/formulas.md)。
+
+- 当前支持 12 个基础函数及同工作表引用，暂不支持跨工作表引用。
+- 含公式的工作表暂时限制行列插入、删除、移动及排序，尚未实现结构变更后的引用调整。
+- 复制与填充按值处理，暂不支持公式引用自动调整。
+- 支持 XLSX 导出，暂不支持 XLSX 导入。
+
+## 文档与示例
+
+本地启动文档站：
+
+```bash
+pnpm install
+pnpm docs:dev
+```
+
+- [右键菜单](doc/context-menu.md)
+- [公式支持](doc/formulas.md)
+- [XLSX 导出](doc/excel-export.md)
+- [架构说明](doc/architecture.md)
+- [API 设计](doc/api-design.md)
+- [自定义与扩展](doc/customization-and-hooks.md)
+
+`examples/` 包含原生 HTML、ESM、自定义渲染器及 React、Vue 接入示例。先执行 `pnpm build`，再使用 `npx serve examples` 启动静态服务。React、Vue 示例使用浏览器 import map 从 CDN 加载依赖。
+
+## 许可证
 
 [MIT](LICENSE)

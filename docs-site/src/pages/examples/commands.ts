@@ -11,12 +11,12 @@ import {
 
 export default function commandsExamplePage(root: HTMLElement): () => void {
   root.append(
-    pageHeader("EXAMPLES", "编辑与历史", "setCell() 会进入 Command 层，undo() 和 redo() 不需要单独实现。")
+    pageHeader("EXAMPLES", "编辑与历史", "setCell() 通过命令层提交修改，支持通过 undo() 和 redo() 撤销与重做。")
   );
 
   const intro = section("提交可撤销命令");
   intro.body.append(
-    paragraph("所有单元格写入都经过命令层。调用方只表达意图，不需要手工维护历史栈。")
+    paragraph("单元格写入通过命令层执行，历史记录由组件统一管理。")
   );
   root.append(intro.root);
   root.append(
@@ -40,7 +40,7 @@ sheet.redo();`)
 
   const demo = demoBlock({
     title: "撤销与重做",
-    description: "先写入一格，然后用撤销和重做观察值的变化。",
+    description: "写入单元格后，可通过撤销与重做恢复对应状态。",
     actions: [writeCell, undo, redo]
   });
   root.append(demo.root);

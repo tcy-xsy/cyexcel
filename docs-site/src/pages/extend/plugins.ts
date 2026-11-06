@@ -65,7 +65,7 @@ const helloPlugin: CyExcelPlugin = {
       console.log("hello from plugin");
     });
 
-    // 可选：setup 自己的资源也可以在这里手动释放。
+    // 可选：释放 setup 创建的资源。
     return () => {
       disposeChange();
       disposeShortcut();
@@ -98,12 +98,12 @@ const helloPlugin: CyExcelPlugin = {
       { name: "contextMenu.registerProvider()", type: "(meta, provider) => Disposer", description: "给右键菜单追加菜单项。" },
       { name: "getCell()", type: "(row, column) => unknown", description: "只读访问单元格。" },
       { name: "copy() / paste()", type: "Promise", description: "使用核心剪贴板能力。" },
-      { name: "insertRows(start, count?)", type: "void", description: "走公开 Command 路径插入空行，count 默认 1。" },
-      { name: "deleteRows(start, count?)", type: "void", description: "走公开 Command 路径删除行，count 默认 1。" },
-      { name: "moveRows(start, count, target)", type: "void", description: "走公开 Command 路径移动行。" },
+      { name: "insertRows(start, count?)", type: "void", description: "通过公开命令接口插入空行，count 默认 1。" },
+      { name: "deleteRows(start, count?)", type: "void", description: "通过公开命令接口删除行，count 默认 1。" },
+      { name: "moveRows(start, count, target)", type: "void", description: "通过公开命令接口移动行。" },
       { name: "insertColumns(start, columns)", type: "void", description: "插入一列或多列；每项都是完整 ColumnDefinition。" },
-      { name: "deleteColumns(start, count?)", type: "void", description: "走公开 Command 路径删除列，count 默认 1。" },
-      { name: "moveColumns(start, count, target)", type: "void", description: "走公开 Command 路径移动列。" },
+      { name: "deleteColumns(start, count?)", type: "void", description: "通过公开命令接口删除列，count 默认 1。" },
+      { name: "moveColumns(start, count, target)", type: "void", description: "通过公开命令接口移动列。" },
       { name: "hideColumn(column)", type: "void", description: "隐藏指定下标的列。" },
       { name: "registerShortcut()", type: "(combo, handler) => Disposer", description: "注册键盘快捷键。" }
     ])
@@ -129,7 +129,7 @@ const helloPlugin: CyExcelPlugin = {
     }
   };
 
-  const setCell = actionButton("写入一格", () => {
+  const setCell = actionButton("写入单元格", () => {
     sheet.setCell(0, 1, `插件观察 #${changeCount + 1}`);
   });
   const insertRow = actionButton("插入一行", () => {
@@ -138,7 +138,7 @@ const helloPlugin: CyExcelPlugin = {
 
   const demo = demoBlock({
     title: "插件事件审计",
-    description: "下面每次写入或插入行都会提交一次 Command 并发出 change 事件。",
+    description: "每次写入或插入行均提交一次 Command，并触发 change 事件。",
     actions: [setCell, insertRow]
   });
   root.append(demo.root);

@@ -3,8 +3,8 @@ import { matrixToWorkbookSnapshot } from "@cyexcel/core";
 import { codeBlock, demoBlock, pageHeader, paragraph } from "../../components/doc";
 
 export default function contextMenuExamplePage(root: HTMLElement): () => void {
-  root.append(pageHeader("EXAMPLES", "右键菜单", "在单元格、行号、列头右键，菜单会按当前位置和选区提供对应操作。"));
-  root.append(paragraph("试试框选多个单元格后清除内容、合并或设置格式；选中多行/多列后右键可批量插入、删除。操作后可用撤销恢复。"));
+  root.append(pageHeader("EXAMPLES", "右键菜单", "右键单击单元格、行号或列头，可打开与当前位置及选区对应的操作菜单。"));
+  root.append(paragraph("连续选区支持清除内容、合并和格式设置；整行或整列选区支持批量插入与删除。上述操作支持撤销。"));
   const demo = demoBlock({ title: "库存表", description: "悬停“插入”“删除”“单元格格式”“排序和筛选”展开子菜单。Shift+F10 也可打开菜单。" });
   demo.mount.classList.add("with-toolbar");
   root.append(demo.root);

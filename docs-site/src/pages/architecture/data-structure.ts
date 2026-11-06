@@ -35,7 +35,7 @@ export default function dataStructurePage(root: HTMLElement): void {
 
   const cells = section("单元格");
   cells.body.append(
-    codeBlock(`// 只存非空格子。
+    codeBlock(`// 仅存储非空单元格记录。
 "0,0": { v: "CY-100001" }
 "0,1": { v: "工业温度传感器" }
 "0,2": { v: 128 }`)
@@ -80,22 +80,22 @@ columnCount = maxOccupiedColumn + 1 + blankColumns`)
   root.append(validation.root);
   root.append(
     apiTable([
-      { name: "ranges", type: "CellRange[]", description: "规则覆盖的区域。规则是区域数据，不是单元格的属性，所以不进 cellData，行列变化时整块搬移。" },
-      { name: "criteria", type: "object", description: "判据。type 取 whole / decimal / textLength / date / time / list / custom。date 与 time 的值是序列号；custom 只存 name 和 params，函数不进快照。" },
+      { name: "ranges", type: "CellRange[]", description: "规则覆盖的区域。规则按区域存储在 dataValidations 中，行列结构变化时同步更新覆盖范围。" },
+      { name: "criteria", type: "object", description: "判据。type 取 whole / decimal / textLength / date / time / list / custom。date 与 time 的值是序列号；custom 仅存储 name 和 params，验证函数不写入快照。" },
       { name: "allowBlank", type: "boolean", description: "默认 true。" },
-      { name: "errorStyle", type: "\"stop\" | \"warning\" | \"information\"", description: "默认 stop。只有 stop 会在编辑器提交时拒绝输入；warning、information 放行，只标红三角。" },
-      { name: "renderMode / showDropDown", type: "list 专用", description: "text / arrow / custom（默认 arrow）与是否画下拉；list.colors 是选项到十六进制颜色的映射。" }
+      { name: "errorStyle", type: "\"stop\" | \"warning\" | \"information\"", description: "默认 stop。stop 在编辑器提交时拒绝无效输入；warning、information 允许提交，并显示无效标记。" },
+      { name: "renderMode / showDropDown", type: "list 专用", description: "text / arrow / custom（默认 arrow）与下拉箭头显示设置；list.colors 是选项到十六进制颜色的映射。" }
     ])
   );
   root.append(
     callout(
-      "一格至多属于一条规则；没用数据验证的表，快照里没有 dataValidations 这个字段，与之前逐字节一致。"
+      "每个单元格至多属于一条验证规则。未配置数据验证时，快照可省略 dataValidations 字段。"
     )
   );
 
   root.append(
     callout(
-      "matrixToWorkbookSnapshot() 是一次性导入。之后改外部 rows 不会影响表格；表格编辑也不会写回外部数组。"
+      "matrixToWorkbookSnapshot() 是一次性导入。导入后修改原始 rows 不会影响表格，表格编辑也不会修改原始数组。"
     )
   );
 }

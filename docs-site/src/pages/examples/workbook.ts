@@ -36,7 +36,7 @@ workbook.getActiveSheet().insertRows(0, 1);`)
 
   const demo = demoBlock({
     title: "底部 Sheet 标签",
-    description: "切换底部标签；左下角的“+”用于添加 Sheet，行操作走当前 Sheet 的核心 API。"
+    description: "底部标签用于切换工作表，“+”按钮用于添加工作表。行操作通过当前工作表的核心 API 执行。"
   });
   demo.mount.classList.add("with-toolbar");
   root.append(demo.root);

@@ -7,7 +7,7 @@ export default function createSheetApiPage(root: HTMLElement): () => void {
     pageHeader(
       "API",
       "createSheet()",
-      "开箱即用入口。内部会创建 CyExcelCore，并把工具栏、编辑栏挂到表格上方。"
+      "创建 CyExcelCore 实例，并在表格上方配置工具栏和编辑栏。"
     )
   );
 
@@ -24,7 +24,7 @@ export default function createSheetApiPage(root: HTMLElement): () => void {
       { name: "container", type: "HTMLElement", description: "表格挂载容器，必须有可计算宽高。" },
       { name: "options.toolbar", type: "boolean | ToolbarOptions", description: "默认 true。传 false 关闭工具栏，传对象可替换或追加 schema。" },
       { name: "options.formulaBar", type: "boolean", description: "默认 true。控制名称框和公式内容框。" },
-      { name: "options.columns", type: "CyExcelColumnConfig[]", description: "列显示配置。下标即列身份。" },
+      { name: "options.columns", type: "CyExcelColumnConfig[]", description: "列显示配置，按数组下标对应列坐标。" },
       { name: "options.snapshot", type: "WorkbookSnapshot", description: "初始数据快照，推荐由 matrixToWorkbookSnapshot() 创建。" }
     ])
   );

@@ -1,7 +1,7 @@
 import { pageHeader, paragraph, section, apiTable, callout } from "../../components/doc";
 
 export default function coreApiPage(root: HTMLElement): void {
-  root.append(pageHeader("API", "CyExcelCore", "无 UI 的核心类。所有写入都经过 Command、Mutation 和 History。"));
+  root.append(pageHeader("API", "CyExcelCore", "表格核心类，提供渲染、交互与数据操作 API，通过 Command、Mutation 和 History 管理变更。"));
 
   const data = section("数据");
   root.append(data.root);
@@ -38,7 +38,7 @@ export default function coreApiPage(root: HTMLElement): void {
     apiTable([
       { name: "setCellStyle(row, column, patch)", type: "void", description: "给单格应用样式 patch。" },
       { name: "setRangeStyle(range, patch)", type: "void", description: "给区域应用样式 patch，patch 语义为逐键覆盖。" },
-      { name: "getCellStyle(row, column)", type: "CellStyle | undefined", description: "读取列默认样式和格样式合并后的结果。" },
+      { name: "getCellStyle(row, column)", type: "CellStyle | undefined", description: "读取列默认样式和单元格样式合并后的结果。" },
       { name: "clearRangeStyle(range)", type: "void", description: "清除区域内已设置的样式键。" }
     ])
   );
@@ -51,7 +51,7 @@ export default function coreApiPage(root: HTMLElement): void {
       { name: "findNext() / findPrevious()", type: "SearchMatch | null", description: "在匹配集合中前后跳转并选中单元格。" },
       { name: "replace(match, value, query?, options?)", type: "void", description: "替换命中文本片段；未传 query 时保持整格写入的兼容行为。" },
       { name: "replaceAll(query, value, options?)", type: "Promise<number | null>", description: "替换全部命中，返回替换处数。" },
-      { name: "sortByColumn(column, direction)", type: "boolean", description: "按列排序，排序与行几何在同一事务里提交。" },
+      { name: "sortByColumn(column, direction)", type: "boolean", description: "按列排序，排序与行几何在同一事务中提交。" },
       { name: "filterByColumn(column, predicate)", type: "void", description: "按谓词过滤行；被过滤的行高度收缩为 0。" },
       { name: "copy(options?) / paste(options?)", type: "Promise", description: "程序化复制和粘贴。" }
     ])
@@ -60,19 +60,19 @@ export default function coreApiPage(root: HTMLElement): void {
   const validation = section("数据验证");
   validation.body.append(
     paragraph(
-      "规则是区域数据，随快照走，可撤销，也随行列的插入、删除、移动一起搬。用法与示例见「示例 → 数据验证」。"
+      "验证规则按区域存储在快照中，支持撤销，并随行列插入、删除和移动更新覆盖范围。用法见「示例 → 数据验证」。"
     )
   );
   root.append(validation.root);
   root.append(
     apiTable([
-      { name: "setDataValidation(range | ranges, rule)", type: "string", description: "给一个或多个区域设置规则，返回规则 id。一格至多属于一条规则，重叠部分从旧规则里挖掉。不检查已有数据是否合规。" },
-      { name: "clearDataValidation(range | ranges)", type: "void", description: "清除这些区域上的规则；被挖空的规则整条消失。可撤销。" },
+      { name: "setDataValidation(range | ranges, rule)", type: "string", description: "给一个或多个区域设置规则，返回规则 id。每个单元格至多属于一条规则，新规则覆盖的区域会从旧规则中移除。不检查已有数据是否合规。" },
+      { name: "clearDataValidation(range | ranges)", type: "void", description: "清除这些区域上的规则；覆盖区域为空的规则会被删除。可撤销。" },
       { name: "getDataValidations()", type: "readonly DataValidationRule[]", description: "当前全部规则。" },
-      { name: "getDataValidationAt(row, column)", type: "DataValidationRule | undefined", description: "这一格所在的规则。" },
-      { name: "validateCell(row, column)", type: "DataValidationResult", description: "这一格当前的值是否符合规则；没有规则恒为有效。" },
-      { name: "findInvalidCells(range?)", type: "{ row, column }[]", description: "列出违规的格子（Excel 的“圈释无效数据”），缺省扫整张坐标空间。" },
-      { name: "registerDataValidator(name, fn)", type: "Disposer", description: "注册自定义校验函数：同步、纯函数，返回 true / false / 错误文案。实例级，不进快照。" }
+      { name: "getDataValidationAt(row, column)", type: "DataValidationRule | undefined", description: "返回指定单元格所属的规则。" },
+      { name: "validateCell(row, column)", type: "DataValidationResult", description: "检查指定单元格的值是否符合规则；未设置规则时返回有效。" },
+      { name: "findInvalidCells(range?)", type: "{ row, column }[]", description: "返回未通过验证的单元格坐标。未指定范围时检查整个坐标空间。" },
+      { name: "registerDataValidator(name, fn)", type: "Disposer", description: "注册自定义校验函数：同步、纯函数，返回 true / false / 错误文案。仅作用于当前实例，不写入快照。" }
     ])
   );
   root.append(
