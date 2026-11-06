@@ -23,7 +23,7 @@ export default function aiSkillsPage(root: DocElement): void {
   const scope = section("适用范围");
   scope.body.append(
     paragraph("Skill 包含表格与工作簿创建、快照导入、框架生命周期、公式、数据验证、右键菜单、样式、图片、插件和导出说明。助手应以项目实际安装版本的类型定义为准。"),
-    callout("Skill 提供编程指引，不安装组件运行时，也不提供远程控制表格的服务。当前仓库包仍为私有开发版本；未发布 npm 版本时，需构建并打包源码，再将生成的包安装到业务项目。"),
+    callout("Skill 提供编程指引，不安装组件运行时，也不提供远程控制表格的服务。业务项目仍需单独安装 cyexcel。"),
     paragraph("当前公式仅支持同工作表引用及 12 个基础函数，复制与填充按值处理；含公式的工作表限制行列结构操作与排序。XLSX 导入暂未实现。")
   );
   root.append(scope.root);

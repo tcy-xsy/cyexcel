@@ -57,7 +57,7 @@ export const english: Readonly<Record<string, string>> = {
   "$cyexcel 在当前 React 页面接入表格，并在组件卸载时释放实例。": "$cyexcel Integrate a spreadsheet into this React page and dispose the instance on unmount.",
   "适用范围": "Scope",
   "Skill 包含表格与工作簿创建、快照导入、框架生命周期、公式、数据验证、右键菜单、样式、图片、插件和导出说明。助手应以项目实际安装版本的类型定义为准。": "The Skill covers sheets and workbooks, snapshot import, framework lifecycles, formulas, validation, context menus, styles, images, plugins, and export. The installed version's type definitions remain authoritative.",
-  "Skill 提供编程指引，不安装组件运行时，也不提供远程控制表格的服务。当前仓库包仍为私有开发版本；未发布 npm 版本时，需构建并打包源码，再将生成的包安装到业务项目。": "The Skill provides coding instructions. It does not install the runtime or provide a service for remotely controlling a sheet. The package is currently a private development version; until an npm release is available, build and pack the source, then install the archive in the consuming project.",
+  "Skill 提供编程指引，不安装组件运行时，也不提供远程控制表格的服务。业务项目仍需单独安装 cyexcel。": "The Skill provides coding instructions. It does not install the runtime or provide a service for remotely controlling a sheet. Install cyexcel separately in the consuming project.",
   "当前公式仅支持同工作表引用及 12 个基础函数，复制与填充按值处理；含公式的工作表限制行列结构操作与排序。XLSX 导入暂未实现。": "Formulas currently support same-sheet references and 12 basic functions. Copy and fill use values. Sheets containing formulas restrict structural operations and sorting. XLSX import is not implemented.",
   "表格核心类，提供渲染、交互与数据操作 API，通过 Command、Mutation 和 History 管理变更。": "The spreadsheet core provides rendering, interaction, and data APIs, with changes managed through Command, Mutation, and History.",
   "数据": "Data",

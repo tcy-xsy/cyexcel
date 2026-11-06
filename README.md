@@ -23,7 +23,7 @@ Initial data is imported into a snapshot. Edits to the spreadsheet and changes t
 npm install cyexcel
 ```
 
-This command applies once an npm release is available. The repository currently declares a private development package at version `0.1.0`. To use the source before publication, run `pnpm install`, `pnpm build`, and `pnpm pack` in a checkout, then install the generated `.tgz` in the consuming project.
+The initial release is `0.1.0`. To use a local source build, run `pnpm install`, `pnpm build`, and `pnpm pack` in a checkout, then install the generated `.tgz` in the consuming project.
 
 ## Quick start
 
@@ -136,7 +136,7 @@ Follow the installation prompts. Add `--global` for a user-level installation. S
 
 For example: "Create a purchasing workbook with quantity validation, amount formulas, and XLSX export."
 
-The Skill provides coding instructions; it does not install the component runtime or provide a remote spreadsheet-control service. Until an npm release is available, build and pack the source, then install the archive in your project.
+The Skill provides coding instructions; it does not install the component runtime or provide a remote spreadsheet-control service. Install `cyexcel` separately in the consuming project.
 
 ## License
 

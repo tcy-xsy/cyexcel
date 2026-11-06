@@ -23,7 +23,7 @@ cyexcel 是一个与前端框架无关的表格组件，使用 Canvas 进行视�
 npm install cyexcel
 ```
 
-以上命令适用于 npm 发布后的版本。当前仓库包为 `0.1.0` 私有开发版本；可先执行 `pnpm install`、`pnpm build` 和 `pnpm pack`，再将生成的 `.tgz` 安装到业务项目。
+首个发布版本为 `0.1.0`。使用本地源码构建时，可执行 `pnpm install`、`pnpm build` 和 `pnpm pack`，再将生成的 `.tgz` 安装到业务项目。
 
 ## 快速开始
 
@@ -136,7 +136,7 @@ npx skills add tcy-xsy/cyexcel --skill cyexcel --agent claude-code codex
 
 例如：“使用 cyexcel 创建一个带数量验证、金额公式和 XLSX 导出的采购工作簿。”
 
-Skill 仅提供助手指引，不安装组件运行时，不提供远程操作表格的服务。当前仓库包仍为私有开发版本；未发布 npm 版本时，可在源码仓库执行 `pnpm build` 和 `pnpm pack`，再将生成的压缩包安装到业务项目。
+Skill 仅提供助手指引，不安装组件运行时，不提供远程操作表格的服务。业务项目仍需单独安装 `cyexcel`。
 
 ## 许可证
 

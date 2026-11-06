@@ -1,10 +1,29 @@
 {
   "name": "cyexcel",
   "version": "0.1.0",
-  "description": "A high-performance, framework-agnostic spreadsheet Web Component.",
+  "description": "A framework-independent JavaScript spreadsheet component with Canvas rendering.",
   "type": "module",
-  "private": true,
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tcy-xsy/cyexcel.git"
+  },
+  "homepage": "https://tcy-xsy.github.io/cyexcel/en/",
+  "bugs": {
+    "url": "https://github.com/tcy-xsy/cyexcel/issues"
+  },
+  "keywords": [
+    "spreadsheet",
+    "excel",
+    "canvas",
+    "javascript",
+    "typescript",
+    "web-component"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "main": "./dist/cyexcel.umd.cjs",
   "module": "./dist/index.js",
   "browser": "./dist/index.js",
