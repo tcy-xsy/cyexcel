@@ -38,6 +38,7 @@ export default function workbookApiPage(root: DocElement): void {
       { name: "getActiveSheet()", type: "CyExcelCore", description: "返回当前活跃 Sheet 的核心实例。" },
       { name: "setActiveSheet(sheetId)", type: "void", description: "切换活跃 Sheet。" },
       { name: "addSheet(options?)", type: "string", description: "追加 Sheet 并返回新 id。" },
+      { name: "replaceSheets(sheets)", type: "readonly string[]", description: "替换全部工作表并返回新 id；先验证全部快照并成功创建首张表，再释放旧表。替换会清空撤销历史。" },
       { name: "—", type: "—", description: "行级添加/删除不在 WorkbookHandle 上；使用活跃 CyExcelCore 的 insertRows() / deleteRows()。" },
       { name: "dispose()", type: "void", description: "销毁所有 Sheet 和底部标签栏。" }
     ])

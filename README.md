@@ -13,7 +13,7 @@ cyexcel is a framework-independent spreadsheet component for the browser. It use
 - Undo and redo, clipboard operations, find and replace, sorting, and filtering.
 - Data validation, dropdown options, links, and cell images.
 - Multiple worksheets with add, delete, switch, and rename operations.
-- Basic formula calculation and XLSX export.
+- Basic formula calculation, XLSX export, and optional XLSX import.
 
 Initial data is imported into a snapshot. Edits to the spreadsheet and changes to the original array are independent. Drawing and hit testing are virtualized; the full dataset remains in memory. The documentation includes a 100,000-row, five-column example. Actual capacity depends on data contents, device performance, and available memory, and should be measured with representative data.
 
@@ -23,7 +23,15 @@ Initial data is imported into a snapshot. Edits to the spreadsheet and changes t
 npm install cyexcel
 ```
 
-The initial release is `0.1.0`. To use a local source build, run `pnpm install`, `pnpm build`, and `pnpm pack` in a checkout, then install the generated `.tgz` in the consuming project.
+For XLSX import, install the optional plugin alongside cyexcel 0.1.1 or later:
+
+```sh
+npm install cyexcel@^0.1.1 cyexcel-plugin-excel-import@^0.1.0
+```
+
+See the [Excel import plugin guide](plugins/excel-import/README.md) for toolbar integration, direct imports, configuration, and supported content.
+
+To use a local source build, run `pnpm install`, `pnpm build`, and `pnpm pack` in a checkout, then install the generated `.tgz` in the consuming project.
 
 ## Quick start
 
@@ -94,7 +102,7 @@ Workbooks enable formulas using the MIT-licensed `fast-formula-parser`. The core
 - Supports 12 basic functions and same-sheet references. Cross-sheet references are not supported.
 - Sheets containing formulas currently restrict row/column insertion, deletion, movement, and sorting because structural reference rewriting is not implemented.
 - Copy and fill use values and do not translate formula references.
-- XLSX export is supported; XLSX import is not implemented.
+- XLSX export is built in. XLSX import is available in the optional [Excel import plugin](plugins/excel-import/README.md). The parser is excluded from the main package.
 
 ## Documentation and examples
 

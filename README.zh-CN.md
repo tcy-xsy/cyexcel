@@ -23,7 +23,15 @@ cyexcel 是一个与前端框架无关的表格组件，使用 Canvas 进行视�
 npm install cyexcel
 ```
 
-首个发布版本为 `0.1.0`。使用本地源码构建时，可执行 `pnpm install`、`pnpm build` 和 `pnpm pack`，再将生成的 `.tgz` 安装到业务项目。
+如需导入 XLSX，可搭配 cyexcel 0.1.1 及以上版本安装独立插件：
+
+```sh
+npm install cyexcel@^0.1.1 cyexcel-plugin-excel-import@^0.1.0
+```
+
+工具栏接入、直接导入、配置项和支持范围见 [Excel 导入插件文档](plugins/excel-import/README.zh-CN.md)。
+
+使用本地源码构建时，可执行 `pnpm install`、`pnpm build` 和 `pnpm pack`，再将生成的 `.tgz` 安装到业务项目。
 
 ## 快速开始
 
@@ -94,7 +102,7 @@ await workbook.exportExcel({ fileName: "report.xlsx" });
 - 当前支持 12 个基础函数及同工作表引用，暂不支持跨工作表引用。
 - 含公式的工作表暂时限制行列插入、删除、移动及排序，尚未实现结构变更后的引用调整。
 - 复制与填充按值处理，暂不支持公式引用自动调整。
-- 支持 XLSX 导出，暂不支持 XLSX 导入。
+- 内置 XLSX 导出；XLSX 导入通过独立的 [Excel 导入插件](plugins/excel-import/README.zh-CN.md)提供，解析器不进入主包。
 
 ## 文档与示例
 

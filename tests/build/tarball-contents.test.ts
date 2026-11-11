@@ -51,7 +51,8 @@ describe("published tarball contents", () => {
       /^\.env/,
       /^examples\//,
       /^playground\//,
-      /^tests\//
+      /^tests\//,
+      /^plugins\//
     ];
     const offenders = files.filter((file) => forbiddenPatterns.some((pattern) => pattern.test(file)));
     expect(offenders).toEqual([]);
