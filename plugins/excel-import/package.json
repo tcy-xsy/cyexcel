@@ -4,6 +4,15 @@
   "description": "Optional XLSX import plugin for cyexcel.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tcy-xsy/cyexcel.git",
+    "directory": "plugins/excel-import"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -19,7 +28,7 @@
     "typecheck": "tsc -p tsconfig.test.json"
   },
   "peerDependencies": {
-    "cyexcel": ">=0.1.0 <1"
+    "cyexcel": ">=0.1.1 <1"
   },
   "dependencies": {
     "exceljs": "4.4.0"

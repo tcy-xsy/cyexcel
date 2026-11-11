@@ -2,7 +2,13 @@
 
 Optional XLSX import for cyexcel. This is a separate workspace package: the main package does not depend on ExcelJS or include the parser in its ESM or UMD builds. ExcelJS loads when a file is read.
 
-The plugin is not published yet. It requires the workspace version of cyexcel containing `WorkbookHandle.replaceSheets()`; the published `cyexcel@0.1.0` does not contain that API.
+## Installation
+
+Requires cyexcel 0.1.1 or later, before 1.0. The plugin targets ESM applications using a bundler such as Vite or Webpack.
+
+```sh
+npm install cyexcel@^0.1.1 cyexcel-plugin-excel-import@^0.1.0
+```
 
 ## Development
 
@@ -15,7 +21,7 @@ pnpm build:plugins
 pnpm test:plugins
 ```
 
-Output: `plugins/excel-import/dist/`. The plugin targets ESM applications using a bundler such as Vite or Webpack.
+Output: `plugins/excel-import/dist/`.
 
 ## Integration
 

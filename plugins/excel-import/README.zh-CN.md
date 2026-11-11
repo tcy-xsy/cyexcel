@@ -2,7 +2,13 @@
 
 cyexcel 的可选 XLSX 导入插件，作为独立工作区包构建。主包不依赖 ExcelJS，ESM 和 UMD 产物均不包含 Excel 解析器；插件在读取文件时才加载 ExcelJS。
 
-插件尚未发布到 npm，接入需要包含 `WorkbookHandle.replaceSheets()` 的工作区版本。已发布的 `cyexcel@0.1.0` 尚未包含此接口。
+## 安装
+
+需要 cyexcel 0.1.1 及以上、1.0 以下版本，适用于使用 Vite、Webpack 等构建工具的 ESM 应用。
+
+```sh
+npm install cyexcel@^0.1.1 cyexcel-plugin-excel-import@^0.1.0
+```
 
 ## 本地开发
 
@@ -15,7 +21,7 @@ pnpm build:plugins
 pnpm test:plugins
 ```
 
-构建产物位于 `plugins/excel-import/dist/`，面向使用 Vite、Webpack 等构建工具的 ESM 应用。
+构建产物位于 `plugins/excel-import/dist/`。
 
 ## 接入
 

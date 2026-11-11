@@ -1,6 +1,6 @@
 {
   "name": "cyexcel",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A framework-independent JavaScript spreadsheet component with Canvas rendering.",
   "type": "module",
   "license": "MIT",
