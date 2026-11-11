@@ -71,6 +71,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test:unit": "vitest run tests/unit",
+    "test:plugins": "vitest run plugins/excel-import/tests",
     "test:unit:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:browser": "playwright test tests/browser --project=chrome",
@@ -85,10 +86,12 @@
     "build:js": "rimraf dist && rollup -c",
     "build:types": "tsc -p tsconfig.build.json",
     "build": "pnpm build:js && pnpm build:types",
+    "build:plugins": "pnpm --filter cyexcel-plugin-excel-import build",
+    "check:plugins": "pnpm build:plugins && pnpm --filter cyexcel-plugin-excel-import typecheck && pnpm test:plugins",
     "report:size": "node scripts/report-bundle-size.mjs",
     "api:changes": "node scripts/public-api-changes.mjs",
     "check:public-api": "node scripts/public-api-changes.mjs --check HEAD~1..HEAD",
-    "check": "pnpm typecheck && pnpm lint && pnpm check:public-api && pnpm test:all && pnpm build && pnpm test:build && pnpm test:build:browser"
+    "check": "pnpm typecheck && pnpm lint && pnpm check:public-api && pnpm test:all && pnpm build && pnpm test:build && pnpm test:build:browser && pnpm check:plugins"
   },
   "engines": {
     "node": ">=20"

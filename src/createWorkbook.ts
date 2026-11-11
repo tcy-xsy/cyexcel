@@ -30,6 +30,8 @@ export interface WorkbookHandle {
   deleteSheet(sheetId: string): void;
   /** Rename a sheet. Leading/trailing whitespace is trimmed; blank names are rejected. */
   renameSheet(sheetId: string, name: string): void;
+  /** Replace all sheets after validating and mounting the first replacement. Clears sheet history. */
+  replaceSheets(sheets: readonly WorkbookSheetOptions[]): readonly string[];
   /** Export all sheets in tab order, including sheets that have never been opened. */
   exportExcel(options?: ExcelExportOptions): Promise<void | Blob>;
   dispose(): void;
@@ -474,6 +476,26 @@ export function createWorkbook(
     updateCloseButtons();
   }
 
+  function replaceSheets(sheets: readonly WorkbookSheetOptions[]): readonly string[] {
+    if (disposed) throw new Error("workbook is disposed");
+    if (!sheets.length) throw new RangeError("at least one replacement sheet is required");
+    // Validate every snapshot before changing tabs or disposing existing cores.
+    for (const sheet of sheets) {
+      if (sheet.snapshot) WorkbookModel.fromSnapshot(sheet.snapshot);
+    }
+    const previousIds = [...sheetIdOrder];
+    const nextIds: string[] = [];
+    try {
+      for (const sheet of sheets) nextIds.push(registerSheet(sheet));
+      setActive(nextIds[0]!);
+    } catch (error) {
+      for (const id of nextIds) deleteSheet(id);
+      throw error;
+    }
+    for (const id of previousIds) deleteSheet(id);
+    return nextIds;
+  }
+
   addSheetButton.addEventListener("click", () => {
     addSheet();
   });
@@ -511,6 +533,7 @@ export function createWorkbook(
     addSheet,
     deleteSheet,
     renameSheet,
+    replaceSheets,
     exportExcel,
     dispose: () => {
       if (disposed) {

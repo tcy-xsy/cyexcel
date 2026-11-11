@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Optional Excel import plugin</title>
+    <style>#app { width: 960px; height: 480px; }</style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createWorkbook } from "/src/createWorkbook.ts";
+      import { matrixToWorkbookSnapshot } from "/src/core/index.ts";
+      import { createExcelImportPlugin } from "/plugins/excel-import/src/index.ts";
+      import { exportWorkbookToExcel } from "/src/core/toolbar/exportExcel.ts";
+      const plugin = createExcelImportPlugin();
+      const workbook = createWorkbook(document.getElementById("app"), {
+        toolbar: { schema: [], items: plugin.toolbarItems },
+        formulaBar: false,
+        // Imported data must not inherit host-specific headers or types.
+        columns: [{ header: "Host header", type: "number" }],
+        sheets: [{ name: "Original", snapshot: matrixToWorkbookSnapshot([["original"]]) }]
+      });
+      plugin.attach(workbook);
+      window.workbookForExcelImportTest = workbook;
+      window.excelImportPluginForTest = plugin;
+      window.createExcelImportFixture = async () => {
+        const snapshot = matrixToWorkbookSnapshot([["00123", 4], ["next", 8], ["merged"]]);
+        const sheet = snapshot.sheets[snapshot.sheetOrder[0]];
+        sheet.cellData[1][1] = { v: 8, f: "=B1*2", s: "currency" };
+        snapshot.styles.currency = { bold: true, color: "#ff8000", numFmt: "0.00" };
+        sheet.mergeData = [{ startRow: 2, startColumn: 0, endRow: 2, endColumn: 1 }];
+        const blob = await exportWorkbookToExcel([
+          { name: "Imported sales", snapshot },
+          { name: "Imported stock", snapshot: matrixToWorkbookSnapshot([["stock", 10]]) }
+        ], { download: false, includeHeaders: false });
+        return Array.from(new Uint8Array(await blob.arrayBuffer()));
+      };
+    </script>
+  </body>
+</html>

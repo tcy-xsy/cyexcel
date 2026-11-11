@@ -1,0 +1,31 @@
+{
+  "name": "cyexcel-plugin-excel-import",
+  "version": "0.1.0",
+  "description": "Optional XLSX import plugin for cyexcel.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md", "README.zh-CN.md", "LICENSE"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "rollup -c rollup.config.js && tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json"
+  },
+  "peerDependencies": {
+    "cyexcel": ">=0.1.0 <1"
+  },
+  "dependencies": {
+    "exceljs": "4.4.0"
+  },
+  "devDependencies": {
+    "cyexcel": "workspace:*"
+  },
+  "engines": { "node": ">=20" }
+}

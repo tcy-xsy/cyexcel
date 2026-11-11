@@ -94,7 +94,7 @@ await workbook.exportExcel({ fileName: "report.xlsx" });
 - 当前支持 12 个基础函数及同工作表引用，暂不支持跨工作表引用。
 - 含公式的工作表暂时限制行列插入、删除、移动及排序，尚未实现结构变更后的引用调整。
 - 复制与填充按值处理，暂不支持公式引用自动调整。
-- 支持 XLSX 导出，暂不支持 XLSX 导入。
+- 内置 XLSX 导出；XLSX 导入通过独立的 [Excel 导入工作区插件](plugins/excel-import/README.zh-CN.md)提供。插件尚未发布，需要配合工作区版本使用，解析器不进入主包。
 
 ## 文档与示例
 

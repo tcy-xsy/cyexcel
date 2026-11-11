@@ -13,6 +13,9 @@
     "skipLibCheck": true,
     "noEmit": true,
     "paths": {
+      "cyexcel": ["./src/index.ts"],
+      "cyexcel/core": ["./src/core/index.ts"],
+      "cyexcel/toolbar": ["./src/toolbar.ts"],
       "@cyexcel/*": ["./src/*"]
     },
     "types": ["node"]

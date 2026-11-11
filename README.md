@@ -94,7 +94,7 @@ Workbooks enable formulas using the MIT-licensed `fast-formula-parser`. The core
 - Supports 12 basic functions and same-sheet references. Cross-sheet references are not supported.
 - Sheets containing formulas currently restrict row/column insertion, deletion, movement, and sorting because structural reference rewriting is not implemented.
 - Copy and fill use values and do not translate formula references.
-- XLSX export is supported; XLSX import is not implemented.
+- XLSX export is built in. XLSX import is available in the optional [Excel import workspace plugin](plugins/excel-import/README.md), which is not yet published and requires the workspace version of cyexcel. The parser is excluded from the main package.
 
 ## Documentation and examples
 
