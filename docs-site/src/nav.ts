@@ -12,6 +12,7 @@ import formulasExamplePage from "./pages/examples/formulas";
 import contextMenuExamplePage from "./pages/examples/context-menu";
 import toolbarExamplePage from "./pages/examples/toolbar";
 import workbookExamplePage from "./pages/examples/workbook";
+import excelImportExamplePage from "./pages/examples/excel-import";
 import performanceExamplePage from "./pages/examples/performance";
 import createSheetApiPage from "./pages/api/create-sheet";
 import coreApiPage from "./pages/api/core";
@@ -52,6 +53,7 @@ export const navGroups: readonly NavGroup[] = [
       { label: "右键菜单", route: "/examples/context-menu", module: contextMenuExamplePage },
       { label: "工具栏", route: "/examples/toolbar", module: toolbarExamplePage },
       { label: "多 Sheet 工作簿", route: "/examples/workbook", module: workbookExamplePage },
+      { label: "Excel 导入", route: "/examples/excel-import", module: excelImportExamplePage },
       { label: "十万行性能", route: "/examples/performance", module: performanceExamplePage }
     ]
   },

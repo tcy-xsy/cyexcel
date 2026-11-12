@@ -1,6 +1,8 @@
 export const english: Readonly<Record<string, string>> = {
   "示例文件包含六张工作表：数据类型、数字格式、公式、样式、布局和隐藏工作表。涵盖文本、数值、布尔值、日期、错误值、共享公式、字体与边框、合并单元格、冻结窗格及隐藏行列。超链接和富文本保留显示文本，隐藏工作表导入后显示为可见标签。": "The sample contains six worksheets: Values, Number formats, Formulas, Styles, Layout, and Hidden sheet. It covers text, numbers, booleans, dates, errors, shared formulas, fonts, borders, merged cells, frozen panes, and hidden rows and columns. Hyperlinks and rich text retain their display text. Hidden worksheets become visible tabs after import.",
   "Excel 导入插件": "Excel Import Plugin",
+  "createExcelImportPlugin() 提供可选的 .xlsx 导入，在浏览器内解析并替换当前工作簿。": "createExcelImportPlugin() provides optional .xlsx import, parsed in the browser to replace the current workbook.",
+  "Excel 导入": "Excel Import",
   "Excel 导入是独立的可选插件，主包不包含解析器。文件仅在浏览器内读取，导入成功后替换示例中的全部工作表。": "Excel import is a separate optional plugin; the main package excludes the parser. Files are read locally in your browser. A successful import replaces all worksheets in this example.",
   "支持 .xlsx 的数据、公式、常用样式、合并区域及行列尺寸。暂不导入 .xls、加密文件、图片、图表和数据验证规则。": "Imports .xlsx data, formulas, common styles, merges, and row and column sizes. Legacy .xls, encrypted files, images, charts, and data validation rules are not imported.",
   "导入 .xlsx 文件": "Import an .xlsx File",
