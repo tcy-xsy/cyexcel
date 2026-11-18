@@ -10,15 +10,15 @@ export {
   type PreparedLayoutRoot,
   type LayoutStructurePayload,
   type RowHeightProvenance
-} from "./LayoutEngine";
-export { SkeletonSnapshot, type SkeletonSnapshotOptions } from "./SkeletonSnapshot";
-export { ColumnAxisSnapshot, type ColumnAxisSnapshotOptions } from "./ColumnAxisSnapshot";
-export { RowMetrics, type RowMetricsFragment } from "./RowMetrics";
-export { ViewportSnapshot, type ViewportSnapshotOptions } from "./ViewportSnapshot";
-export { toPhysicalPixelSize } from "./dpr";
-export { splitByFrozenBoundary, type AxisSplit } from "./frozenRegions";
-export { remapRowIndex, type RowStructureChange } from "./rowStructure";
-export { remapColumnIndex, type ColumnStructureChange } from "./columnStructure";
+} from "./LayoutEngine.js";
+export { SkeletonSnapshot, type SkeletonSnapshotOptions } from "./SkeletonSnapshot.js";
+export { ColumnAxisSnapshot, type ColumnAxisSnapshotOptions } from "./ColumnAxisSnapshot.js";
+export { RowMetrics, type RowMetricsFragment } from "./RowMetrics.js";
+export { ViewportSnapshot, type ViewportSnapshotOptions } from "./ViewportSnapshot.js";
+export { toPhysicalPixelSize } from "./dpr.js";
+export { splitByFrozenBoundary, type AxisSplit } from "./frozenRegions.js";
+export { remapRowIndex, type RowStructureChange } from "./rowStructure.js";
+export { remapColumnIndex, type ColumnStructureChange } from "./columnStructure.js";
 export {
   remapIndex,
   validateAxisChange,
@@ -26,5 +26,5 @@ export {
   type AxisChangeDescriptor,
   type StructureAxis,
   type StructureOperation
-} from "./structuralChange";
-export { applyRowOrder, assertValidRowOrder, invertRowOrder } from "./rowOrder";
+} from "./structuralChange.js";
+export { applyRowOrder, assertValidRowOrder, invertRowOrder } from "./rowOrder.js";

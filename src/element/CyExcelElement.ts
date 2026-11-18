@@ -1,4 +1,4 @@
-import { createCyExcelCore, type CyExcelCore } from "../core";
+import { createCyExcelCore, type CyExcelCore } from "../core/index.js";
 
 export function createCyExcelElementConstructor(): CustomElementConstructor {
   return class CyExcelElement extends HTMLElement {

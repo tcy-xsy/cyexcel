@@ -6,5 +6,5 @@ export {
   type SearchOptions,
   type SearchRequest,
   type ReplaceMatchesOptions
-} from "./computeMatches";
-export { SearchState } from "./SearchState";
+} from "./computeMatches.js";
+export { SearchState } from "./SearchState.js";

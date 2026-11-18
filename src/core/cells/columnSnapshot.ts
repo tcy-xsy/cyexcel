@@ -1,4 +1,4 @@
-import type { ColumnDefinition } from "./types";
+import type { ColumnDefinition } from "./types.js";
 
 /**
  * Captures caller-owned column metadata at an ownership boundary. Stateful

@@ -1,13 +1,13 @@
-import type { SceneSelectionHandleFragment, SceneSnapshot } from "../scene";
-import type { CellRange } from "../types";
-import type { SelectionSnapshot } from "../interaction";
-import type { Canvas2DLike } from "./Canvas2DLike";
+import type { SceneSelectionHandleFragment, SceneSnapshot } from "../scene/index.js";
+import type { CellRange } from "../types.js";
+import type { SelectionSnapshot } from "../interaction/index.js";
+import type { Canvas2DLike } from "./Canvas2DLike.js";
 import {
   SELECTION_HANDLE_SIZE,
   SELECTION_INACTIVE_ALPHA,
   SELECTION_STROKE_COLOR,
   SELECTION_STROKE_WIDTH
-} from "./theme";
+} from "./theme.js";
 
 export interface SelectionLayerRendererOptions {
   readonly ctx: Canvas2DLike;

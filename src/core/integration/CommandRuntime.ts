@@ -8,8 +8,8 @@ import {
   type LayoutCommandMutationFactory,
   type StructuralCommandGuards,
   type StructureCommandMutationFactory
-} from "../commands";
-import type { TableStore } from "../data/TableStore";
+} from "../commands/index.js";
+import type { TableStore } from "../data/TableStore.js";
 import {
   BEFORE_COLUMNS_CHANGE_HOOK,
   BEFORE_COMMAND_HOOK,
@@ -17,22 +17,22 @@ import {
   BEFORE_TRANSACTION_COMMIT_HOOK,
   HookManager,
   type HookRegistry
-} from "../hooks";
-import type { LayoutEngine } from "../layout/LayoutEngine";
-import { LayoutRootMutation, type LayoutRootAction } from "../mutations/LayoutRootMutation";
-import { RowHeightMutation } from "../mutations/RowHeightMutation";
-import { StructureIntegrationMutation } from "../mutations/StructureIntegrationMutation";
-import type { SheetModel } from "../sheet/SheetModel";
-import type { CommitReceipt, Mutation, MutationPrepareSession, PreparedTransaction } from "../mutations/types";
-import type { CellRange } from "../types";
-import { checkBeforeColumnsChange } from "../commands/checkBeforeColumnsChange";
-import { checkBeforeRowsChange } from "../commands/checkBeforeRowsChange";
-import type { ColumnDefinition } from "../cells/types";
-import { createGridStructurePayload } from "./GridStructureOwner";
-import type { GridStructureOwner } from "./GridStructureOwner";
-import type { CellStylePatch } from "../style/styleKey";
-import type { CellValue } from "../sheet/types";
-import type { DataValidationRule } from "../sheet/validations";
+} from "../hooks/index.js";
+import type { LayoutEngine } from "../layout/LayoutEngine.js";
+import { LayoutRootMutation, type LayoutRootAction } from "../mutations/LayoutRootMutation.js";
+import { RowHeightMutation } from "../mutations/RowHeightMutation.js";
+import { StructureIntegrationMutation } from "../mutations/StructureIntegrationMutation.js";
+import type { SheetModel } from "../sheet/SheetModel.js";
+import type { CommitReceipt, Mutation, MutationPrepareSession, PreparedTransaction } from "../mutations/types.js";
+import type { CellRange } from "../types.js";
+import { checkBeforeColumnsChange } from "../commands/checkBeforeColumnsChange.js";
+import { checkBeforeRowsChange } from "../commands/checkBeforeRowsChange.js";
+import type { ColumnDefinition } from "../cells/types.js";
+import { createGridStructurePayload } from "./GridStructureOwner.js";
+import type { GridStructureOwner } from "./GridStructureOwner.js";
+import type { CellStylePatch } from "../style/styleKey.js";
+import type { CellValue } from "../sheet/types.js";
+import type { DataValidationRule } from "../sheet/validations.js";
 
 const STANDALONE_COMMAND_HOOKS: HookRegistry = {
   beforeCommand: BEFORE_COMMAND_HOOK,

@@ -1,6 +1,6 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { styleKey } from "./styleKey";
-import type { CellStyle } from "./types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import { styleKey } from "./styleKey.js";
+import type { CellStyle } from "./types.js";
 
 /** 6 位 base36 随机串。不用 crypto：只需要"两次 intern 不撞"，且它在 Worker/SSR 下要多一层可用性判断。 */
 function randomStyleId(): string {

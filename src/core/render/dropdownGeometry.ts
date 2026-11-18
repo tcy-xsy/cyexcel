@@ -1,5 +1,5 @@
-import type { CellRect } from "../layout";
-import { CELL_LINE_HEIGHT, DROPDOWN_ARROW_ZONE } from "./theme";
+import type { CellRect } from "../layout/index.js";
+import { CELL_LINE_HEIGHT, DROPDOWN_ARROW_ZONE } from "./theme.js";
 
 /**
  * list 单元格下拉的几何（数据验证设计稿 §8）：画在哪、点哪里才有反应，全在这一个文件里，

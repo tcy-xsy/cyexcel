@@ -1,4 +1,4 @@
-import type { DataValidationResult } from "../sheet/validations";
+import type { DataValidationResult } from "../sheet/validations.js";
 
 /**
  * 编辑器提交前的校验结论（数据验证设计稿 §7.1）。`EditorManager` 只认这个形状，

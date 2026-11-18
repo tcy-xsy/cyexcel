@@ -1,17 +1,17 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
 import {
   assertResourceSheetId,
   assertValidResourceEntry,
   resourceToTable,
   tableToResource
-} from "./resources";
-import { assertValidWorkbookSnapshot } from "./serialize";
-import { SheetModel, type SheetModelOptions } from "./SheetModel";
-import { StyleRegistry } from "../style/StyleRegistry";
-import type { CellStyle } from "../style/types";
-import type { IndexedTable } from "./IndexedTable";
-import type { ResourceEntry, WorkbookSnapshot } from "./types";
-import { SNAPSHOT_VERSION } from "./types";
+} from "./resources.js";
+import { assertValidWorkbookSnapshot } from "./serialize.js";
+import { SheetModel, type SheetModelOptions } from "./SheetModel.js";
+import { StyleRegistry } from "../style/StyleRegistry.js";
+import type { CellStyle } from "../style/types.js";
+import type { IndexedTable } from "./IndexedTable.js";
+import type { ResourceEntry, WorkbookSnapshot } from "./types.js";
+import { SNAPSHOT_VERSION } from "./types.js";
 
 export interface WorkbookModelOptions {
   readonly sheet?: SheetModelOptions;

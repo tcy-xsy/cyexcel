@@ -27,7 +27,7 @@ export {
   type ScenePaneId,
   type SceneAxisBehavior,
   type SceneTranslation
-} from "./SceneSnapshot";
+} from "./SceneSnapshot.js";
 export {
   SurfaceHost,
   SurfaceSetSnapshot,
@@ -44,13 +44,13 @@ export {
   type SurfaceSnapshot,
   type SurfacePick,
   type SurfaceHostOptions
-} from "./SurfaceHost";
+} from "./SurfaceHost.js";
 export {
   ScrollAxisMapper,
   DEFAULT_SAFE_NATIVE_EXTENT,
   type ScrollAxisMapperOptions,
   type ScrollAxisPosition
-} from "./ScrollAxisMapper";
+} from "./ScrollAxisMapper.js";
 export {
   ViewportManager,
   type HeaderBandSizes,
@@ -58,4 +58,4 @@ export {
   type ScrollerBox,
   type SpacerBox,
   type ViewportManagerOptions
-} from "./ViewportManager";
+} from "./ViewportManager.js";

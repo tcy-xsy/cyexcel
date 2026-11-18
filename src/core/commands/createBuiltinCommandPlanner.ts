@@ -1,37 +1,37 @@
-import { buildMergeClearGrid, rangesIntersect, resolveMergeCells } from "../sheet/merges";
-import { applyRule, assertValidRule, clearRanges } from "../sheet/validations";
-import type { CellRange, CommandContext } from "../types";
-import type { CellValue } from "../sheet/types";
-import { assertValidRange } from "../validation";
-import type { ClearDataValidationCommand } from "./ClearDataValidationCommand";
-import type { ClearRangeCommand } from "./ClearRangeCommand";
-import { CommandHandlerRegistry } from "./CommandHandlerRegistry";
-import type { DeleteColumnsCommand } from "./DeleteColumnsCommand";
-import type { DeleteRowsCommand } from "./DeleteRowsCommand";
-import type { FilterCommand } from "./FilterCommand";
-import type { HideColumnCommand } from "./HideColumnCommand";
-import type { InsertColumnsCommand } from "./InsertColumnsCommand";
-import type { InsertRowsCommand } from "./InsertRowsCommand";
-import type { MergeCellsCommand } from "./MergeCellsCommand";
-import type { MoveColumnsCommand } from "./MoveColumnsCommand";
-import type { MoveRowsCommand } from "./MoveRowsCommand";
-import type { ReorderRowsCommand } from "./ReorderRowsCommand";
-import type { ResizeColumnCommand } from "./ResizeColumnCommand";
-import type { ResizeRowCommand } from "./ResizeRowCommand";
-import type { SetCellCommand } from "./SetCellCommand";
-import type { SetCellImageCommand } from "./SetCellImageCommand";
-import type { SetDataValidationCommand } from "./SetDataValidationCommand";
-import type { SetRangeCommand } from "./SetRangeCommand";
-import type { SetStyleCommand } from "./SetStyleCommand";
-import type { SetRowHeightsCommand } from "./SetRowHeightsCommand";
-import type { ShowColumnCommand } from "./ShowColumnCommand";
-import type { UnmergeCellsCommand } from "./UnmergeCellsCommand";
+import { buildMergeClearGrid, rangesIntersect, resolveMergeCells } from "../sheet/merges.js";
+import { applyRule, assertValidRule, clearRanges } from "../sheet/validations.js";
+import type { CellRange, CommandContext } from "../types.js";
+import type { CellValue } from "../sheet/types.js";
+import { assertValidRange } from "../validation.js";
+import type { ClearDataValidationCommand } from "./ClearDataValidationCommand.js";
+import type { ClearRangeCommand } from "./ClearRangeCommand.js";
+import { CommandHandlerRegistry } from "./CommandHandlerRegistry.js";
+import type { DeleteColumnsCommand } from "./DeleteColumnsCommand.js";
+import type { DeleteRowsCommand } from "./DeleteRowsCommand.js";
+import type { FilterCommand } from "./FilterCommand.js";
+import type { HideColumnCommand } from "./HideColumnCommand.js";
+import type { InsertColumnsCommand } from "./InsertColumnsCommand.js";
+import type { InsertRowsCommand } from "./InsertRowsCommand.js";
+import type { MergeCellsCommand } from "./MergeCellsCommand.js";
+import type { MoveColumnsCommand } from "./MoveColumnsCommand.js";
+import type { MoveRowsCommand } from "./MoveRowsCommand.js";
+import type { ReorderRowsCommand } from "./ReorderRowsCommand.js";
+import type { ResizeColumnCommand } from "./ResizeColumnCommand.js";
+import type { ResizeRowCommand } from "./ResizeRowCommand.js";
+import type { SetCellCommand } from "./SetCellCommand.js";
+import type { SetCellImageCommand } from "./SetCellImageCommand.js";
+import type { SetDataValidationCommand } from "./SetDataValidationCommand.js";
+import type { SetRangeCommand } from "./SetRangeCommand.js";
+import type { SetStyleCommand } from "./SetStyleCommand.js";
+import type { SetRowHeightsCommand } from "./SetRowHeightsCommand.js";
+import type { ShowColumnCommand } from "./ShowColumnCommand.js";
+import type { UnmergeCellsCommand } from "./UnmergeCellsCommand.js";
 import type {
   DataCommandMutationFactory,
   LayoutCommandMutationFactory,
   StructuralCommandGuards,
   StructureCommandMutationFactory
-} from "./capabilities";
+} from "./capabilities.js";
 
 export interface BuiltinCommandPlannerOptions {
   readonly data: DataCommandMutationFactory;

@@ -1,6 +1,6 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { CellType, CellTypeDefinition } from "./types";
-import type { CellValue } from "../sheet/types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { CellType, CellTypeDefinition } from "./types.js";
+import type { CellValue } from "../sheet/types.js";
 
 function baseDefaults<T extends CellValue>(): CellType<T> {
   return {

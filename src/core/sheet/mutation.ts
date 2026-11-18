@@ -1,6 +1,6 @@
-import type { CellRange } from "../types";
-import type { CellRecord, ColumnMeta, RowMeta } from "./types";
-import type { DataValidationRule } from "./validations";
+import type { CellRange } from "../types.js";
+import type { CellRecord, ColumnMeta, RowMeta } from "./types.js";
+import type { DataValidationRule } from "./validations.js";
 
 /** 一行的格子：列号 -> 记录。稀疏，未占用的列不出现（spec §11 不变量 1）。 */
 export type RowCells = Readonly<Record<number, CellRecord>>;

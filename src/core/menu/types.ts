@@ -1,5 +1,5 @@
-import type { SelectionSnapshot } from "../interaction";
-import type { CellRange } from "../types";
+import type { SelectionSnapshot } from "../interaction/index.js";
+import type { CellRange } from "../types.js";
 
 export type SheetMenuAction = "cut" | "clear-contents" | "clear-formats" | "merge" | "unmerge" | "bold" | "italic" | "align-left" | "align-center" | "align-right" |
   "sort-asc" | "sort-desc" | "filter-value" | "clear-filter" | "show-columns" | "hide-columns" | "delete-visible-rows";

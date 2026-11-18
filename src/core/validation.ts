@@ -1,5 +1,5 @@
-import { CyExcelError, CyExcelErrorCode } from "./errors";
-import type { CellRange } from "./types";
+import { CyExcelError, CyExcelErrorCode } from "./errors.js";
+import type { CellRange } from "./types.js";
 
 function isNonNegativeInteger(value: number): boolean {
   return Number.isInteger(value) && value >= 0;

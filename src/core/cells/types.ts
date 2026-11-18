@@ -1,8 +1,8 @@
-import type { CellEditor } from "../editors";
-import type { DomPointerOwnership } from "../interaction/domPointerOwnership";
-import type { CellRect } from "../layout";
-import type { Canvas2DLike } from "../render";
-import type { CellValue } from "../sheet/types";
+import type { CellEditor } from "../editors/index.js";
+import type { DomPointerOwnership } from "../interaction/domPointerOwnership.js";
+import type { CellRect } from "../layout/index.js";
+import type { Canvas2DLike } from "../render/index.js";
+import type { CellValue } from "../sheet/types.js";
 
 /**
  * Encapsulates a value's display, parsing, comparison and editing behavior.

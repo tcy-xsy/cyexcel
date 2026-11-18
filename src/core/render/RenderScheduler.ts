@@ -1,7 +1,7 @@
-import type { CellRange } from "../types";
-import type { DirtySet } from "../data/changes";
-import type { ModelRevision, RevisionGate } from "../model";
-import type { SceneSnapshot } from "../scene";
+import type { CellRange } from "../types.js";
+import type { DirtySet } from "../data/changes.js";
+import type { ModelRevision, RevisionGate } from "../model/index.js";
+import type { SceneSnapshot } from "../scene/index.js";
 
 export interface FrameScheduler {
   readonly requestFrame: (callback: () => void) => number;

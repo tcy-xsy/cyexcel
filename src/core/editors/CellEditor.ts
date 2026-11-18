@@ -1,5 +1,5 @@
-import type { CellRect } from "../layout";
-import type { CellValue } from "../sheet/types";
+import type { CellRect } from "../layout/index.js";
+import type { CellValue } from "../sheet/types.js";
 
 export interface CellEditorContext {
   readonly row: number;

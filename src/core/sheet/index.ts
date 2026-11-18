@@ -6,62 +6,62 @@ export type {
   RowMeta,
   SheetSnapshot,
   WorkbookSnapshot
-} from "./types";
-export { DEFAULT_BLANK_COLUMNS, DEFAULT_BLANK_ROWS, SNAPSHOT_VERSION } from "./types";
-export { assertValidBlankCount, resolveCoordinateSpace } from "./coordinateSpace";
-export { CellMatrix } from "./CellMatrix";
+} from "./types.js";
+export { DEFAULT_BLANK_COLUMNS, DEFAULT_BLANK_ROWS, SNAPSHOT_VERSION } from "./types.js";
+export { assertValidBlankCount, resolveCoordinateSpace } from "./coordinateSpace.js";
+export { CellMatrix } from "./CellMatrix.js";
 export {
   assertValidWorkbookSnapshot,
   deserializeSheet,
   serializeSheet,
   type DeserializeOutput,
   type SerializeInput
-} from "./serialize";
-export { SheetModel, type SheetModelOptions } from "./SheetModel";
+} from "./serialize.js";
+export { SheetModel, type SheetModelOptions } from "./SheetModel.js";
 export {
   ROW_PLAN_HOLE,
   assertValidRowPlan,
   buildDeleteRowsPlan,
   buildInsertRowsPlan,
   buildMoveRowsPlan
-} from "./rowPlan";
-export { remapByColumnShift, remapByRowPlan } from "./indexShift";
+} from "./rowPlan.js";
+export { remapByColumnShift, remapByRowPlan } from "./indexShift.js";
 export {
   buildDeleteColumnsShift,
   buildInsertColumnsShift,
   buildMoveColumnsShift,
   type ColumnShift
-} from "./columnShift";
-export { IndexedTable, type IndexAxis } from "./IndexedTable";
-export { IndexedTableRegistry } from "./IndexedTableRegistry";
+} from "./columnShift.js";
+export { IndexedTable, type IndexAxis } from "./IndexedTable.js";
+export { IndexedTableRegistry } from "./IndexedTableRegistry.js";
 export {
   assertResourceSheetId,
   assertValidResourceEntry,
   resourceToTable,
   tableToResource
-} from "./resources";
-export { WorkbookModel, type WorkbookModelOptions } from "./WorkbookModel";
+} from "./resources.js";
+export { WorkbookModel, type WorkbookModelOptions } from "./WorkbookModel.js";
 export {
   assertCanonicalIndexKeys,
   assertIndexIsNonNegativeInteger,
   isCanonicalIndexKey
-} from "./indexKey";
+} from "./indexKey.js";
 export {
   isStructuralSheetMutation,
   type ColumnCells,
   type RowCells,
   type SheetMutation,
   type SideTableEntries
-} from "./mutation";
-export { invertSheetMutation } from "./invert";
+} from "./mutation.js";
+export { invertSheetMutation } from "./invert.js";
 export {
   applySheetMutation,
   assertRestoreTablesAreWritable,
   estimateSheetMutationBytes
-} from "./apply";
-export { SheetTransaction, type PreparedSheetMutation } from "./SheetTransaction";
-export { createSheetPlanningResources } from "./planning";
-export { changesForSheetMutation, type SheetAxisSpace } from "./patches";
+} from "./apply.js";
+export { SheetTransaction, type PreparedSheetMutation } from "./SheetTransaction.js";
+export { createSheetPlanningResources } from "./planning.js";
+export { changesForSheetMutation, type SheetAxisSpace } from "./patches.js";
 export {
   matrixToWorkbookSnapshot,
   rowValuesToCells,
@@ -70,4 +70,4 @@ export {
   type ImportRow,
   type MatrixToWorkbookSnapshotOptions,
   type RowsToWorkbookSnapshotOptions
-} from "./import";
+} from "./import.js";

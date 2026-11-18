@@ -1,6 +1,6 @@
-import type { ColumnClipboardPolicy } from "../cells";
-import type { CellRange } from "../types";
-import type { CopiedStyles } from "./styleClipboard";
+import type { ColumnClipboardPolicy } from "../cells/index.js";
+import type { CellRange } from "../types.js";
+import type { CopiedStyles } from "./styleClipboard.js";
 
 export type { ColumnClipboardPolicy };
 

@@ -1,13 +1,13 @@
-import type { CellRange } from "../types";
-import type { Patch } from "../types";
-import type { SheetModel } from "../sheet/SheetModel";
-import type { PreparedSheetMutation } from "../sheet/SheetTransaction";
-import type { CellRecord } from "../sheet/types";
-import type { StyleRegistry } from "../style/StyleRegistry";
-import { mergeStyle, type CellStylePatch } from "../style/styleKey";
-import { assertValidNumFmt } from "../style/formatCellText";
-import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types";
-import { participantOf, type CellRecordWrite } from "./CellRecordWrite";
+import type { CellRange } from "../types.js";
+import type { Patch } from "../types.js";
+import type { SheetModel } from "../sheet/SheetModel.js";
+import type { PreparedSheetMutation } from "../sheet/SheetTransaction.js";
+import type { CellRecord } from "../sheet/types.js";
+import type { StyleRegistry } from "../style/StyleRegistry.js";
+import { mergeStyle, type CellStylePatch } from "../style/styleKey.js";
+import { assertValidNumFmt } from "../style/formatCellText.js";
+import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types.js";
+import { participantOf, type CellRecordWrite } from "./CellRecordWrite.js";
 
 /**
  * 给一片区域改样式（合并语义）。

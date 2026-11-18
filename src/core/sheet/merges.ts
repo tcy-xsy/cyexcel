@@ -1,6 +1,6 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { CellRange } from "../types";
-import type { CellValue } from "./types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { CellRange } from "../types.js";
+import type { CellValue } from "./types.js";
 
 /**
  * 合并区几何搬移的纯函数集合（设计稿 §0.2/§2/§3）。这个文件只做几何/数组运算，

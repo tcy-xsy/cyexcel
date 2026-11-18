@@ -1,5 +1,5 @@
-import type { Canvas2DLike } from "./Canvas2DLike";
-import { CELL_LINE_HEIGHT, CELL_PADDING } from "./theme";
+import type { Canvas2DLike } from "./Canvas2DLike.js";
+import { CELL_LINE_HEIGHT, CELL_PADDING } from "./theme.js";
 
 /**
  * Greedy width-first line wrap: breaks preferentially at whitespace, and

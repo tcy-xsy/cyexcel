@@ -1,11 +1,11 @@
-import type { SceneSnapshot } from "../scene";
-import type { CellRange } from "../types";
-import type { CellEditor, CellEditorFactory } from "./CellEditor";
-import { createTextCellEditor } from "./TextCellEditor";
-import type { CellValue } from "../sheet/types";
-import { ACCEPT, type EditValidationOutcome, type ValidationPresenter } from "./editValidation";
-import { createDomValidationPresenter } from "./ValidationDialog";
-import { intersectRect } from "./visibleCellRect";
+import type { SceneSnapshot } from "../scene/index.js";
+import type { CellRange } from "../types.js";
+import type { CellEditor, CellEditorFactory } from "./CellEditor.js";
+import { createTextCellEditor } from "./TextCellEditor.js";
+import type { CellValue } from "../sheet/types.js";
+import { ACCEPT, type EditValidationOutcome, type ValidationPresenter } from "./editValidation.js";
+import { createDomValidationPresenter } from "./ValidationDialog.js";
+import { intersectRect } from "./visibleCellRect.js";
 
 export interface EditorManagerOptions {
   /** DOM node editors mount into; must already be connected to the document. */

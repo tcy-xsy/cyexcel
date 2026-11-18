@@ -61,11 +61,13 @@ test("boolean column (explicit createEditor): checkbox reflects the value and to
   expect(await getCell(page, 0, 0)).toBe(false);
 });
 
-test("date column (explicit createEditor): native date input shows YYYY-MM-DD and commits a real Date", async ({
+test("date column (explicit createEditor): native date input shows YYYY-MM-DD and commits an Excel serial number", async ({
   page
 }) => {
   await gotoFixture(page);
   const box = await getContentCanvasBox(page);
+
+  expect(await getCell(page, 0, 1)).toBe(46023); // 2026-01-01
 
   await page.mouse.dblclick(box.x + COLUMN_X.joinedAt, box.y + ROW_Y.row0);
   const dateInput = page.locator("#app input[type=date]");
@@ -75,11 +77,11 @@ test("date column (explicit createEditor): native date input shows YYYY-MM-DD an
   await page.keyboard.press("Enter");
   await expect(page.locator("#app input[type=date]")).toHaveCount(0);
 
-  const isoDate = await page.evaluate(() => {
-    const value = (window as unknown as FixtureWindow).__sheet?.getCell(0, 1);
-    return value instanceof Date ? value.toISOString().slice(0, 10) : null;
-  });
-  expect(isoDate).toBe("2026-03-15");
+  expect(await getCell(page, 0, 1)).toBe(46096); // 2026-03-15
+
+  await page.mouse.dblclick(box.x + COLUMN_X.joinedAt, box.y + ROW_Y.row0);
+  await expect(dateInput).toHaveValue("2026-03-15");
+  await page.keyboard.press("Escape");
 });
 
 test("select column (explicit createEditor): dropdown lists the configured options and preselects the current value", async ({
@@ -120,46 +122,51 @@ test("select column: a value outside the configured options round-trips instead 
   expect(await getCell(page, 1, 2)).toBe("unknown-status");
 });
 
-test("array column (no createEditor — default text editor): open-and-commit-unchanged round-trips instead of blanking the cell", async ({
+test("text column with a serialized array: the default editor preserves the stored string on unchanged commit", async ({
   page
 }) => {
   await gotoFixture(page);
   const box = await getContentCanvasBox(page);
 
   const before = await getCell(page, 0, 3);
-  expect(before).toEqual(["tag-0", "group-0"]);
+  expect(before).toBe('["tag-0","group-0"]');
 
   await page.mouse.dblclick(box.x + COLUMN_X.tags, box.y + ROW_Y.row0);
   const input = page.locator("#app input[type=text]");
-  await expect(input).toHaveValue(JSON.stringify(before)); // not "tag-0,group-0" or "[object Object]"
+  await expect(input).toHaveValue('["tag-0","group-0"]');
 
   await page.keyboard.press("Enter");
   await expect(input).toHaveCount(0);
-  expect(await getCell(page, 0, 3)).toEqual(before);
+  expect(await getCell(page, 0, 3)).toBe(before);
 });
 
-test("json column (explicit createEditor + validate): malformed JSON is rejected on commit, valid JSON round-trips", async ({
+test("text column with a JSON textarea editor: malformed JSON is rejected and valid JSON is stored as text", async ({
   page
 }) => {
   await gotoFixture(page);
   const box = await getContentCanvasBox(page);
 
   const before = await getCell(page, 0, 4);
+  expect(before).toBe('{"id":0,"note":"row 0"}');
 
   await page.mouse.dblclick(box.x + COLUMN_X.meta, box.y + ROW_Y.row0);
   const textarea = page.locator("#app textarea");
-  await expect(textarea).toBeVisible();
+  await expect(textarea).toHaveValue('{"id":0,"note":"row 0"}');
   await textarea.fill("not json");
   await page.keyboard.press("Enter");
 
   // validate() rejects it — the editor must still be open, value untouched.
   await expect(page.locator("#app textarea")).toBeVisible();
-  expect(await getCell(page, 0, 4)).toEqual(before);
+  expect(await getCell(page, 0, 4)).toBe(before);
 
   await textarea.fill('{"id":0,"note":"changed"}');
   await page.keyboard.press("Enter");
   await expect(page.locator("#app textarea")).toHaveCount(0);
-  expect(await getCell(page, 0, 4)).toEqual({ id: 0, note: "changed" });
+  expect(await getCell(page, 0, 4)).toBe('{"id":0,"note":"changed"}');
+
+  await page.mouse.dblclick(box.x + COLUMN_X.meta, box.y + ROW_Y.row0);
+  await expect(textarea).toHaveValue('{"id":0,"note":"changed"}');
+  await page.keyboard.press("Escape");
 });
 
 /**

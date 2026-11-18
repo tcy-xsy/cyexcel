@@ -1,6 +1,6 @@
-import { createChangeSet } from "../data/changes";
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { RevisionGate, type ModelRevision } from "../model";
+import { createChangeSet } from "../data/changes.js";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import { RevisionGate, type ModelRevision } from "../model/index.js";
 import type {
   CommitReceipt,
   Mutation,
@@ -10,7 +10,7 @@ import type {
   MutationPlanningResources,
   PreparedMutationParticipant,
   PreparedTransaction
-} from "./types";
+} from "./types.js";
 
 export class MutationCoordinator {
   readonly #gate: RevisionGate;

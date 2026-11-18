@@ -28,7 +28,8 @@
         createDateCellEditor,
         createSelectCellEditor,
         createTextAreaCellEditor,
-        rowsToWorkbookSnapshot
+        rowsToWorkbookSnapshot,
+        serialFromISODate
       } from "/src/core/index.ts";
 
       const container = document.getElementById("app");
@@ -67,25 +68,22 @@
           options: STATUS_OPTIONS,
           createEditor: (context) => createSelectCellEditor(context.column.options ?? [])
         },
-        // Deliberately does NOT opt into any editor — stays on the default
-        // text editor, exercising only the parse()/serialize() round-trip
-        // fix for the "array" type.
-        { width: 180, type: "array" },
-        // Explicitly opts into a multi-line editor with JSON syntax
-        // validation on commit.
+        // Structured values are stored as text; this column uses the default editor.
+        { width: 180, type: "text" },
+        // JSON syntax validation belongs to the optional multi-line editor.
         {
           width: 200,
-          type: "json",
+          type: "text",
           createEditor: () => createTextAreaCellEditor({ validate: validateJson })
         }
       ];
 
       const data = Array.from({ length: 10 }, (_unused, index) => ({
         active: index % 2 === 0,
-        joinedAt: new Date(Date.UTC(2026, 0, 1 + index)),
+        joinedAt: serialFromISODate(`2026-01-${String(1 + index).padStart(2, "0")}`),
         status: STATUS_OPTIONS[index % STATUS_OPTIONS.length].value,
-        tags: [`tag-${index}`, `group-${index % 3}`],
-        meta: { id: index, note: `row ${index}` }
+        tags: JSON.stringify([`tag-${index}`, `group-${index % 3}`]),
+        meta: JSON.stringify({ id: index, note: `row ${index}` })
       }));
 
       const sheet = new CyExcelCore(container, {

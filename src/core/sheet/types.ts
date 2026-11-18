@@ -1,6 +1,6 @@
-import type { CellRange } from "../types";
-import type { CellStyle } from "../style/types";
-import type { DataValidationRule } from "./validations";
+import type { CellRange } from "../types.js";
+import type { CellStyle } from "../style/types.js";
+import type { DataValidationRule } from "./validations.js";
 
 /**
  * # 别名规则（模块级，一条规则推出四条形态）

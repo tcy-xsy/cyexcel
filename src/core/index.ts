@@ -17,13 +17,13 @@ export {
   type FilterState,
   type SearchMatch,
   type SearchOptions
-} from "./CyExcelCore";
+} from "./CyExcelCore.js";
 
-export { CyExcelError, CyExcelErrorCode } from "./errors";
+export { CyExcelError, CyExcelErrorCode } from "./errors.js";
 // 日期 = 序列号 + 日期格式（同 Excel/xlsx），宿主要 Date 或 ISO 串就用这几个转。
-export { fromSerial, serialFromISODate, serialToISODate, toSerial } from "./style/dateSerial";
+export { fromSerial, serialFromISODate, serialToISODate, toSerial } from "./style/dateSerial.js";
 
-export type { CellRange, Command, Disposer } from "./types";
+export type { CellRange, Command, Disposer } from "./types.js";
 
 /**
  * 存储层的公开面：模型、快照与导入器。
@@ -42,11 +42,11 @@ export {
   type RowsToWorkbookSnapshotOptions,
   type SheetSnapshot,
   type WorkbookSnapshot
-} from "./sheet";
+} from "./sheet/index.js";
 export type {
   ChangeSet,
   SemanticChange
-} from "./data";
+} from "./data/index.js";
 export type {
   CustomValidatorContext,
   CustomValidatorFn,
@@ -57,9 +57,9 @@ export type {
   ValidationErrorStyle,
   ValidationOperator,
   DataValidationResult
-} from "./sheet/validations";
-export type { ModelRevision } from "./model";
-export type { TransactionReadView } from "./mutations";
+} from "./sheet/validations.js";
+export type { ModelRevision } from "./model/index.js";
+export type { TransactionReadView } from "./mutations/index.js";
 
 // Frozen command intents are observable from command hooks. Planning,
 // mutation creation, execution and history remain owned by CyExcelCore.
@@ -110,7 +110,7 @@ export {
   type BeforeTransactionCommitContext,
   type BeforeRowsChangeContext,
   type BeforeColumnsChangeContext
-} from "./commands";
+} from "./commands/index.js";
 
 // Immutable geometry and selection published by CyExcelCore.
 export {
@@ -140,18 +140,18 @@ export {
   type ScenePaneId,
   type SceneAxisBehavior,
   type SceneTranslation
-} from "./scene";
+} from "./scene/index.js";
 export type {
   CellRect,
   IndexRange,
   ViewportState
-} from "./layout";
+} from "./layout/index.js";
 export type {
   SelectionKind,
   CellPosition,
   SelectionBounds,
   SelectionSnapshot
-} from "./interaction";
+} from "./interaction/index.js";
 
 // Sorting primitives, so a caller can build its own sort (a multi-column one,
 // say) on the same permutation contract `sortByColumn()` commits.
@@ -160,10 +160,10 @@ export {
   createDefaultSortCompare,
   nextSortDirection,
   type SortRequest
-} from "./sort";
+} from "./sort/index.js";
 
 // User-facing column, cell, header and editor extension contracts.
-export type { Canvas2DLike } from "./render";
+export type { Canvas2DLike } from "./render/index.js";
 export {
   type CellType,
   type CellTypeDefinition,
@@ -188,19 +188,19 @@ export {
   type DomHeaderRendererFactory,
   type HeaderDefinition,
   type ColumnClipboardPolicy
-} from "./cells";
+} from "./cells/index.js";
 export {
   detectLinkUrl,
   createImageCellRenderer,
   type ImageCellRendererOptions
-} from "./cells";
-export { ImageCache, sharedImageCache, type ImageCacheEntry } from "./render";
+} from "./cells/index.js";
+export { ImageCache, sharedImageCache, type ImageCacheEntry } from "./render/index.js";
 export {
   defaultHeaderHitTest,
   DEFAULT_HEADER_SORT_ZONE_WIDTH,
   DEFAULT_HEADER_SORT_ZONE_MIN_WIDTH,
   type RuntimeHeader
-} from "./headers";
+} from "./headers/index.js";
 export {
   createTextCellEditor,
   createBooleanCellEditor,
@@ -213,7 +213,7 @@ export {
   type ValidationResult,
   type SelectCellEditorOption,
   type TextAreaCellEditorOptions
-} from "./editors";
+} from "./editors/index.js";
 
 export type {
   CopyMode,
@@ -223,7 +223,7 @@ export type {
   ClipboardCopyResult,
   ClipboardCopyOptions,
   ClipboardPasteOptions
-} from "./clipboard";
+} from "./clipboard/index.js";
 
 // Extension services are exposed by CyExcelCore getters. Their classes are
 // type-only here so the public barrel does not advertise standalone mutable
@@ -232,8 +232,8 @@ export type {
   HookManager,
   CancellableContext,
   HookHandlerMeta
-} from "./hooks";
-export type { EventBus } from "./events";
+} from "./hooks/index.js";
+export type { EventBus } from "./events/index.js";
 export {
   createBasicContextMenuPlugin,
   type SheetMenuAction,
@@ -245,7 +245,7 @@ export {
   type ContextMenuItem,
   type ContextMenuProvider,
   type ContextMenuProviderMeta
-} from "./menu";
-export type { ShortcutHandler } from "./shortcuts";
-export type { CyExcelPlugin, PluginContext } from "./plugins";
-export type { FormulaEngine, FormulaEngineFactory, FormulaModelAccess, FormulaCell } from "./formula/types";
+} from "./menu/index.js";
+export type { ShortcutHandler } from "./shortcuts/index.js";
+export type { CyExcelPlugin, PluginContext } from "./plugins/index.js";
+export type { FormulaEngine, FormulaEngineFactory, FormulaModelAccess, FormulaCell } from "./formula/types.js";

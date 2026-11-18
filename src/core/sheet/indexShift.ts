@@ -1,4 +1,4 @@
-import { ROW_PLAN_HOLE } from "./rowPlan";
+import { ROW_PLAN_HOLE } from "./rowPlan.js";
 
 /**
  * 按行计划重键一张按行下标索引的映射（`rowData` 就是这样一张表）。

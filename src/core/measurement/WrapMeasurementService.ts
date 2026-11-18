@@ -1,10 +1,10 @@
-import type { RuntimeColumn } from "../cells";
-import type { SemanticChange } from "../data";
-import type { RowHeightProvenance } from "../layout";
-import { computeWrappedCellHeight, type Canvas2DLike } from "../render";
-import { CELL_PADDING } from "../render/theme";
-import type { SceneSnapshot } from "../scene";
-import type { CellValue } from "../sheet/types";
+import type { RuntimeColumn } from "../cells/index.js";
+import type { SemanticChange } from "../data/index.js";
+import type { RowHeightProvenance } from "../layout/index.js";
+import { computeWrappedCellHeight, type Canvas2DLike } from "../render/index.js";
+import { CELL_PADDING } from "../render/theme.js";
+import type { SceneSnapshot } from "../scene/index.js";
+import type { CellValue } from "../sheet/types.js";
 
 /**
  * Everything the service needs to know about the authoritative state a

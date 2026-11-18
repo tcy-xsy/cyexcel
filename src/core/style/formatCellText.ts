@@ -1,6 +1,6 @@
 import { format as formatNumber, isValidFormat } from "numfmt";
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { CellStyle } from "./types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { CellStyle } from "./types.js";
 
 /**
  * 校验 Excel 数字格式 pattern，非法就抛——**不静默降级成"当文本画出来"**

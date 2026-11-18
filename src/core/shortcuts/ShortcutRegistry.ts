@@ -1,5 +1,5 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { Disposer } from "../types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { Disposer } from "../types.js";
 
 /** Structurally compatible with a real KeyboardEvent — CyExcelCore passes one directly; unit tests pass a plain object. */
 export interface ShortcutMatchInput {

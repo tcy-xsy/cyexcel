@@ -1,18 +1,18 @@
-import type { SceneSnapshot, SurfaceSetSnapshot, SurfacePoint } from "../../scene";
-import { clientPoint } from "../../scene";
+import type { SceneSnapshot, SurfaceSetSnapshot, SurfacePoint } from "../../scene/index.js";
+import { clientPoint } from "../../scene/index.js";
 import type {
   HeaderResizeController,
   HeaderResizeIntent,
   HeaderResizePreview
-} from "../HeaderResizeController";
-import type { HeaderSelectionController } from "../HeaderSelectionController";
-import type { RowReorderController, RowReorderIntent } from "../RowReorderController";
-import type { SelectionModel } from "../SelectionModel";
+} from "../HeaderResizeController.js";
+import type { HeaderSelectionController } from "../HeaderSelectionController.js";
+import type { RowReorderController, RowReorderIntent } from "../RowReorderController.js";
+import type { SelectionModel } from "../SelectionModel.js";
 import {
   PointerInteractionSession,
   type PointerCaptureTarget,
   type PointerInteractionSessionOptions
-} from "./PointerInteractionSession";
+} from "./PointerInteractionSession.js";
 
 /** Distance from a row-header edge at which auto-scroll starts, in CSS px. */
 const AUTO_SCROLL_EDGE_PX = 32;

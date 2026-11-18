@@ -4,4 +4,4 @@ export {
   type ParsedShortcut,
   type ShortcutHandler,
   type ShortcutMatchInput
-} from "./ShortcutRegistry";
+} from "./ShortcutRegistry.js";

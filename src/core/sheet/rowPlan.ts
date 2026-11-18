@@ -1,4 +1,4 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
 
 /**
  * 行计划里表示"这是一行新的空行"的标记。

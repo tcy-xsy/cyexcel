@@ -3,8 +3,8 @@ export {
   type LifetimeDisposer,
   type LifetimeScopeOptions,
   type LifetimeState
-} from "./LifetimeScope";
+} from "./LifetimeScope.js";
 export {
   InitializationRollback,
   type InitializationDisposer
-} from "./InitializationRollback";
+} from "./InitializationRollback.js";

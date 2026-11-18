@@ -1,8 +1,8 @@
-import type { CellRect } from "../layout";
-import { declareDomPointerOwnership } from "../interaction/domPointerOwnership";
-import type { SceneColumnHeaderFragment, SceneSnapshot } from "../scene";
-import type { HeaderManager } from "./HeaderManager";
-import type { DomHeaderContext, DomHeaderRenderer, DomHeaderRendererFactory, HeaderState } from "./types";
+import type { CellRect } from "../layout/index.js";
+import { declareDomPointerOwnership } from "../interaction/domPointerOwnership.js";
+import type { SceneColumnHeaderFragment, SceneSnapshot } from "../scene/index.js";
+import type { HeaderManager } from "./HeaderManager.js";
+import type { DomHeaderContext, DomHeaderRenderer, DomHeaderRendererFactory, HeaderState } from "./types.js";
 
 export interface DomHeaderManagerOptions {
   /** Overlay element DOM-rendered headers mount into; must already be connected to the document. */

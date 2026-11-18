@@ -1,4 +1,4 @@
-import { columnIndexToLetter } from "../headers";
+import { columnIndexToLetter } from "../headers/index.js";
 
 /**
  * A1 记法与 `(row, column)` 的互转。

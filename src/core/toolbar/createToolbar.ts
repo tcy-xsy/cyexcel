@@ -1,11 +1,11 @@
-import type { CyExcelCore } from "../CyExcelCore";
-import { defaultToolbarSchema } from "./schema";
-import { resolveItemState } from "./state";
-import * as icons from "./icons";
-import { TOOLBAR_GROUPS, type ToolbarContext, type ToolbarItem, type ToolbarOptions } from "./types";
-import * as styles from "./styles";
-import { el } from "./dom";
-import { createDialog, type DialogHandle } from "./createDialog";
+import type { CyExcelCore } from "../CyExcelCore.js";
+import { defaultToolbarSchema } from "./schema.js";
+import { resolveItemState } from "./state.js";
+import * as icons from "./icons.js";
+import { TOOLBAR_GROUPS, type ToolbarContext, type ToolbarItem, type ToolbarOptions } from "./types.js";
+import * as styles from "./styles.js";
+import { el } from "./dom.js";
+import { createDialog, type DialogHandle } from "./createDialog.js";
 
 export interface ToolbarHandle {
   /** 立刻重算一遍所有项的状态。事件驱动之外的手动出口，宿主一般用不到。 */

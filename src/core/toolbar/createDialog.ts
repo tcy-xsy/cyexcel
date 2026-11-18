@@ -1,5 +1,5 @@
-import { el } from "./dom";
-import * as styles from "./styles";
+import { el } from "./dom.js";
+import * as styles from "./styles.js";
 
 /**
  * 非模态、可拖动的对话框——Excel 的「查找和替换」那一类。

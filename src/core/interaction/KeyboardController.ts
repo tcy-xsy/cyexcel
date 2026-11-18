@@ -1,5 +1,5 @@
-import type { CellRange, Disposer } from "../types";
-import type { SelectionModel, SelectionSnapshot } from "./SelectionModel";
+import type { CellRange, Disposer } from "../types.js";
+import type { SelectionModel, SelectionSnapshot } from "./SelectionModel.js";
 
 export interface KeyboardControllerOptions {
   readonly selection: SelectionModel;

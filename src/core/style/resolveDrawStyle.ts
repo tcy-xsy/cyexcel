@@ -4,8 +4,8 @@ import {
   DEFAULT_FONT_FAMILY,
   DEFAULT_FONT_SIZE,
   TEXT_COLOR
-} from "../render/theme";
-import type { BorderSide, CellStyle } from "./types";
+} from "../render/theme.js";
+import type { BorderSide, CellStyle } from "./types.js";
 
 /**
  * 一格绘制真正要用的参数。字段都是"画之前直接赋给 ctx"的形态——`font` 已经是拼好的

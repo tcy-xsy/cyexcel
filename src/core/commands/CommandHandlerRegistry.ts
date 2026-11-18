@@ -1,5 +1,5 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { Command, CommandContext, Disposer } from "../types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { Command, CommandContext, Disposer } from "../types.js";
 
 export interface CommandHandler<TCommand extends Command = Command> {
   readonly type: TCommand["type"];

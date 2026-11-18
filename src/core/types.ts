@@ -1,4 +1,4 @@
-import type { Mutation, TransactionReadView } from "./mutations";
+import type { Mutation, TransactionReadView } from "./mutations/index.js";
 
 export interface CellRange {
   readonly startRow: number;

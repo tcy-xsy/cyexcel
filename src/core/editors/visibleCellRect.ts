@@ -1,6 +1,6 @@
-import type { CellRect } from "../layout";
-import type { SceneSnapshot } from "../scene";
-import type { CellRange } from "../types";
+import type { CellRect } from "../layout/index.js";
+import type { SceneSnapshot } from "../scene/index.js";
+import type { CellRange } from "../types.js";
 
 export function intersectRect(rect: CellRect, clipRect: CellRect): CellRect | null {
   const left = Math.max(rect.x, clipRect.x);

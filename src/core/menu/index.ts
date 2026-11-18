@@ -1,7 +1,7 @@
-export { classifyContextMenuTarget } from "./hitTest";
-export { ContextMenuService, type ContextMenuServiceOptions } from "./ContextMenuService";
-export { DefaultMenuRenderer } from "./DefaultMenuRenderer";
-export { createBasicContextMenuPlugin } from "./basicMenuPlugin";
+export { classifyContextMenuTarget } from "./hitTest.js";
+export { ContextMenuService, type ContextMenuServiceOptions } from "./ContextMenuService.js";
+export { DefaultMenuRenderer } from "./DefaultMenuRenderer.js";
+export { createBasicContextMenuPlugin } from "./basicMenuPlugin.js";
 export type {
   SheetMenuAction,
   SheetMenuState,
@@ -14,4 +14,4 @@ export type {
   ContextMenuRenderContext,
   ContextMenuRenderer,
   ContextMenuRendererFactory
-} from "./types";
+} from "./types.js";

@@ -1,9 +1,9 @@
-import type { CellRect } from "../layout";
-import type { SceneSnapshot } from "../scene";
-import type { CellValue } from "../sheet/types";
-import type { CellRange } from "../types";
-import { describeDropdownItems, type DataValidationRule, type ValidationErrorStyle } from "../sheet/validations";
-import { visibleRectForRange } from "./visibleCellRect";
+import type { CellRect } from "../layout/index.js";
+import type { SceneSnapshot } from "../scene/index.js";
+import type { CellValue } from "../sheet/types.js";
+import type { CellRange } from "../types.js";
+import { describeDropdownItems, type DataValidationRule, type ValidationErrorStyle } from "../sheet/validations.js";
+import { visibleRectForRange } from "./visibleCellRect.js";
 
 export interface ValidationHintsOptions {
   /** 编辑层。提示挂在这里而不是 `document.body`，理由同 `ValidationBubble`。 */

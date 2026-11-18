@@ -1,4 +1,4 @@
-import type { ColumnMeta } from "../sheet/types";
+import type { ColumnMeta } from "../sheet/types.js";
 
 /**
  * 列宽权威（`columnData`）与布局几何之间的那层翻译——`rowHeightMeta.ts` 的列轴对应物。

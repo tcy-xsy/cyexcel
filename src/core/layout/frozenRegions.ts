@@ -1,4 +1,4 @@
-import type { IndexRange } from "./LayoutEngine";
+import type { IndexRange } from "./LayoutEngine.js";
 
 export interface AxisSplit {
   /** The part of `range` that falls inside the frozen band ([0, frozenCount)); `count` is 0 if none does. */

@@ -1,4 +1,4 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
 
 /**
  * 坐标空间是派生量：`maxOccupied + 1 + blank`。

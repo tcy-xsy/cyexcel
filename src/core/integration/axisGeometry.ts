@@ -1,6 +1,6 @@
-import { geometricColumnWidthOf } from "../mutations/columnWidthMeta";
-import type { SheetModel } from "../sheet/SheetModel";
-import type { ColumnMeta } from "../sheet/types";
+import { geometricColumnWidthOf } from "../mutations/columnWidthMeta.js";
+import type { SheetModel } from "../sheet/SheetModel.js";
+import type { ColumnMeta } from "../sheet/types.js";
 
 /**
  * 构造那一刻的行高/列宽从哪里来——模型与配置的合流点。

@@ -3,12 +3,12 @@ import {
   rowsToWorkbookSnapshot,
   type CyExcelCoreOptions,
   type TopWidgetFactory
-} from "./core";
-import { DEFAULT_BLANK_COLUMNS } from "./core/sheet";
-import { excelSourceFromSheet, exportWorkbookToExcel, formulaBarWidget, toolbarWidget } from "./core/toolbar";
-import type { ExcelExportOptions, ExcelSheetExportSource, ToolbarOptions } from "./core/toolbar";
-import { createFormulaEngine } from "./formula";
-import { WorkbookModel } from "./core/sheet/WorkbookModel";
+} from "./core/index.js";
+import { DEFAULT_BLANK_COLUMNS } from "./core/sheet/index.js";
+import { excelSourceFromSheet, exportWorkbookToExcel, formulaBarWidget, toolbarWidget } from "./core/toolbar/index.js";
+import type { ExcelExportOptions, ExcelSheetExportSource, ToolbarOptions } from "./core/toolbar/index.js";
+import { createFormulaEngine } from "./formula/index.js";
+import { WorkbookModel } from "./core/sheet/WorkbookModel.js";
 
 export interface WorkbookSheetOptions extends CyExcelCoreOptions {
   readonly name?: string;

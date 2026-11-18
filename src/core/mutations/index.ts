@@ -1,12 +1,12 @@
-export { MutationCoordinator } from "./MutationCoordinator";
-export { createStateMutation } from "./StateMutation";
-export { LayoutRootMutation, type LayoutRootAction } from "./LayoutRootMutation";
-export { RowHeightMutation, type RowHeightMutationUpdate } from "./RowHeightMutation";
+export { MutationCoordinator } from "./MutationCoordinator.js";
+export { createStateMutation } from "./StateMutation.js";
+export { LayoutRootMutation, type LayoutRootAction } from "./LayoutRootMutation.js";
+export { RowHeightMutation, type RowHeightMutationUpdate } from "./RowHeightMutation.js";
 export {
   StructureIntegrationMutation,
   type PreparedStructureIntegration,
   type StructureIntegrationOwner
-} from "./StructureIntegrationMutation";
+} from "./StructureIntegrationMutation.js";
 export type {
   Mutation,
   PreparedMutationParticipant,
@@ -19,4 +19,4 @@ export type {
   MutationPlanningResources,
   MutationCoordinatorState,
   StateMutationOptions
-} from "./types";
+} from "./types.js";

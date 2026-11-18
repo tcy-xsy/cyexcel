@@ -1,5 +1,5 @@
-import type { Disposer } from "../types";
-import type { ClientPoint, SurfaceId, SurfacePoint } from "../scene";
+import type { Disposer } from "../types.js";
+import type { ClientPoint, SurfaceId, SurfacePoint } from "../scene/index.js";
 
 /** The only surface capability InputRouter consumes from an InteractionFrame. */
 export interface InputRouterSurfaceSet {

@@ -1,6 +1,6 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { ColumnShift } from "./columnShift";
-import type { IndexedTable } from "./IndexedTable";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { ColumnShift } from "./columnShift.js";
+import type { IndexedTable } from "./IndexedTable.js";
 
 /**
  * 一张表的全部按**行下标或列下标**索引的侧表。

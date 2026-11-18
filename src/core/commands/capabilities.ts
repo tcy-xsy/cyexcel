@@ -1,14 +1,14 @@
-import type { ColumnDefinition } from "../cells/types";
-import type { LayoutRootAction } from "../mutations/LayoutRootMutation";
-import type { Mutation } from "../mutations/types";
-import type { CellRange } from "../types";
-import type { CellStylePatch } from "../style/styleKey";
-import type { CellValue } from "../sheet/types";
-import type { DataValidationRule } from "../sheet/validations";
+import type { ColumnDefinition } from "../cells/types.js";
+import type { LayoutRootAction } from "../mutations/LayoutRootMutation.js";
+import type { Mutation } from "../mutations/types.js";
+import type { CellRange } from "../types.js";
+import type { CellStylePatch } from "../style/styleKey.js";
+import type { CellValue } from "../sheet/types.js";
+import type { DataValidationRule } from "../sheet/validations.js";
 import type {
   RowHeightCommandProvenance,
   SetRowHeightUpdate
-} from "./SetRowHeightsCommand";
+} from "./SetRowHeightsCommand.js";
 
 export interface DataCommandMutationFactory {
   createSetCell(row: number, column: number, value: CellValue | null | undefined): Mutation;

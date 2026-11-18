@@ -1,5 +1,5 @@
-import type { Patch } from "../types";
-import type { SheetMutation } from "./mutation";
+import type { Patch } from "../types.js";
+import type { SheetMutation } from "./mutation.js";
 
 /**
  * 一次变更**之后**的坐标空间，`row-layout` 那条补丁的 `range` 要它来定下界。

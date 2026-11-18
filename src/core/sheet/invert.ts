@@ -1,12 +1,12 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { assertValidRowOrder, invertRowOrder } from "../layout/rowOrder";
-import { validateAxisChange } from "../layout/structuralChange";
-import type { CellRange } from "../types";
-import { assertRestoreTablesAreWritable } from "./apply";
-import { relocateMergesForMove } from "./merges";
-import type { ColumnCells, RowCells, SheetMutation, SideTableEntries } from "./mutation";
-import type { SheetModel } from "./SheetModel";
-import type { CellRecord, ColumnMeta, RowMeta } from "./types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import { assertValidRowOrder, invertRowOrder } from "../layout/rowOrder.js";
+import { validateAxisChange } from "../layout/structuralChange.js";
+import type { CellRange } from "../types.js";
+import { assertRestoreTablesAreWritable } from "./apply.js";
+import { relocateMergesForMove } from "./merges.js";
+import type { ColumnCells, RowCells, SheetMutation, SideTableEntries } from "./mutation.js";
+import type { SheetModel } from "./SheetModel.js";
+import type { CellRecord, ColumnMeta, RowMeta } from "./types.js";
 
 /**
  * 求一条变更的逆变更。

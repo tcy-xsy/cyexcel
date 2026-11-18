@@ -4,9 +4,9 @@ import {
   HookManager,
   createCancellableContext,
   type HookRegistry
-} from "../hooks";
-import type { Disposer } from "../types";
-import { DefaultMenuRenderer } from "./DefaultMenuRenderer";
+} from "../hooks/index.js";
+import type { Disposer } from "../types.js";
+import { DefaultMenuRenderer } from "./DefaultMenuRenderer.js";
 import type {
   ContextMenuContext,
   ContextMenuItem,
@@ -15,7 +15,7 @@ import type {
   ContextMenuRenderContext,
   ContextMenuRenderer,
   ContextMenuRendererFactory
-} from "./types";
+} from "./types.js";
 
 /** Used when no shared HookManager is injected (see CommandManager/ColumnManager's identical fallback pattern). */
 const STANDALONE_HOOK_REGISTRY: HookRegistry = {

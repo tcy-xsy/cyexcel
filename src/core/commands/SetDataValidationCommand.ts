@@ -1,5 +1,5 @@
-import type { Command } from "../types";
-import type { DataValidationRule } from "../sheet/validations";
+import type { Command } from "../types.js";
+import type { DataValidationRule } from "../sheet/validations.js";
 
 export interface SetDataValidationCommandParams {
   readonly rule: DataValidationRule;

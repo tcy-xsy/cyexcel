@@ -1,4 +1,4 @@
-import type { CellRange } from "../core/types";
+import type { CellRange } from "../core/types.js";
 
 export interface DependencyRange extends CellRange { readonly key: string }
 interface Node {

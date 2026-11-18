@@ -1,6 +1,6 @@
-import { CyExcelCore, type TopWidgetFactory, type CyExcelCoreOptions } from "./core";
-import { formulaBarWidget, toolbarWidget } from "./core/toolbar";
-import type { ToolbarOptions } from "./core/toolbar";
+import { CyExcelCore, type TopWidgetFactory, type CyExcelCoreOptions } from "./core/index.js";
+import { formulaBarWidget, toolbarWidget } from "./core/toolbar/index.js";
+import type { ToolbarOptions } from "./core/toolbar/index.js";
 
 export interface CreateSheetOptions extends CyExcelCoreOptions {
   /** 工具栏。`false` 关掉，对象则作为 `createToolbar` 的选项（换 schema、加项）。 */

@@ -1,8 +1,8 @@
 import FormulaParser from "fast-formula-parser";
-import type { CellValue } from "../core/sheet/types";
-import type { FormulaCell, FormulaEngine, FormulaEngineFactory, FormulaModelAccess } from "../core/formula/types";
-import { DependencyIndex } from "./DependencyIndex";
-import type { DependencyRange } from "./DependencyIndex";
+import type { CellValue } from "../core/sheet/types.js";
+import type { FormulaCell, FormulaEngine, FormulaEngineFactory, FormulaModelAccess } from "../core/formula/types.js";
+import { DependencyIndex } from "./DependencyIndex.js";
+import type { DependencyRange } from "./DependencyIndex.js";
 
 export const SUPPORTED_FORMULA_FUNCTIONS = Object.freeze([
   "SUM", "AVERAGE", "MIN", "MAX", "COUNT", "COUNTIF", "SUMIF", "IF", "IFERROR", "ROUND", "ABS", "CONCATENATE"

@@ -1,6 +1,6 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { remapColumnIndex, remapRowIndex, type ColumnStructureChange, type RowStructureChange } from "../layout";
-import type { CellRange } from "../types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import { remapColumnIndex, remapRowIndex, type ColumnStructureChange, type RowStructureChange } from "../layout/index.js";
+import type { CellRange } from "../types.js";
 
 export type SelectionKind = "cell" | "row" | "column" | "all";
 

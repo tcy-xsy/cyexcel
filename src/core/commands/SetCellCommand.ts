@@ -1,5 +1,5 @@
-import type { CellValue } from "../sheet/types";
-import type { Command } from "../types";
+import type { CellValue } from "../sheet/types.js";
+import type { Command } from "../types.js";
 
 export interface SetCellCommandParams {
   readonly row: number;

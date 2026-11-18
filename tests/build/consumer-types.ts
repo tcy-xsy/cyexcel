@@ -1,18 +1,30 @@
 /**
  * Type-checked (never executed, never imported by a test runner) against
- * `tsconfig.consumer.json`'s `paths`, which map the bare `"cyexcel"`/
- * `"cyexcel/core"`/`"cyexcel/register"` specifiers to the actual built
- * `dist/types/**\/*.d.ts` output — the same specifiers a real npm consumer
- * would use, resolved against the same files `package.json`'s `exports`
- * map points at. If this fails to compile, the shipped `.d.ts` files don't
+ * the package's own `exports` map, resolving the built declarations just
+ * as an npm consumer would. If this fails to compile, the shipped `.d.ts` files don't
  * actually match what `exports`/the built JS provide. Same
  * `@ts-expect-error`-assertion style as `tests/types/core-types.ts`, which
  * checks the source (not built) types instead.
  */
-import { CyExcelCore, DEFAULT_CYEXCEL_TAG_NAME, rowsToWorkbookSnapshot } from "cyexcel";
+import { CyExcelCore, createSheet, DEFAULT_CYEXCEL_TAG_NAME, rowsToWorkbookSnapshot } from "cyexcel";
 import type { CyExcelCoreOptions } from "cyexcel";
 import * as CoreApi from "cyexcel/core";
 import { defineCyExcel } from "cyexcel/register";
+import { createFormulaEngine } from "cyexcel/formula";
+import { createToolbar } from "cyexcel/toolbar";
+
+// These must remain typed even when consumers enable skipLibCheck.
+// @ts-expect-error A sheet factory is not a symbol.
+const sheetFactorySymbol: symbol = createSheet;
+// @ts-expect-error A core factory is not a symbol.
+const coreFactorySymbol: symbol = CoreApi.createCyExcelCore;
+// @ts-expect-error A registration function is not a symbol.
+const registerSymbol: symbol = defineCyExcel;
+// @ts-expect-error A formula factory is not a symbol.
+const formulaFactorySymbol: symbol = createFormulaEngine;
+// @ts-expect-error A toolbar factory is not a symbol.
+const toolbarFactorySymbol: symbol = createToolbar;
+void [sheetFactorySymbol, coreFactorySymbol, registerSymbol, formulaFactorySymbol, toolbarFactorySymbol];
 
 // --- "cyexcel" re-exports the same CyExcelCore as "cyexcel/core" --------
 

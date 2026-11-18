@@ -1,14 +1,14 @@
-import type { ColumnDefinition as CyExcelColumnConfig } from "../cells";
-import type { ClipboardCopyOptions, ClipboardCopyResult, ClipboardPasteOptions } from "../clipboard";
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { EventBus } from "../events";
-import type { HookManager } from "../hooks";
-import { LifetimeScope } from "../lifecycle";
-import type { ContextMenuService } from "../menu";
-import type { SheetMenuCommands } from "../menu/types";
-import type { ShortcutHandler } from "../shortcuts";
-import type { Disposer } from "../types";
-import type { CyExcelPlugin, PluginContext } from "./types";
+import type { ColumnDefinition as CyExcelColumnConfig } from "../cells/index.js";
+import type { ClipboardCopyOptions, ClipboardCopyResult, ClipboardPasteOptions } from "../clipboard/index.js";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { EventBus } from "../events/index.js";
+import type { HookManager } from "../hooks/index.js";
+import { LifetimeScope } from "../lifecycle/index.js";
+import type { ContextMenuService } from "../menu/index.js";
+import type { SheetMenuCommands } from "../menu/types.js";
+import type { ShortcutHandler } from "../shortcuts/index.js";
+import type { Disposer } from "../types.js";
+import type { CyExcelPlugin, PluginContext } from "./types.js";
 
 export interface PluginManagerOptions {
   readonly sheetMenu?: SheetMenuCommands;

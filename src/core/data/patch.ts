@@ -1,4 +1,4 @@
-import type { Patch } from "../types";
+import type { Patch } from "../types.js";
 
 /**
  * Every patch variant whose identity fits in a short string. `row-reorder`

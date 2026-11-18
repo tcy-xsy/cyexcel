@@ -1,4 +1,4 @@
-import { encodeTsv } from "./tsv";
+import { encodeTsv } from "./tsv.js";
 
 /**
  * Narrow interface a real `Worker` satisfies — same "core logic depends on

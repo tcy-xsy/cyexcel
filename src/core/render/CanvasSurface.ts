@@ -1,4 +1,4 @@
-import { configureCanvasForDpr, getEffectiveDpr, type ResizableCanvas } from "./dprCanvas";
+import { configureCanvasForDpr, getEffectiveDpr, type ResizableCanvas } from "./dprCanvas.js";
 
 export interface CanvasTransformContext {
   setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;

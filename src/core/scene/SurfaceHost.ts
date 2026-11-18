@@ -1,4 +1,4 @@
-import type { SceneSurfaceId } from "./SceneSnapshot";
+import type { SceneSurfaceId } from "./SceneSnapshot.js";
 
 export type SurfaceId = SceneSurfaceId;
 

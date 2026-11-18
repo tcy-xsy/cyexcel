@@ -1,4 +1,4 @@
-import type { SceneSnapshot, SurfacePoint } from "../scene";
+import type { SceneSnapshot, SurfacePoint } from "../scene/index.js";
 
 export const HEADER_RESIZE_HANDLE_TOLERANCE = 4;
 export const ROW_RESIZE_GRIP_WIDTH = 12;

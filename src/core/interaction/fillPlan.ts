@@ -1,6 +1,6 @@
-import type { CellRange } from "../types";
-import { computeFillValues } from "./fillValues";
-import type { CellValue } from "../sheet/types";
+import type { CellRange } from "../types.js";
+import { computeFillValues } from "./fillValues.js";
+import type { CellValue } from "../sheet/types.js";
 
 export interface FillPlanSources {
   readonly getCell: (row: number, column: number) => CellValue | undefined;

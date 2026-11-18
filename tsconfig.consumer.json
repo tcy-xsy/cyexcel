@@ -12,12 +12,7 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": [],
-    "paths": {
-      "cyexcel": ["./dist/types/index.d.ts"],
-      "cyexcel/core": ["./dist/types/core/index.d.ts"],
-      "cyexcel/register": ["./dist/types/register.d.ts"]
-    }
+    "types": []
   },
   "include": ["tests/build/consumer-types.ts"]
 }

@@ -1,7 +1,7 @@
-import type { CellFormatContext, RuntimeColumn } from "../cells";
-import type { CellRange } from "../types";
-import type { CopyMode } from "./types";
-import type { CellValue } from "../sheet/types";
+import type { CellFormatContext, RuntimeColumn } from "../cells/index.js";
+import type { CellRange } from "../types.js";
+import type { CopyMode } from "./types.js";
+import type { CellValue } from "../sheet/types.js";
 
 export interface SerializeContext {
   readonly getCellValue: (row: number, column: number) => CellValue | undefined;

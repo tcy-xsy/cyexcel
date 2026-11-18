@@ -1,6 +1,6 @@
-import type { CellRect } from "../layout";
-import type { Canvas2DLike } from "../render";
-import type { SceneColumnHeaderFragment, SceneSnapshot } from "../scene";
+import type { CellRect } from "../layout/index.js";
+import type { Canvas2DLike } from "../render/index.js";
+import type { SceneColumnHeaderFragment, SceneSnapshot } from "../scene/index.js";
 import {
   FROZEN_SEPARATOR_THICKNESS,
   GRID_LINE_COLOR,
@@ -10,9 +10,9 @@ import {
   HEADER_SORT_INDICATOR_ACTIVE_COLOR,
   HEADER_SORT_INDICATOR_COLOR,
   TEXT_COLOR
-} from "../render/theme";
-import type { HeaderManager } from "./HeaderManager";
-import type { HeaderAction, HeaderRenderContext, HeaderState } from "./types";
+} from "../render/theme.js";
+import type { HeaderManager } from "./HeaderManager.js";
+import type { HeaderAction, HeaderRenderContext, HeaderState } from "./types.js";
 
 export interface HeaderCanvasRendererOptions {
   readonly ctx: Canvas2DLike;

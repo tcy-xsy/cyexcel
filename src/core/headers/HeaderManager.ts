@@ -1,7 +1,7 @@
-import type { ColumnDefinition } from "../cells";
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { columnIndexToLetter } from "./columnLetter";
-import type { RuntimeHeader } from "./types";
+import type { ColumnDefinition } from "../cells/index.js";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import { columnIndexToLetter } from "./columnLetter.js";
+import type { RuntimeHeader } from "./types.js";
 
 export interface HeaderManagerOptions {
   readonly columns: readonly ColumnDefinition[];

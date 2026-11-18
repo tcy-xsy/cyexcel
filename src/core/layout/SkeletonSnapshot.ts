@@ -1,7 +1,7 @@
-import type { CellRange } from "../types";
-import { ColumnAxisSnapshot } from "./ColumnAxisSnapshot";
-import type { CellRect, IndexRange, LayoutEngine, LayoutRoot } from "./LayoutEngine";
-import { RowMetrics } from "./RowMetrics";
+import type { CellRange } from "../types.js";
+import { ColumnAxisSnapshot } from "./ColumnAxisSnapshot.js";
+import type { CellRect, IndexRange, LayoutEngine, LayoutRoot } from "./LayoutEngine.js";
+import { RowMetrics } from "./RowMetrics.js";
 
 interface SkeletonSnapshotBaseOptions {
   readonly modelVersion: number;

@@ -1,7 +1,7 @@
-import { getRowBoundaryY } from "../interaction/RowReorderController";
-import type { CellRect } from "../layout";
-import type { Canvas2DLike } from "../render";
-import type { SceneRowHeaderFragment, SceneSnapshot } from "../scene";
+import { getRowBoundaryY } from "../interaction/RowReorderController.js";
+import type { CellRect } from "../layout/index.js";
+import type { Canvas2DLike } from "../render/index.js";
+import type { SceneRowHeaderFragment, SceneSnapshot } from "../scene/index.js";
 import {
   FROZEN_SEPARATOR_THICKNESS,
   GRID_LINE_COLOR,
@@ -11,7 +11,7 @@ import {
   ROW_REORDER_INDICATOR_COLOR,
   ROW_REORDER_INDICATOR_THICKNESS,
   TEXT_COLOR
-} from "../render/theme";
+} from "../render/theme.js";
 
 export interface RowHeaderCanvasRendererOptions {
   readonly ctx: Canvas2DLike;

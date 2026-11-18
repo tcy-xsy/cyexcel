@@ -1,6 +1,6 @@
-import type { Command } from "../types";
-import type { CellRange } from "../types";
-import type { CellStylePatch } from "../style/styleKey";
+import type { Command } from "../types.js";
+import type { CellRange } from "../types.js";
+import type { CellStylePatch } from "../style/styleKey.js";
 
 export interface SetStyleCommandParams {
   readonly range: CellRange;

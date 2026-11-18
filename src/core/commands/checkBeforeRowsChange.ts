@@ -1,5 +1,5 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { createCancellableContext, type CancellableContext, type HookManager } from "../hooks";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import { createCancellableContext, type CancellableContext, type HookManager } from "../hooks/index.js";
 
 export interface BeforeRowsChangeContext extends CancellableContext {
   readonly operation: "insert" | "delete" | "move";

@@ -1,6 +1,6 @@
-import type { RuntimeColumn } from "../cells";
-import type { CellRange } from "../types";
-import type { CopyPlan } from "./types";
+import type { RuntimeColumn } from "../cells/index.js";
+import type { CellRange } from "../types.js";
+import type { CopyPlan } from "./types.js";
 
 // Both estimateCellBytes() and the plan() loop below only ever look at a
 // bounded prefix of an array/object-valued cell — full-length inspection

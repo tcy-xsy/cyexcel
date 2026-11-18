@@ -1,6 +1,6 @@
-import { snapshotColumnDefinitions } from "../cells/columnSnapshot";
-import type { ColumnDefinition } from "../cells/types";
-import type { Command } from "../types";
+import { snapshotColumnDefinitions } from "../cells/columnSnapshot.js";
+import type { ColumnDefinition } from "../cells/types.js";
+import type { Command } from "../types.js";
 
 export interface InsertColumnsCommandParams {
   readonly start: number;

@@ -1,6 +1,6 @@
-import type { SceneSnapshot } from "../scene";
-import { DRAG_THRESHOLD_PX, resolveRow } from "./PointerController";
-import type { SelectionSnapshot } from "./SelectionModel";
+import type { SceneSnapshot } from "../scene/index.js";
+import { DRAG_THRESHOLD_PX, resolveRow } from "./PointerController.js";
+import type { SelectionSnapshot } from "./SelectionModel.js";
 
 export interface RowReorderControllerOptions {
   /** Fired on every indicator change during a drag (the "insert before this row" boundary), and with `null` when the drag ends, is cancelled, or has no valid target. */

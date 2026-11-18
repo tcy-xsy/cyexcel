@@ -1,6 +1,6 @@
-import type { CyExcelCore } from "../CyExcelCore";
-import type { CellStyle } from "../style/types";
-import type { CellRange } from "../types";
+import type { CyExcelCore } from "../CyExcelCore.js";
+import type { CellStyle } from "../style/types.js";
+import type { CellRange } from "../types.js";
 
 /** 压成一行五组，不做多标签页 ribbon——功能量填不满，填不满的标签页更难用。 */
 export type ToolbarGroup = "history" | "format" | "align" | "data" | "structure";

@@ -1,36 +1,36 @@
-import type { CellRange } from "../types";
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { CellMatrix } from "./CellMatrix";
-import { assertValidBlankCount, resolveCoordinateSpace } from "./coordinateSpace";
-import { IndexedTable } from "./IndexedTable";
-import { IndexedTableRegistry } from "./IndexedTableRegistry";
-import { deserializeSheet, serializeSheet } from "./serialize";
-import type { CellRecord, CellValue, ColumnMeta, RowMeta, SheetSnapshot } from "./types";
-import { DEFAULT_BLANK_COLUMNS, DEFAULT_BLANK_ROWS } from "./types";
+import type { CellRange } from "../types.js";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import { CellMatrix } from "./CellMatrix.js";
+import { assertValidBlankCount, resolveCoordinateSpace } from "./coordinateSpace.js";
+import { IndexedTable } from "./IndexedTable.js";
+import { IndexedTableRegistry } from "./IndexedTableRegistry.js";
+import { deserializeSheet, serializeSheet } from "./serialize.js";
+import type { CellRecord, CellValue, ColumnMeta, RowMeta, SheetSnapshot } from "./types.js";
+import { DEFAULT_BLANK_COLUMNS, DEFAULT_BLANK_ROWS } from "./types.js";
 import {
   buildDeleteRowsPlan,
   buildInsertRowsPlan,
   buildMoveRowsPlan
-} from "./rowPlan";
+} from "./rowPlan.js";
 import {
   buildDeleteColumnsShift,
   buildInsertColumnsShift,
   buildMoveColumnsShift
-} from "./columnShift";
+} from "./columnShift.js";
 import {
   relocateMergesForDelete,
   relocateMergesForInsert,
   relocateMergesForMove
-} from "./merges";
+} from "./merges.js";
 import {
   relocateValidationsForDelete,
   relocateValidationsForInsert,
   relocateValidationsForMove,
   type DataValidationRule
-} from "./validations";
-import { validateAxisChange } from "../layout/structuralChange";
-import { assertValidRowOrder } from "../layout/rowOrder";
-import type { FormulaCell, FormulaEngine, FormulaEngineFactory } from "../formula/types";
+} from "./validations.js";
+import { validateAxisChange } from "../layout/structuralChange.js";
+import { assertValidRowOrder } from "../layout/rowOrder.js";
+import type { FormulaCell, FormulaEngine, FormulaEngineFactory } from "../formula/types.js";
 
 const ownedValidationRules = new WeakSet<readonly DataValidationRule[]>();
 

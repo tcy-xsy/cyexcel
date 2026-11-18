@@ -1,6 +1,6 @@
-import type { CellRange } from "../types";
-import type { CellRect, IndexRange, SkeletonSnapshot, ViewportSnapshot } from "../layout";
-import { splitByFrozenBoundary } from "../layout";
+import type { CellRange } from "../types.js";
+import type { CellRect, IndexRange, SkeletonSnapshot, ViewportSnapshot } from "../layout/index.js";
+import { splitByFrozenBoundary } from "../layout/index.js";
 
 export interface SceneSurfaceMetrics {
   /** Total fixed height of every column-header row. */

@@ -1,6 +1,6 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { AxisChangeDescriptor } from "../layout";
-import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { AxisChangeDescriptor } from "../layout/index.js";
+import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types.js";
 
 export interface PreparedStructureIntegration<TRoot, TPayload> {
   readonly nextRoot: TRoot;

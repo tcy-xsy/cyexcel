@@ -1,4 +1,4 @@
-import type { CellRecord, CellValue } from "../sheet/types";
+import type { CellRecord, CellValue } from "../sheet/types.js";
 
 export interface FormulaCell {
   readonly row: number;

@@ -1,11 +1,11 @@
-import type { CellPaintContext, CellPainter } from "../render";
-import { CELL_LINE_HEIGHT, LINK_COLOR } from "../render/theme";
-import { formatCellText } from "../style/formatCellText";
-import { resolveDrawStyle, type DrawStyle } from "../style/resolveDrawStyle";
-import { wrapText } from "../render/textWrap";
-import { detectLinkUrl } from "./linkDetection";
-import { createImageCellRenderer } from "./imageCellRenderer";
-import type { CellRenderContext, RuntimeColumn } from "./types";
+import type { CellPaintContext, CellPainter } from "../render/index.js";
+import { CELL_LINE_HEIGHT, LINK_COLOR } from "../render/theme.js";
+import { formatCellText } from "../style/formatCellText.js";
+import { resolveDrawStyle, type DrawStyle } from "../style/resolveDrawStyle.js";
+import { wrapText } from "../render/textWrap.js";
+import { detectLinkUrl } from "./linkDetection.js";
+import { createImageCellRenderer } from "./imageCellRenderer.js";
+import type { CellRenderContext, RuntimeColumn } from "./types.js";
 
 /**
  * 单元格级图片的默认画法——不传 `resolveUrl`，因为 `CellRecord.img` 本来就是

@@ -1,7 +1,7 @@
-import { el } from "./dom";
-import * as styles from "./styles";
-import type { ToolbarContext } from "./types";
-import type { SearchMatch } from "../search";
+import { el } from "./dom.js";
+import * as styles from "./styles.js";
+import type { ToolbarContext } from "./types.js";
+import type { SearchMatch } from "../search/index.js";
 import {
   ALLOW_OPTIONS,
   ERROR_STYLE_OPTIONS,
@@ -12,8 +12,8 @@ import {
   ruleInputFromForm,
   type AllowKind,
   type DataValidationFormState
-} from "./dataValidationForm";
-import type { DataValidationRenderMode, ValidationErrorStyle, ValidationOperator } from "../sheet/validations";
+} from "./dataValidationForm.js";
+import type { DataValidationRenderMode, ValidationErrorStyle, ValidationOperator } from "../sheet/validations.js";
 
 /**
  * 对话框里的内容。契约与 `panels.ts` 一样——把内容塞进调用方给的容器，返回 disposer

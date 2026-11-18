@@ -1,4 +1,4 @@
-import type { Command } from "../types";
+import type { Command } from "../types.js";
 
 export type DeleteRowsCommandParams =
   | { readonly start: number; readonly count: number }

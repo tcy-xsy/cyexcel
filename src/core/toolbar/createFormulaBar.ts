@@ -1,6 +1,6 @@
-import type { CyExcelCore } from "../CyExcelCore";
-import { parseA1, rangeToA1 } from "./a1Notation";
-import * as styles from "./styles";
+import type { CyExcelCore } from "../CyExcelCore.js";
+import { parseA1, rangeToA1 } from "./a1Notation.js";
+import * as styles from "./styles.js";
 
 export interface FormulaBarHandle {
   refresh(): void;

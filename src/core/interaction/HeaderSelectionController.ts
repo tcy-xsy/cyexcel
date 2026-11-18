@@ -1,6 +1,6 @@
-import type { SceneSnapshot, SurfacePoint } from "../scene";
-import type { SelectionModel, SelectionSnapshot } from "./SelectionModel";
-import { DRAG_THRESHOLD_PX } from "./PointerController";
+import type { SceneSnapshot, SurfacePoint } from "../scene/index.js";
+import type { SelectionModel, SelectionSnapshot } from "./SelectionModel.js";
+import { DRAG_THRESHOLD_PX } from "./PointerController.js";
 
 export type HeaderSelectionSurface = "column-header" | "row-header" | "corner";
 

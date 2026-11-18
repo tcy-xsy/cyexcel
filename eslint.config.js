@@ -35,28 +35,24 @@ export default tseslint.config(
         {
           paths: [
             {
-              name: "../data",
+              name: "../data/index.js",
               message: "Command handlers consume narrow mutation capabilities; concrete owners belong in integration."
             },
             {
-              name: "../data/index",
-              message: "Command handlers consume narrow mutation capabilities; concrete owners belong in integration."
-            },
-            {
-              name: "../data/TableStore",
+              name: "../data/TableStore.js",
               message: "Command handlers consume narrow mutation capabilities; concrete owners belong in integration."
             }
           ],
           patterns: [
             {
               group: [
-                "../layout",
+                "../layout/index.js",
                 "../layout/*",
-                "../integration",
+                "../integration/index.js",
                 "../integration/*",
-                "../render",
+                "../render/index.js",
                 "../render/*",
-                "../editors",
+                "../editors/index.js",
                 "../editors/*"
               ],
               message: "Command handlers consume narrow mutation capabilities; concrete owners belong in integration."
@@ -94,7 +90,7 @@ export default tseslint.config(
         {
           paths: [
             {
-              name: "../layout",
+              name: "../layout/index.js",
               importNames: [
                 "LayoutEngine",
                 "toViewportRect",
@@ -108,12 +104,12 @@ export default tseslint.config(
           patterns: [
             {
               group: [
-                "../layout/LayoutEngine",
-                "../layout/viewportRect",
-                "../layout/selectionGeometry",
-                "../../layout/LayoutEngine",
-                "../../layout/viewportRect",
-                "../../layout/selectionGeometry"
+                "../layout/LayoutEngine.js",
+                "../layout/viewportRect.js",
+                "../layout/selectionGeometry.js",
+                "../../layout/LayoutEngine.js",
+                "../../layout/viewportRect.js",
+                "../../layout/selectionGeometry.js"
               ],
               message:
                 "Consume the Scene snapshot for geometry. LayoutEngine/toViewportRect/selectionGeometry would re-create a second coordinate truth (ADR 0002)."
@@ -139,7 +135,7 @@ export default tseslint.config(
         {
           paths: [
             {
-              name: "./types",
+              name: "./types.js",
               importNames: ["Patch"],
               message:
                 "CyExcelCore composes a commit receipt; it does not interpret changes. Consume ChangeSet/SemanticChange, and put any per-change logic in the owning service (ADR 0002, plan §11)."
@@ -158,7 +154,7 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ["../commands", "../commands/*"],
+              group: ["../commands/index.js", "../commands/*"],
               message:
                 "History admits CommitReceipt only. Importing a concrete Command class puts undo state back on the command (ADR 0002)."
             }

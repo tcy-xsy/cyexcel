@@ -1,4 +1,4 @@
-import { createCyExcelElementConstructor } from "./CyExcelElement";
+import { createCyExcelElementConstructor } from "./CyExcelElement.js";
 
 export const DEFAULT_CYEXCEL_TAG_NAME = "cy-excel";
 

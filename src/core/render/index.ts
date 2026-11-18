@@ -1,4 +1,4 @@
-export { type Canvas2DLike } from "./Canvas2DLike";
+export { type Canvas2DLike } from "./Canvas2DLike.js";
 export {
   RenderScheduler,
   type FrameScheduler,
@@ -7,13 +7,13 @@ export {
   type RenderFrame,
   type RenderTarget,
   type RenderSchedulerOptions
-} from "./RenderScheduler";
+} from "./RenderScheduler.js";
 export {
   ContentLayerRenderer,
   type CellPaintContext,
   type CellPainter,
   type ContentLayerRendererOptions
-} from "./ContentLayerRenderer";
+} from "./ContentLayerRenderer.js";
 export {
   computeCapsule,
   isInDropdownArrowZone,
@@ -21,21 +21,21 @@ export {
   type CapsuleGeometry,
   type CellDropdown,
   type DropdownMode
-} from "./dropdownGeometry";
+} from "./dropdownGeometry.js";
 export {
   SelectionLayerRenderer,
   type SelectionLayerRendererOptions
-} from "./SelectionLayerRenderer";
+} from "./SelectionLayerRenderer.js";
 export {
   configureCanvasForDpr,
   getEffectiveDpr,
   readDevicePixelRatio,
   type ResizableCanvas
-} from "./dprCanvas";
+} from "./dprCanvas.js";
 export {
   CanvasSurface,
   type CanvasSurfaceSnapshot,
   type CanvasTransformContext
-} from "./CanvasSurface";
-export { wrapText, computeWrappedCellHeight } from "./textWrap";
-export { ImageCache, sharedImageCache, type ImageCacheEntry } from "./ImageCache";
+} from "./CanvasSurface.js";
+export { wrapText, computeWrappedCellHeight } from "./textWrap.js";
+export { ImageCache, sharedImageCache, type ImageCacheEntry } from "./ImageCache.js";

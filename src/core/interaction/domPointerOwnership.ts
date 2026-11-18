@@ -1,9 +1,9 @@
-import type { SurfaceId } from "../scene";
+import type { SurfaceId } from "../scene/index.js";
 import {
   nativeInputTarget,
   surfaceInputTarget,
   type InputTargetResolution
-} from "./InputRouter";
+} from "./InputRouter.js";
 
 export type DomPointerOwnership = "native" | "surface";
 

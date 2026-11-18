@@ -1,4 +1,4 @@
-import type { ViewportState } from "./LayoutEngine";
+import type { ViewportState } from "./LayoutEngine.js";
 
 export interface ViewportSnapshotOptions extends ViewportState {
   readonly version: number;

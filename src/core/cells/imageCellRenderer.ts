@@ -1,6 +1,6 @@
-import type { Canvas2DLike } from "../render";
-import { type ImageCache, sharedImageCache } from "../render/ImageCache";
-import type { CanvasCellRenderer, CellRenderContext } from "./types";
+import type { Canvas2DLike } from "../render/index.js";
+import { type ImageCache, sharedImageCache } from "../render/ImageCache.js";
+import type { CanvasCellRenderer, CellRenderContext } from "./types.js";
 
 export interface ImageCellRendererOptions {
   /** Inset between the cell border and the drawn image, in logical pixels. Defaults to 2. */

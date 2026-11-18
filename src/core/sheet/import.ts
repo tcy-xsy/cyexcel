@@ -1,7 +1,7 @@
-import { WorkbookModel } from "./WorkbookModel";
-import type { RowCells } from "./mutation";
-import type { SheetModelOptions } from "./SheetModel";
-import type { CellValue, CellRecord, WorkbookSnapshot } from "./types";
+import { WorkbookModel } from "./WorkbookModel.js";
+import type { RowCells } from "./mutation.js";
+import type { SheetModelOptions } from "./SheetModel.js";
+import type { CellValue, CellRecord, WorkbookSnapshot } from "./types.js";
 
 /**
  * 导入用的一行：字段名 -> 值。

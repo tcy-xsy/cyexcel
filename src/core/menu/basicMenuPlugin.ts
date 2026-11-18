@@ -1,5 +1,5 @@
-import type { CyExcelPlugin, PluginContext } from "../plugins";
-import type { ContextMenuItem, SheetMenuAction } from "./types";
+import type { CyExcelPlugin, PluginContext } from "../plugins/index.js";
+import type { ContextMenuItem, SheetMenuAction } from "./types.js";
 
 type Action = Extract<ContextMenuItem, { type: "action" }>;
 const separator = (id: string): ContextMenuItem => ({ type: "separator", id: `cyexcel:${id}` });

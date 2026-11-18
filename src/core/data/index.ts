@@ -1,5 +1,5 @@
-export { TableStore, type TableStoreCommitResult, type TableStoreOptions } from "./TableStore";
-export { mergePatches } from "./patch";
+export { TableStore, type TableStoreCommitResult, type TableStoreOptions } from "./TableStore.js";
+export { mergePatches } from "./patch.js";
 export {
   createChangeSet,
   compileDirtySet,
@@ -9,4 +9,4 @@ export {
   type DirtySet,
   type StructuralChangeSummary,
   type DirtyRegion
-} from "./changes";
+} from "./changes.js";

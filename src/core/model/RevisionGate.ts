@@ -1,4 +1,4 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
 
 declare const modelRevisionBrand: unique symbol;
 

@@ -1,8 +1,8 @@
-import type { SceneCellFragment, SceneSnapshot } from "../scene";
-import { declareDomPointerOwnership } from "../interaction/domPointerOwnership";
-import type { CellRange } from "../types";
-import type { DomCellContext, DomCellRenderer, DomCellRendererFactory, RuntimeColumn } from "./types";
-import type { CellValue } from "../sheet/types";
+import type { SceneCellFragment, SceneSnapshot } from "../scene/index.js";
+import { declareDomPointerOwnership } from "../interaction/domPointerOwnership.js";
+import type { CellRange } from "../types.js";
+import type { DomCellContext, DomCellRenderer, DomCellRendererFactory, RuntimeColumn } from "./types.js";
+import type { CellValue } from "../sheet/types.js";
 
 export interface DOMCellManagerOptions {
   /** Overlay element DOM-rendered cells mount into; must already be connected to the document. */
