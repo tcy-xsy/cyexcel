@@ -1,6 +1,6 @@
 {
   "name": "cyexcel-plugin-excel-import",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Optional XLSX import plugin for cyexcel.",
   "type": "module",
   "license": "MIT",
