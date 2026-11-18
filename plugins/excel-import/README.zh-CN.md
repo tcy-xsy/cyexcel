@@ -7,7 +7,7 @@ cyexcel 的可选 XLSX 导入插件，作为独立工作区包构建。主包不
 需要 cyexcel 0.1.1 及以上、1.0 以下版本，适用于使用 Vite、Webpack 等构建工具的 ESM 应用。
 
 ```sh
-npm install cyexcel@^0.1.1 cyexcel-plugin-excel-import@^0.1.0
+npm install cyexcel@latest cyexcel-plugin-excel-import@latest
 ```
 
 ## 本地开发
@@ -30,6 +30,7 @@ import { createWorkbook } from 'cyexcel';
 import { createExcelImportPlugin } from 'cyexcel-plugin-excel-import';
 
 const excelImport = createExcelImportPlugin({
+  locale: 'zh-CN', // 英文界面使用 'en-US'，默认中文。
   onWarning: message => console.warn(message)
 });
 const workbook = createWorkbook(container, {

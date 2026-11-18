@@ -1,10 +1,12 @@
+import { getLocale, translate } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createWorkbook } from "@cyexcel/createWorkbook";
-import { columns, rows } from "../../demo/data";
+import { getDemoData } from "../../demo/data";
 import { matrixToWorkbookSnapshot } from "@cyexcel/core";
 import { apiTable, codeBlock, demoBlock, pageHeader, section } from "../../components/doc";
 
 export default function workbookApiPage(root: DocElement): void {
+  const { columns, rows } = getDemoData();
   root.append(
     pageHeader(
       "API",
@@ -49,18 +51,19 @@ export default function workbookApiPage(root: DocElement): void {
   root.append(demo.root);
   demo.mount.onMount = () => {
     const workbook = createWorkbook(demo.mount.element, {
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
       toolbar: true,
       formulaBar: true,
       sheets: [
         {
-          name: "订单",
+          name: translate("订单"),
           columns,
           snapshot: matrixToWorkbookSnapshot(rows),
           headerHeight: 28,
           rowHeaderWidth: 48
         },
         {
-          name: "汇总",
+          name: translate("汇总"),
           columns,
           headerHeight: 28,
           rowHeaderWidth: 48

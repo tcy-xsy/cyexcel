@@ -1,3 +1,5 @@
+import { localizeDemoData } from "../../demo/localize";
+import { getLocale } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createWorkbook } from "@cyexcel/createWorkbook";
 import { matrixToWorkbookSnapshot } from "@cyexcel/core";
@@ -11,14 +13,15 @@ export default function contextMenuExamplePage(root: DocElement): void {
   root.append(demo.root);
   demo.mount.onMount = () => {
     const workbook = createWorkbook(demo.mount.element, {
-      columns: [
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
+      columns: localizeDemoData([
         { header: "商品", width: 180, sortable: true, filterable: true },
         { header: "数量", width: 120, type: "number", sortable: true, filterable: true },
         { header: "分类", width: 140, sortable: true, filterable: true },
         { header: "备注", width: 200 }
-      ],
+      ]),
       rowHeight: 30,
-      snapshot: matrixToWorkbookSnapshot([["传感器", 12, "器件", "首批到货"], ["电源", 8, "器件", "待检"], ["线缆", 30, "耗材", ""], ["标签", 200, "耗材", "备用"]], { blankRows: 26 })
+      snapshot: matrixToWorkbookSnapshot(localizeDemoData([["传感器", 12, "器件", "首批到货"], ["电源", 8, "器件", "待检"], ["线缆", 30, "耗材", ""], ["标签", 200, "耗材", "备用"]]), { blankRows: 26 })
     });
     return () => workbook.dispose();
   };

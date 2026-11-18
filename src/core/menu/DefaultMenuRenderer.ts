@@ -1,3 +1,4 @@
+import { defaultTranslator, type Translator } from "../locale/index.js";
 import type { ContextMenuItem, ContextMenuRenderContext, ContextMenuRenderer } from "./types.js";
 
 type Entry = Exclude<ContextMenuItem, { type: "separator" }>;
@@ -22,10 +23,13 @@ let sequence = 0;
 
 /** Independent flyout panels avoid clipping submenus inside the scrollable root menu. */
 export class DefaultMenuRenderer implements ContextMenuRenderer {
+  constructor(private readonly t: Translator = defaultTranslator) {}
+
   #container: HTMLElement | undefined;
   #context: ContextMenuRenderContext | undefined;
   #panels: Panel[] = [];
   #hoverTimer: ReturnType<typeof setTimeout> | undefined;
+  #keyboardNavigation = false;
 
   mount(container: HTMLElement, context: ContextMenuRenderContext): void {
     this.#container = container;
@@ -78,7 +82,7 @@ export class DefaultMenuRenderer implements ContextMenuRenderer {
     const element = document.createElement("div");
     element.className = "cyx-context-menu";
     element.setAttribute("role", "menu");
-    element.setAttribute("aria-label", depth === 0 ? "表格操作" : "更多操作");
+    element.setAttribute("aria-label", depth === 0 ? this.t("Spreadsheet actions") : this.t("More actions"));
     element.setAttribute("aria-busy", String(this.#context?.busyItemId !== null));
     element.tabIndex = -1;
     const bounds = this.#bounds();
@@ -110,7 +114,7 @@ export class DefaultMenuRenderer implements ContextMenuRenderer {
       check.setAttribute("aria-hidden", "true");
       const label = document.createElement("span");
       label.textContent = item.label + (this.#context?.busyItemId === item.id ? "…" : "");
-      label.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis";
+      label.style.cssText = "flex:1;min-width:0;white-space:normal;overflow-wrap:anywhere";
       row.append(check, label);
       if (item.type === "submenu") {
         row.setAttribute("aria-haspopup", "menu");
@@ -122,16 +126,24 @@ export class DefaultMenuRenderer implements ContextMenuRenderer {
       } else if (item.shortcut) {
         const shortcut = document.createElement("span");
         shortcut.textContent = item.shortcut;
-        shortcut.style.cssText = "margin-left:18px;font-size:11px;color:#86909c";
+        shortcut.style.cssText = "margin-left:18px;flex-shrink:0;font-size:11px;color:#86909c";
         shortcut.setAttribute("aria-hidden", "true");
         row.append(shortcut);
       }
       panel.entries.set(item.id, row);
-      row.addEventListener("mouseenter", () => {
+      const hover = (): void => {
         this.#cancelHover();
         this.#highlight(depth, item.id);
         if (this.#panels[depth + 1]?.parentId !== item.id) this.#removePanels(depth + 1);
         if (item.type === "submenu" && !disabled) this.#hoverTimer = setTimeout(() => this.#openSubmenu(depth, item.id, false), 140);
+      };
+      row.addEventListener("mouseenter", () => {
+        if (!this.#keyboardNavigation) hover();
+      });
+      row.addEventListener("pointermove", () => {
+        if (!this.#keyboardNavigation) return;
+        this.#keyboardNavigation = false;
+        hover();
       });
       row.addEventListener("mouseleave", () => this.#cancelHover());
       row.addEventListener("click", event => {
@@ -145,7 +157,9 @@ export class DefaultMenuRenderer implements ContextMenuRenderer {
     }
     element.addEventListener("keydown", event => this.#keyDown(event, depth));
     element.addEventListener("contextmenu", event => { event.preventDefault(); event.stopPropagation(); });
-    element.addEventListener("mouseenter", () => element.focus({ preventScroll: true }));
+    element.addEventListener("mouseenter", () => {
+      if (!this.#keyboardNavigation) element.focus({ preventScroll: true });
+    });
     element.addEventListener("scroll", () => { this.#cancelHover(); this.#removePanels(depth + 1); });
     this.#container?.append(element);
     return panel;
@@ -209,6 +223,8 @@ export class DefaultMenuRenderer implements ContextMenuRenderer {
     if (!["ArrowDown", "ArrowUp", "ArrowRight", "ArrowLeft", "Home", "End", "Enter", " ", "Escape", "Tab"].includes(event.key)) return;
     event.preventDefault();
     event.stopPropagation();
+    // Wrapping or scrolling a menu can move rows under a stationary pointer.
+    this.#keyboardNavigation = true;
     this.#cancelHover();
     if (event.key === "Tab") { this.#context?.actions.close(); return; }
     if (event.key === "Escape" || event.key === "ArrowLeft") {

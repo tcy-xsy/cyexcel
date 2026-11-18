@@ -1,3 +1,4 @@
+import type { Translator } from "../locale/index.js";
 import type { ColumnDefinition as CyExcelColumnConfig } from "../cells/index.js";
 import type { ClipboardCopyOptions, ClipboardCopyResult, ClipboardPasteOptions } from "../clipboard/index.js";
 import type { HookHandlerMeta } from "../hooks/index.js";
@@ -15,6 +16,7 @@ import type { Disposer } from "../types.js";
  * that plugin (see PluginManager.use()), not a passthrough.
  */
 export interface PluginContext {
+  readonly t?: Translator;
   readonly sheetMenu?: SheetMenuCommands;
   readonly hooks: {
     tap<TContext = unknown, TValue = unknown>(

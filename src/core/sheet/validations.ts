@@ -1,3 +1,4 @@
+import { defaultTranslator, type Translator, type MessageKey } from "../locale/index.js";
 import { CyExcelError, CyExcelErrorCode } from "../errors.js";
 import { remapIndex } from "../layout/structuralChange.js";
 import { serialFromISODate } from "../style/dateSerial.js";
@@ -133,6 +134,7 @@ export interface CustomValidatorContext {
 }
 
 export interface ValidateOptions {
+  readonly t?: Translator;
   /** 按名字查自定义校验函数；查不到按"有效"处理。 */
   readonly getCustomValidator?: (name: string) => CustomValidatorFn | undefined;
   readonly row?: number;
@@ -600,54 +602,58 @@ function toSerialNumber(value: CellValue): number | undefined {
   return undefined;
 }
 
-const OPERATOR_TEXT: Record<ValidationOperator, string> = {
-  between: "介于 {1} 和 {2} 之间",
-  notBetween: "不介于 {1} 和 {2} 之间",
-  equal: "等于 {1}",
-  notEqual: "不等于 {1}",
-  greaterThan: "大于 {1}",
-  greaterThanOrEqual: "大于或等于 {1}",
-  lessThan: "小于 {1}",
-  lessThanOrEqual: "小于或等于 {1}"
+const OPERATOR_TEXT: Record<ValidationOperator, MessageKey> = {
+  between: "between {1} and {2}",
+  notBetween: "not between {1} and {2}",
+  equal: "equal to {1}",
+  notEqual: "not equal to {1}",
+  greaterThan: "greater than {1}",
+  greaterThanOrEqual: "greater than or equal to {1}",
+  lessThan: "less than {1}",
+  lessThanOrEqual: "less than or equal to {1}"
 };
 
 const TYPE_TEXT = {
-  whole: "整数",
-  decimal: "数值",
-  textLength: "文本长度",
-  date: "日期",
-  time: "时间"
+  whole: "Whole number",
+  decimal: "Number",
+  textLength: "Text length",
+  date: "Date",
+  time: "Time"
 } as const;
 
 /** 没有自定义 `errorMessage` 时的默认文案。 */
-const listMessages = new WeakMap<readonly string[], string>();
+const listMessages = new WeakMap<Translator, WeakMap<readonly string[], string>>();
 const listValues = new WeakMap<readonly string[], ReadonlySet<string>>();
 
-export function defaultValidationMessage(criteria: DataValidationCriteria): string {
+export function defaultValidationMessage(criteria: DataValidationCriteria, t: Translator = defaultTranslator): string {
   switch (criteria.type) {
     case "list": {
       if (!Object.isFrozen(criteria.items)) {
-        return `请从列表中选择：${criteria.items.join("、")}`;
+        return t("Choose from the list: {0}", criteria.items.join(t(", ")));
       }
-      let message = listMessages.get(criteria.items);
+      let cache = listMessages.get(t);
+      if (cache === undefined) {
+        cache = new WeakMap();
+        listMessages.set(t, cache);
+      }
+      let message = cache.get(criteria.items);
       if (message === undefined) {
-        message = `请从列表中选择：${criteria.items.join("、")}`;
-        listMessages.set(criteria.items, message);
+        message = t("Choose from the list: {0}", criteria.items.join(t(", ")));
+        cache.set(criteria.items, message);
       }
       return message;
     }
     case "custom":
-      return "输入的值不符合规则";
+      return t("The value does not meet the validation rule.");
     default: {
-      const condition = OPERATOR_TEXT[criteria.operator]
-        .replace("{1}", String(criteria.value1))
-        .replace("{2}", String(criteria.value2 ?? ""));
-      return `${TYPE_TEXT[criteria.type]}需要${condition}`;
+      const condition = t(OPERATOR_TEXT[criteria.operator], undefined, criteria.value1, criteria.value2 ?? "");
+      return t("{0} must be {1}", t(TYPE_TEXT[criteria.type]), condition);
     }
   }
 }
 
 function judge(rule: DataValidationRule, value: CellValue, options: ValidateOptions): true | string {
+  const t = options.t ?? defaultTranslator;
   const criteria = rule.criteria;
   switch (criteria.type) {
     case "whole":
@@ -655,22 +661,22 @@ function judge(rule: DataValidationRule, value: CellValue, options: ValidateOpti
         Number.isInteger(value) &&
         compare(criteria.operator, value, criteria.value1, criteria.value2)
         ? true
-        : defaultValidationMessage(criteria);
+        : defaultValidationMessage(criteria, t);
     case "decimal":
       return typeof value === "number" &&
         Number.isFinite(value) &&
         compare(criteria.operator, value, criteria.value1, criteria.value2)
         ? true
-        : defaultValidationMessage(criteria);
+        : defaultValidationMessage(criteria, t);
     case "textLength":
       return compare(criteria.operator, String(value).length, criteria.value1, criteria.value2)
         ? true
-        : defaultValidationMessage(criteria);
+        : defaultValidationMessage(criteria, t);
     case "date": {
       const serial = toSerialNumber(value);
       return serial !== undefined && compare(criteria.operator, serial, criteria.value1, criteria.value2)
         ? true
-        : defaultValidationMessage(criteria);
+        : defaultValidationMessage(criteria, t);
     }
     case "time": {
       const serial = toSerialNumber(value);
@@ -678,18 +684,18 @@ function judge(rule: DataValidationRule, value: CellValue, options: ValidateOpti
       return serial !== undefined &&
         compare(criteria.operator, serial - Math.floor(serial), criteria.value1, criteria.value2)
         ? true
-        : defaultValidationMessage(criteria);
+        : defaultValidationMessage(criteria, t);
     }
     case "list": {
       if (!Object.isFrozen(criteria.items)) {
-        return criteria.items.includes(String(value)) ? true : defaultValidationMessage(criteria);
+        return criteria.items.includes(String(value)) ? true : defaultValidationMessage(criteria, t);
       }
       let values = listValues.get(criteria.items);
       if (values === undefined) {
         values = new Set(criteria.items);
         listValues.set(criteria.items, values);
       }
-      return values.has(String(value)) ? true : defaultValidationMessage(criteria);
+      return values.has(String(value)) ? true : defaultValidationMessage(criteria, t);
     }
     case "custom": {
       const fn = options.getCustomValidator?.(criteria.name);
@@ -705,7 +711,7 @@ function judge(rule: DataValidationRule, value: CellValue, options: ValidateOpti
       if (result === true) {
         return true;
       }
-      return typeof result === "string" && result !== "" ? result : defaultValidationMessage(criteria);
+      return typeof result === "string" && result !== "" ? result : defaultValidationMessage(criteria, t);
     }
   }
 }
@@ -721,14 +727,14 @@ export function validateValue(
   options: ValidateOptions = {}
 ): DataValidationResult {
   if (isBlank(value)) {
-    return (rule.allowBlank ?? true) ? { valid: true } : invalidResult(rule, defaultBlankMessage(rule));
+    return (rule.allowBlank ?? true) ? { valid: true } : invalidResult(rule, defaultBlankMessage(rule, options.t ?? defaultTranslator));
   }
   const verdict = judge(rule, value as CellValue, options);
   return verdict === true ? { valid: true } : invalidResult(rule, verdict);
 }
 
-function defaultBlankMessage(rule: DataValidationRule): string {
-  return `不能为空。${defaultValidationMessage(rule.criteria)}`;
+function defaultBlankMessage(rule: DataValidationRule, t: Translator): string {
+  return t("A value is required. {0}", defaultValidationMessage(rule.criteria, t));
 }
 
 function invalidResult(rule: DataValidationRule, defaultMessage: string): DataValidationResult {

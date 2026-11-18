@@ -1,3 +1,5 @@
+import { localizeDemoData } from "../../demo/localize";
+import { getLocale } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
 import { createImageCellRenderer, matrixToWorkbookSnapshot } from "@cyexcel/core";
@@ -9,7 +11,7 @@ const AVATAR_COLORS = ["#f97316", "#3b82f6", "#10b981", "#a855f7", "#ef4444"];
 /** 使用本地 data: URI 图标，避免示例依赖外部图片服务。 */
 function productIconDataUri(index: number): string {
   const color = AVATAR_COLORS[index % AVATAR_COLORS.length];
-  const letter = PRODUCTS[index % PRODUCTS.length]!.charAt(0);
+  const letter = localizeDemoData(PRODUCTS[index % PRODUCTS.length]!).charAt(0);
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64">` +
     `<rect width="64" height="64" rx="12" fill="${color}"/>` +
@@ -25,13 +27,15 @@ const columns = [
   { width: 72, header: "图片（单元格）", sortable: false, filterable: false }
 ];
 
-const rows = PRODUCTS.map((name, index) => [
-  name,
-  `https://www.cyexcel.example/products/CY-${String(index + 1).padStart(6, "0")}`,
-  productIconDataUri(index),
-  // undefined 不生成值记录，图片在创建表格后通过 setCellImage() 设置。
-  undefined
-]);
+function buildRows() {
+  return localizeDemoData(PRODUCTS).map((name, index) => [
+    name,
+    `https://www.cyexcel.example/products/CY-${String(index + 1).padStart(6, "0")}`,
+    productIconDataUri(index),
+    // undefined 不生成值记录，图片在创建表格后通过 setCellImage() 设置。
+    undefined
+  ]);
+}
 
 export default function linksAndImagesExamplePage(root: DocElement): void {
   root.append(
@@ -98,8 +102,9 @@ sheet.setCellImage(row, column, undefined);`));
 
   demo.mount.onMount = () => {
     const sheet = createSheet(demo.mount.element, {
-      columns,
-      snapshot: matrixToWorkbookSnapshot(rows),
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
+      columns: localizeDemoData(columns),
+      snapshot: matrixToWorkbookSnapshot(buildRows()),
       headerHeight: 28,
       rowHeaderWidth: 48,
       rowHeight: 40

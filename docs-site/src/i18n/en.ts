@@ -1,4 +1,6 @@
 export const english: Readonly<Record<string, string>> = {
+  "插件观察": "Plugin observation",
+  "界面语言：en-US、zh-CN 或自定义词典；默认 zh-CN。": "UI language: en-US, zh-CN, or a custom dictionary; defaults to zh-CN.",
   "示例文件包含六张工作表：数据类型、数字格式、公式、样式、布局和隐藏工作表。涵盖文本、数值、布尔值、日期、错误值、共享公式、字体与边框、合并单元格、冻结窗格及隐藏行列。超链接和富文本保留显示文本，隐藏工作表导入后显示为可见标签。": "The sample contains six worksheets: Values, Number formats, Formulas, Styles, Layout, and Hidden sheet. It covers text, numbers, booleans, dates, errors, shared formulas, fonts, borders, merged cells, frozen panes, and hidden rows and columns. Hyperlinks and rich text retain their display text. Hidden worksheets become visible tabs after import.",
   "Excel 导入插件": "Excel Import Plugin",
   "createExcelImportPlugin() 提供可选的 .xlsx 导入，在浏览器内解析并替换当前工作簿。": "createExcelImportPlugin() provides optional .xlsx import, parsed in the browser to replace the current workbook.",

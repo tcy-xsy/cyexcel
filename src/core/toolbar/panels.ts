@@ -1,3 +1,4 @@
+import { defaultTranslator, type Translator } from "../locale/index.js";
 import type { BorderSide } from "../style/types.js";
 import type { ToolbarContext } from "./types.js";
 import * as styles from "./styles.js";
@@ -15,28 +16,31 @@ import { el } from "./dom.js";
  */
 
 /** 常用主题色按行分组，保证同一行是同一色相的深浅变化。 */
-const THEME_COLORS: readonly { readonly label: string; readonly color: string }[] = Object.freeze([
-  { label: "墨黑", color: "#111827" },
-  { label: "灰", color: "#4b5563" },
-  { label: "浅灰", color: "#9ca3af" },
-  { label: "纸白", color: "#f8fafc" },
-  { label: "白", color: "#ffffff" },
-  { label: "红", color: "#dc2626" },
-  { label: "橙", color: "#ea580c" },
-  { label: "琥珀", color: "#d97706" },
-  { label: "绿", color: "#16a34a" },
-  { label: "青", color: "#0891b2" },
-  { label: "蓝", color: "#2563eb" },
-  { label: "靛蓝", color: "#4f46e5" },
-  { label: "紫", color: "#7c3aed" },
-  { label: "粉", color: "#db2777" },
-  { label: "棕", color: "#92400e" },
-  { label: "浅红", color: "#fca5a5" },
-  { label: "浅橙", color: "#fdba74" },
-  { label: "浅琥珀", color: "#fcd34d" },
-  { label: "浅绿", color: "#86efac" },
-  { label: "浅蓝", color: "#93c5fd" }
-]);
+function themeColors(t: Translator) {
+  return Object.freeze([
+    { label: t("Ink"), color: "#111827" },
+    { label: t("Gray"), color: "#4b5563" },
+    { label: t("Light gray"), color: "#9ca3af" },
+    { label: t("Off-white"), color: "#f8fafc" },
+    { label: t("White"), color: "#ffffff" },
+    { label: t("Red"), color: "#dc2626" },
+    { label: t("Orange"), color: "#ea580c" },
+    { label: t("Amber"), color: "#d97706" },
+    { label: t("Green"), color: "#16a34a" },
+    { label: t("Cyan"), color: "#0891b2" },
+    { label: t("Blue"), color: "#2563eb" },
+    { label: t("Indigo"), color: "#4f46e5" },
+    { label: t("Purple"), color: "#7c3aed" },
+    { label: t("Pink"), color: "#db2777" },
+    { label: t("Brown"), color: "#92400e" },
+    { label: t("Light red"), color: "#fca5a5" },
+    { label: t("Light orange"), color: "#fdba74" },
+    { label: t("Light amber"), color: "#fcd34d" },
+    { label: t("Light green"), color: "#86efac" },
+    { label: t("Light blue"), color: "#93c5fd" }
+  ]);
+
+}
 
 const RECENT_COLOR_LIMIT = 10;
 let recentColors: string[] = [];
@@ -112,12 +116,14 @@ function closePanel(host: HTMLElement): void {
 export function colorPanel(
   host: HTMLElement,
   options: {
+    t?: Translator;
     current: string | undefined;
     onPick: (color: string | null) => void;
     /** 回报给工具栏：分段按钮据此记住"上次选的颜色"，下次点图标直接套用。 */
     onChosen?: (value: string) => void;
   }
 ): () => void {
+  const t = options.t ?? defaultTranslator;
   const current = options.current === undefined ? undefined : cssColorToHex(options.current);
   const pick = (color: string): void => {
     rememberColor(color);
@@ -135,25 +141,26 @@ export function colorPanel(
   };
 
   if (recentColors.length > 0) {
-    root.append(sectionLabel("最近使用"));
+    root.append(sectionLabel(t("Recently used")));
     const recentGrid = el("div", "cyx-toolbar-swatches");
     styles.apply(recentGrid, styles.swatchGrid);
     for (const color of recentColors) {
-      recentGrid.append(createSwatch(color, "最近颜色", current, pick));
+      recentGrid.append(createSwatch(color, t("Recent color"), current, pick));
     }
     root.append(recentGrid);
   }
 
-  root.append(sectionLabel("常用颜色"));
+  root.append(sectionLabel(t("Theme colors")));
   const grid = el("div", "cyx-toolbar-swatches");
   styles.apply(grid, styles.swatchGrid);
-  for (const themeColor of THEME_COLORS) {
+  for (const themeColor of themeColors(t)) {
     grid.append(createSwatch(themeColor.color, themeColor.label, current, pick));
   }
+  root.append(grid);
 
-  root.append(sectionLabel("自定义"), createCustomColor(current, pick));
+  root.append(sectionLabel(t("Custom")), createCustomColor(current, pick, t));
 
-  const clear = el("button", "cyx-toolbar-panel-action", "无颜色");
+  const clear = el("button", "cyx-toolbar-panel-action", t("No color"));
   clear.type = "button";
   styles.apply(clear, styles.panelAction);
   // "没设颜色"也是一种当前状态，同样要标出来，否则整片选区没有颜色时调色板上
@@ -174,14 +181,14 @@ export function colorPanel(
   };
 }
 
-function createCustomColor(current: string | undefined, onPick: (color: string) => void): HTMLElement {
+function createCustomColor(current: string | undefined, onPick: (color: string) => void, t: Translator): HTMLElement {
   const row = el("div", "cyx-toolbar-custom-color");
   styles.apply(row, styles.customColorRow);
 
   const picker = document.createElement("input");
   picker.type = "color";
   picker.value = current ?? "#111827";
-  picker.setAttribute("aria-label", "打开取色器");
+  picker.setAttribute("aria-label", t("Open color picker"));
   styles.apply(picker, styles.customColorPicker);
   picker.addEventListener("change", () => onPick(picker.value));
 
@@ -190,9 +197,9 @@ function createCustomColor(current: string | undefined, onPick: (color: string) 
   input.type = "text";
   input.spellcheck = false;
   input.placeholder = "#1D4ED8";
-  input.setAttribute("aria-label", "十六进制颜色");
+  input.setAttribute("aria-label", t("Hex color"));
 
-  const apply = el("button", "cyx-toolbar-panel-action", "应用");
+  const apply = el("button", "cyx-toolbar-panel-action", t("Apply"));
   apply.type = "button";
   styles.apply(apply, styles.customColorApply);
   const submit = (): void => {
@@ -222,14 +229,19 @@ function createCustomColor(current: string | undefined, onPick: (color: string) 
 const BORDER_SIDE: BorderSide = { color: "#111827", width: 1 };
 
 /** 边框预设：key 同时是分段按钮记住的那个值（见 applyBorderPreset）。 */
-export const BORDER_PRESETS: readonly { key: string; label: string }[] = Object.freeze([
-  { key: "all", label: "四周" },
-  { key: "top", label: "上边框" },
-  { key: "bottom", label: "下边框" },
-  { key: "left", label: "左边框" },
-  { key: "right", label: "右边框" },
-  { key: "none", label: "无边框" }
-]);
+function borderPresets(t: Translator): readonly { key: string; label: string }[] {
+  return Object.freeze([
+    { key: "all", label: t("All borders") },
+    { key: "top", label: t("Top border") },
+    { key: "bottom", label: t("Bottom border") },
+    { key: "left", label: t("Left border") },
+    { key: "right", label: t("Right border") },
+    { key: "none", label: t("No borders") }
+  ]);
+
+}
+
+export const BORDER_PRESETS = borderPresets(defaultTranslator);
 
 /** 按预设 key 套用边框。分段按钮的主区与面板走的是同一条路径。 */
 export function applyBorderPreset(ctx: ToolbarContext, key: string): void {
@@ -247,8 +259,9 @@ export function borderPanel(
   ctx: ToolbarContext,
   onChosen?: (value: string) => void
 ): () => void {
+  const t = ctx.sheet.t;
   const list = el("div", "cyx-toolbar-panel-list");
-  for (const preset of BORDER_PRESETS) {
+  for (const preset of borderPresets(t)) {
     const button = el("button", "cyx-toolbar-panel-action", preset.label);
     button.type = "button";
     styles.apply(button, styles.panelAction);
@@ -272,16 +285,17 @@ export function borderPanel(
  * `filterByColumn(column, predicate)`。这里给的是三个最常用的条件形态。
  */
 export function filterPanel(host: HTMLElement, ctx: ToolbarContext): () => void {
+  const t = ctx.sheet.t;
   const column = ctx.range.startColumn;
   const form = el("div", "cyx-toolbar-panel-list");
 
   const input = el("input", "cyx-toolbar-panel-input");
   styles.apply(input, styles.panelInput);
   input.type = "text";
-  input.placeholder = "包含文本…";
-  input.setAttribute("aria-label", "过滤条件");
+  input.placeholder = t("Contains text...");
+  input.setAttribute("aria-label", t("Filter condition"));
 
-  const apply = el("button", "cyx-toolbar-panel-action", "应用");
+  const apply = el("button", "cyx-toolbar-panel-action", t("Apply"));
   apply.type = "button";
   styles.apply(apply, styles.panelAction);
   apply.addEventListener("click", () => {
@@ -291,14 +305,14 @@ export function filterPanel(host: HTMLElement, ctx: ToolbarContext): () => void 
     );
   });
 
-  const nonEmpty = el("button", "cyx-toolbar-panel-action", "只看非空");
+  const nonEmpty = el("button", "cyx-toolbar-panel-action", t("Non-empty only"));
   nonEmpty.type = "button";
   styles.apply(nonEmpty, styles.panelAction);
   nonEmpty.addEventListener("click", () => {
     ctx.sheet.filterByColumn(column, (value) => value !== null && value !== undefined && value !== "");
   });
 
-  const clear = el("button", "cyx-toolbar-panel-action", "清除过滤");
+  const clear = el("button", "cyx-toolbar-panel-action", t("Clear filter condition"));
   clear.type = "button";
   styles.apply(clear, styles.panelAction);
   clear.addEventListener("click", () => ctx.sheet.clearFilter());

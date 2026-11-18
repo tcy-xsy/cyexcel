@@ -20,13 +20,13 @@ cyexcel 是一个与前端框架无关的表格组件，使用 Canvas 进行视�
 ## 安装
 
 ```bash
-npm install cyexcel
+npm install cyexcel@latest
 ```
 
 如需导入 XLSX，可搭配 cyexcel 0.1.1 及以上版本安装独立插件：
 
 ```sh
-npm install cyexcel@^0.1.1 cyexcel-plugin-excel-import@^0.1.0
+npm install cyexcel@latest cyexcel-plugin-excel-import@latest
 ```
 
 工具栏接入、直接导入、配置项和支持范围见 [Excel 导入插件文档](plugins/excel-import/README.zh-CN.md)。
@@ -94,6 +94,33 @@ await workbook.exportExcel({ fileName: "report.xlsx" });
 ```
 
 导出使用当前工作表名称，支持样式、合并区域和内置数据验证规则。`download: false` 返回 Blob，`includeHeaders: false` 不导出自定义列标题。图片、自定义 JavaScript 验证规则及部分高级设置暂不支持导出。
+
+## 多语言
+
+中英文使用同一个安装包，创建表格时通过 `locale` 决定界面语言：
+
+```ts
+import { createSheet } from "cyexcel";
+
+const sheet = createSheet(container, {
+  locale: "en-US", // 英文；中文使用 "zh-CN"，省略时默认中文
+});
+```
+
+`createWorkbook()` 和 `new CyExcelCore()` 同样支持此参数。每个实例独立配置，可以在一个页面同时显示中英文表格。需要跟随浏览器时，传入 `navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US"`。
+
+也可以通过部分词典增加语言或覆盖用词，未提供的文案回退为英文：
+
+```ts
+createSheet(container, {
+  locale: {
+    name: "fr-FR",
+    messages: { Undo: "Annuler", Redo: "Rétablir", "Add sheet": "Ajouter une feuille" },
+  },
+});
+```
+
+语言在创建时确定。单元格内容、用户指定的工作表名称、数字格式和自定义 UI 文案由应用负责。扩展默认工具栏时使用 `createDefaultToolbarSchema(sheet.t)` 获取对应语言的 schema；原有 `defaultToolbarSchema` 保持中文以兼容已有代码。
 
 ## 公式与使用限制
 

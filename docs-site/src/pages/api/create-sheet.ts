@@ -1,9 +1,11 @@
+import { getLocale } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
-import { columns, snapshot } from "../../demo/data";
+import { getDemoData } from "../../demo/data";
 import { apiTable, codeBlock, demoBlock, pageHeader, section } from "../../components/doc";
 
 export default function createSheetApiPage(root: DocElement): void {
+  const { columns, snapshot } = getDemoData();
   root.append(
     pageHeader(
       "API",
@@ -23,6 +25,7 @@ export default function createSheetApiPage(root: DocElement): void {
   root.append(
     apiTable([
       { name: "container", type: "HTMLElement", description: "表格挂载容器，必须有可计算宽高。" },
+      { name: "options.locale", type: "Locale", description: "界面语言：en-US、zh-CN 或自定义词典；默认 zh-CN。" },
       { name: "options.toolbar", type: "boolean | ToolbarOptions", description: "默认 true。传 false 关闭工具栏，传对象可替换或追加 schema。" },
       { name: "options.formulaBar", type: "boolean", description: "默认 true。控制名称框和公式内容框。" },
       { name: "options.columns", type: "CyExcelColumnConfig[]", description: "列显示配置，按数组下标对应列坐标。" },
@@ -35,6 +38,7 @@ export default function createSheetApiPage(root: DocElement): void {
   root.append(demo.root);
   demo.mount.onMount = () => {
     const sheet = createSheet(demo.mount.element, {
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
       columns,
       snapshot,
       toolbar: true,

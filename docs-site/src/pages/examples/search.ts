@@ -1,6 +1,7 @@
+import { getLocale, translate } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
-import { columns, snapshot } from "../../demo/data";
+import { getDemoData } from "../../demo/data";
 import {
   setText,
   actionButton,
@@ -12,6 +13,7 @@ import {
 } from "../../components/doc";
 
 export default function searchExamplePage(root: DocElement): void {
+  const { columns, snapshot } = getDemoData();
   let sheet: ReturnType<typeof createSheet>;
   root.append(
     pageHeader("EXAMPLES", "查找与替换", "find() 扫描显示文本，replace() 只替换命中的那一段。")
@@ -26,7 +28,7 @@ export default function searchExamplePage(root: DocElement): void {
     codeBlock(`const matches = await sheet.find("east");
 sheet.findNext();
 
-await sheet.replaceAll("east", "西部");`)
+await sheet.replaceAll("east", "${translate("西部")}");`)
   );
 
   const find = actionButton("查找 East", async () => {
@@ -35,11 +37,11 @@ await sheet.replaceAll("east", "西部");`)
     setText(log, `找到 ${matches?.length ?? 0} 处，已选中第一处`);
   });
   const replace = actionButton("全部替换为“西部”", async () => {
-    const count = await sheet.replaceAll("east", "西部");
+    const count = await sheet.replaceAll("east", translate("西部"));
     setText(log, `替换了 ${count ?? 0} 处`);
   });
   const reset = actionButton("恢复 East", async () => {
-    await sheet.replaceAll("西部", "East");
+    await sheet.replaceAll(translate("西部"), "East");
     setText(log, "已恢复原始区域文本");
   });
 
@@ -57,6 +59,7 @@ await sheet.replaceAll("east", "西部");`)
   demo.mount.addClass("with-toolbar");
   demo.mount.onMount = () => {
     sheet = createSheet(demo.mount.element, {
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
       columns,
       snapshot,
       headerHeight: 28,

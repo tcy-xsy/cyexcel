@@ -177,6 +177,7 @@ a {
 .docs-page {
   max-width: 920px;
   margin: 0 auto;
+  overflow-wrap: anywhere;
 }
 
 .page-eyebrow {
@@ -374,13 +375,24 @@ a {
   white-space: pre-wrap;
 }
 
-.api-table {
-  width: 100%;
+.api-table-scroll {
+  max-width: 100%;
   margin-top: 14px;
-  border-collapse: collapse;
-  background: #fff;
+  overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);
+}
+
+.api-table-scroll:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.api-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  background: #fff;
   overflow: hidden;
 }
 
@@ -415,6 +427,7 @@ a {
   color: #6b7280;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .callout {

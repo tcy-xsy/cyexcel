@@ -1,7 +1,7 @@
 export { createToolbar, toolbarWidget, type ToolbarHandle } from "./createToolbar.js";
 export { createFormulaBar, formulaBarWidget, type FormulaBarHandle } from "./createFormulaBar.js";
 export { parseA1, rangeToA1, toA1 } from "./a1Notation.js";
-export { defaultToolbarSchema } from "./schema.js";
+export { defaultToolbarSchema, createDefaultToolbarSchema } from "./schema.js";
 export { createDialog, type DialogHandle, type DialogOptions } from "./createDialog.js";
 export { findReplaceDialog } from "./dialogs.js";
 export {

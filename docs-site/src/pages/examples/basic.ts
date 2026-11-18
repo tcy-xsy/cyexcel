@@ -1,9 +1,11 @@
+import { getLocale } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
-import { columns, snapshot } from "../../demo/data";
+import { getDemoData } from "../../demo/data";
 import { codeBlock, demoBlock, pageHeader, paragraph, section } from "../../components/doc";
 
 export default function basicExamplePage(root: DocElement): void {
+  const { columns, snapshot } = getDemoData();
   root.append(pageHeader("EXAMPLES", "基础表格", "用 createSheet() 创建一个带工具栏的可编辑表格。"));
 
   const intro = section("只挂核心");
@@ -29,6 +31,7 @@ const sheet = createSheet(document.querySelector("#sheet"), {
   demo.mount.addClass("with-toolbar");
   demo.mount.onMount = () => {
     const sheet = createSheet(demo.mount.element, {
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
       columns,
       snapshot,
       headerHeight: 28,

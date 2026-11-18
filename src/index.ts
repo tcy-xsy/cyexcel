@@ -37,8 +37,11 @@ export {
   createFormulaBar,
   createToolbar,
   defaultToolbarSchema,
+  createDefaultToolbarSchema,
   formulaBarWidget,
   toolbarWidget,
   type ToolbarItem,
   type ToolbarSchema
 } from "./core/toolbar/index.js";
+
+export { createTranslator, enUS, zhCN, type Locale, type LocaleDefinition, type MessageKey, type Translator } from "./core/locale/index.js";

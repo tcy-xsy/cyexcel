@@ -1,5 +1,5 @@
 import type { CyExcelCore } from "../CyExcelCore.js";
-import { defaultToolbarSchema } from "./schema.js";
+import { createDefaultToolbarSchema } from "./schema.js";
 import { resolveItemState } from "./state.js";
 import * as icons from "./icons.js";
 import { TOOLBAR_GROUPS, type ToolbarContext, type ToolbarItem, type ToolbarOptions } from "./types.js";
@@ -41,7 +41,8 @@ export function createToolbar(
   container: HTMLElement,
   options: ToolbarOptions = {}
 ): ToolbarHandle {
-  const items = sortItems([...(options.schema ?? defaultToolbarSchema), ...(options.items ?? [])]);
+  const t = sheet.t;
+  const items = sortItems([...(options.schema ?? createDefaultToolbarSchema(t)), ...(options.items ?? [])]);
 
   const root = el("div", "cyx-toolbar");
   root.setAttribute("role", "toolbar");
@@ -50,9 +51,9 @@ export function createToolbar(
   moreButton.type = "button";
   moreButton.innerHTML = icons.more;
   styles.apply(moreButton, styles.button);
-  moreButton.setAttribute("aria-label", "更多");
+  moreButton.setAttribute("aria-label", t("More"));
   const disposeMoreFocus = styles.attachFocusStyle(moreButton);
-  const disposeMoreTooltip = styles.attachTooltip(moreButton, "更多工具");
+  const disposeMoreTooltip = styles.attachTooltip(moreButton, t("More tools"));
   styles.setHidden(moreButton, true);
   const overflowHost = el("div", "cyx-toolbar-overflow");
   styles.setHidden(overflowHost, true);
@@ -102,6 +103,7 @@ export function createToolbar(
       return;
     }
     const handle = createDialog({
+      t,
       title: item.label,
       fill: (body, close) => openDialog(context(), body, close),
       onClosed: () => openDialogs.delete(item.id)
@@ -267,7 +269,7 @@ export function createToolbar(
         }
       });
 
-      const caret = makeButton(item, `${item.label}（更多）`, icons.caretDown);
+      const caret = makeButton(item, t("{0} (more)", item.label), icons.caretDown);
       styles.apply(caret, styles.splitCaret);
       caret.addEventListener("click", () => {
         openPanel(item, group, (value) => {
@@ -283,7 +285,7 @@ export function createToolbar(
         styles.attachFocusStyle(main),
         styles.attachFocusStyle(caret),
         styles.attachTooltip(main, item.tooltip ?? item.label),
-        styles.attachTooltip(caret, `${item.label}（更多选项）`)
+        styles.attachTooltip(caret, t("{0} (more options)", item.label))
       );
       return group;
     }
@@ -444,6 +446,7 @@ export function createToolbar(
       anchorRect,
       focusTarget: moreButton,
       fill: (layer) => {
+        styles.apply(layer, { minWidth: "min(280px, calc(100vw - 8px))" });
         const ctx = context();
         const disposers: (() => void)[] = [];
         for (const entry of rendered) {
@@ -459,6 +462,7 @@ export function createToolbar(
             row.append(document.createTextNode(item.label));
             const select = el("select", "cyx-toolbar-select");
             styles.apply(select, styles.select);
+            styles.apply(select, { width: "100%", maxWidth: "100%" });
             select.setAttribute("aria-label", item.label);
             for (const option of item.options ?? []) {
               const node = document.createElement("option");

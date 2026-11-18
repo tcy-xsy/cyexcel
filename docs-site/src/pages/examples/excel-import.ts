@@ -1,7 +1,8 @@
+import { getLocale } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createWorkbook } from "@cyexcel/createWorkbook";
-import { matrixToWorkbookSnapshot } from "@cyexcel/core";
-import { defaultToolbarSchema } from "@cyexcel/core/toolbar";
+import { createTranslator, matrixToWorkbookSnapshot } from "@cyexcel/core";
+import { createDefaultToolbarSchema } from "@cyexcel/core/toolbar";
 import { createExcelImportPlugin } from "../../../../plugins/excel-import/src";
 import { createExcelImportSample } from "../../../../plugins/excel-import/examples/sample";
 import { actionButton, demoBlock, pageHeader, paragraph, section, codeBlock, setText } from "../../components/doc";
@@ -48,11 +49,14 @@ export default function excelImportExamplePage(root: DocElement): void {
     let cleanup = () => {};
     const mount = () => {
       const plugin = createExcelImportPlugin({
+        locale: getLocale() === "en" ? "en-US" : "zh-CN",
         onWarning: message => importDemo.log?.setText(message)
       });
       const workbook = createWorkbook(importDemo.mount.element, {
+        locale: getLocale() === "en" ? "en-US" : "zh-CN",
         toolbar: {
-          schema: defaultToolbarSchema.filter(item => ["undo", "redo", "export-excel"].includes(item.id)),
+          schema: createDefaultToolbarSchema(createTranslator(getLocale() === "en" ? "en-US" : "zh-CN"))
+            .filter(item => ["undo", "redo", "export-excel"].includes(item.id)),
           items: plugin.toolbarItems
         },
         headerHeight: 28,

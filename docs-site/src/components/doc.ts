@@ -130,7 +130,10 @@ export function apiTable(rows: ApiRow): DocElement {
     tbody.append(tr);
   }
   table.append(thead, tbody);
-  return table;
+  const scroll = element("div", "api-table-scroll");
+  scroll.attributes.tabindex = "0";
+  scroll.append(table);
+  return scroll;
 }
 
 export function callout(text: string): DocElement {

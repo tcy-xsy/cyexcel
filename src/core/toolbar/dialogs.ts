@@ -3,10 +3,7 @@ import * as styles from "./styles.js";
 import type { ToolbarContext } from "./types.js";
 import type { SearchMatch } from "../search/index.js";
 import {
-  ALLOW_OPTIONS,
-  ERROR_STYLE_OPTIONS,
-  RENDER_MODE_OPTIONS,
-  OPERATOR_OPTIONS,
+  createValidationFormOptions,
   fieldsFor,
   formFromRule,
   ruleInputFromForm,
@@ -73,11 +70,12 @@ export function findReplaceDialog(
   close: () => void,
   ctx: ToolbarContext
 ): () => void {
-  const query = textInput("查找内容…", "查找内容");
-  const replacement = textInput("替换为…", "替换为");
+  const t = ctx.sheet.t;
+  const query = textInput(t("Find..."), t("Find what"));
+  const replacement = textInput(t("Replace with..."), t("Replace with"));
 
-  const matchCase = checkbox("区分大小写");
-  const useRegex = checkbox("正则表达式");
+  const matchCase = checkbox(t("Match case"));
+  const useRegex = checkbox(t("Regular expression"));
   const optionRow = el("div", "cyx-toolbar-dialog-options");
   styles.apply(optionRow, styles.dialogOptions);
   optionRow.append(matchCase.wrap, useRegex.wrap);
@@ -85,16 +83,19 @@ export function findReplaceDialog(
   const status = el("div", "cyx-toolbar-dialog-status", "");
   styles.apply(status, styles.dialogStatus);
 
-  const findAll = button("查找全部");
-  const previous = button("上一个");
-  const next = button("下一个");
-  const replaceOne = button("替换");
-  const replaceAll = button("全部替换");
-  const done = button("关闭");
+  const findAll = button(t("Find all"));
+  const previous = button(t("Previous"));
+  const next = button(t("Next"));
+  const replaceOne = button(t("Replace"));
+  const replaceAll = button(t("Replace all"));
+  const done = button(t("Close"));
 
   const buttonRow = el("div", "cyx-toolbar-dialog-buttons");
-  styles.apply(buttonRow, styles.dialogButtons);
+  styles.apply(buttonRow, styles.searchDialogButtons);
   buttonRow.append(findAll, previous, next, replaceOne, replaceAll, done);
+  for (const control of [findAll, previous, next, replaceOne, replaceAll, done]) {
+    styles.apply(control, { minWidth: "0", minHeight: "28px", height: "auto", padding: "4px 6px", whiteSpace: "normal" });
+  }
 
   /** 上一次 `findNext`/`findPrevious` 停在哪——「替换」写的就是这一格。 */
   let currentMatch: SearchMatch | null = null;
@@ -107,11 +108,11 @@ export function findReplaceDialog(
   });
 
   const describe = (match: SearchMatch | null): string =>
-    match === null ? "没有更多匹配" : `第 ${match.row + 1} 行，第 ${match.column + 1} 列`;
+    match === null ? t("No more matches") : t("Row {0}, column {1}", match.row + 1, match.column + 1);
 
   const scan = async (): Promise<number | null> => {
     if (query.value === "") {
-      status.textContent = "请先输入查找内容";
+      status.textContent = t("Enter a search term first.");
       return null;
     }
     scanning = true;
@@ -132,7 +133,7 @@ export function findReplaceDialog(
       if (count === null) {
         return;
       }
-      status.textContent = count === 0 ? "没有匹配" : `${count} 个匹配`;
+      status.textContent = count === 0 ? t("No matches") : t("{0} matches", count);
     });
   });
 
@@ -152,25 +153,25 @@ export function findReplaceDialog(
     }
     const target = currentMatch;
     if (target === null) {
-      status.textContent = "先用「下一个」定位到一处，再替换";
+      status.textContent = t("Use Next to locate a match before replacing it.");
       return;
     }
     ctx.sheet.replace(target, replacement.value, query.value, searchOptions());
     // 重扫而不是复用旧匹配集——见函数头的说明。
     void scan().then((count) => {
       if (count === null || count === 0) {
-        status.textContent = "已替换，没有更多匹配";
+        status.textContent = t("Replaced. No more matches.");
         return;
       }
       currentMatch = ctx.sheet.findNext();
-      status.textContent = `已替换，${describe(currentMatch)}`;
+      status.textContent = t("Replaced. {0}", describe(currentMatch));
     });
   });
 
   replaceAll.addEventListener("click", () => {
     if (scanning || query.value === "") {
       if (query.value === "") {
-        status.textContent = "请先输入查找内容";
+        status.textContent = t("Enter a search term first.");
       }
       return;
     }
@@ -179,7 +180,7 @@ export function findReplaceDialog(
       .replaceAll(query.value, replacement.value, searchOptions())
       .then((count) => {
         currentMatch = null;
-        status.textContent = count === null ? "已取消" : `替换了 ${count} 处`;
+        status.textContent = count === null ? t("Cancelled") : t("Replaced {0} occurrences", count);
       })
       .finally(() => {
         scanning = false;
@@ -206,7 +207,7 @@ export function findReplaceDialog(
   matchCase.input.addEventListener("change", invalidate);
   useRegex.input.addEventListener("change", invalidate);
 
-  body.append(field("查找", query), field("替换为", replacement), optionRow, buttonRow, status);
+  body.append(field(t("Find"), query), field(t("Replace with"), replacement), optionRow, buttonRow, status);
 
   return () => {
     // 关掉对话框就撤掉高亮：那片黄底留在表格上而没有任何界面能再操作它，会很费解。
@@ -244,29 +245,33 @@ export function dataValidationDialog(
   close: () => void,
   ctx: ToolbarContext
 ): () => void {
+  const t = ctx.sheet.t;
   const range = ctx.range;
+  const { ALLOW_OPTIONS, ERROR_STYLE_OPTIONS, RENDER_MODE_OPTIONS, OPERATOR_OPTIONS } = createValidationFormOptions(t);
   const existing = ctx.sheet.getDataValidationAt(range.startRow, range.startColumn);
   const state: DataValidationFormState = formFromRule(existing);
 
-  const allow = selectInput<AllowKind>(ALLOW_OPTIONS, "允许");
-  const operator = selectInput<ValidationOperator>(OPERATOR_OPTIONS, "数据");
-  const value1 = textInput("", "值");
-  const value2 = textInput("", "最大值");
-  const allowBlank = checkbox("忽略空值");
-  const showDropDown = checkbox("提供下拉箭头");
-  const renderMode = selectInput<DataValidationRenderMode>(RENDER_MODE_OPTIONS, "显示方式");
-  const errorStyle = selectInput<ValidationErrorStyle>(ERROR_STYLE_OPTIONS, "错误样式");
-  const errorTitle = textInput("可选", "出错警告标题");
-  const errorMessage = textInput("留空使用默认文案", "出错警告信息");
+  const allow = selectInput<AllowKind>(ALLOW_OPTIONS, t("Allow"));
+  const operator = selectInput<ValidationOperator>(OPERATOR_OPTIONS, t("Data"));
+  const value1 = textInput("", t("Value"));
+  const value2 = textInput("", t("Maximum"));
+  const allowBlank = checkbox(t("Ignore blanks"));
+  const showDropDown = checkbox(t("Show dropdown arrow"));
+  const renderMode = selectInput<DataValidationRenderMode>(RENDER_MODE_OPTIONS, t("Display mode"));
+  const errorStyle = selectInput<ValidationErrorStyle>(ERROR_STYLE_OPTIONS, t("Error style"));
+  const errorTitle = textInput(t("Optional"), t("Error alert title"));
+  const errorMessage = textInput(t("Leave blank to use the default message"), t("Error alert message"));
 
-  const operatorRow = field("数据", operator);
-  const value1Label = el("label", "cyx-toolbar-dialog-label", "值");
+  const operatorRow = field(t("Data"), operator);
+  const value1Label = el("label", "cyx-toolbar-dialog-label", t("Value"));
   styles.apply(value1Label, styles.dialogLabel);
   const value1Row = el("div", "cyx-toolbar-dialog-field");
   styles.apply(value1Row, styles.dialogField);
   value1Row.append(value1Label, value1);
-  const value2Row = field("最大值", value2);
-  const renderModeRow = field("显示方式", renderMode);
+  const value2Row = field(t("Maximum"), value2);
+  const sourceHelp = el("div", "cyx-toolbar-dialog-help", t("Comma-separated, with optional colors: Red=#d93025,Green,Blue"));
+  styles.apply(sourceHelp, styles.dialogHelp);
+  const renderModeRow = field(t("Display mode"), renderMode);
   const optionRow = el("div", "cyx-toolbar-dialog-options");
   styles.apply(optionRow, styles.dialogOptions);
   optionRow.append(allowBlank.wrap, showDropDown.wrap);
@@ -274,9 +279,9 @@ export function dataValidationDialog(
   const status = el("div", "cyx-toolbar-dialog-status", "");
   styles.apply(status, styles.dialogStatus);
 
-  const ok = button("确定");
-  const cancel = button("取消");
-  const clearAll = button("全部清除");
+  const ok = button(t("OK"));
+  const cancel = button(t("Cancel"));
+  const clearAll = button(t("Clear all"));
   const buttonRow = el("div", "cyx-toolbar-dialog-buttons");
   styles.apply(buttonRow, styles.dialogButtons);
   buttonRow.append(ok, cancel, clearAll);
@@ -297,14 +302,15 @@ export function dataValidationDialog(
   /** 按当前的"允许"和"数据"显示或隐藏对应的输入框。 */
   const refresh = (): void => {
     const shown = fieldsFor(allow.value as AllowKind, operator.value as ValidationOperator);
-    operatorRow.style.display = shown.operator ? "" : "none";
-    value1Row.style.display = shown.value1 ? "" : "none";
-    value2Row.style.display = shown.value2 ? "" : "none";
-    showDropDown.wrap.style.display = shown.dropDown ? "" : "none";
-    renderModeRow.style.display = shown.renderMode ? "" : "none";
-    value1Label.textContent = allow.value === "list" ? "来源" : shown.value2 ? "最小值" : "值";
-    value1.placeholder = allow.value === "list" ? "逗号分隔，可带颜色：红=#d93025,绿,蓝" : allow.value === "date" ? "2026-01-15" : allow.value === "time" ? "09:30" : "";
-    optionRow.style.display = allow.value === "any" ? "none" : "";
+    styles.setHidden(operatorRow, !shown.operator);
+    styles.setHidden(value1Row, !shown.value1);
+    styles.setHidden(value2Row, !shown.value2);
+    styles.setHidden(showDropDown.wrap, !shown.dropDown);
+    styles.setHidden(renderModeRow, !shown.renderMode);
+    styles.setHidden(sourceHelp, allow.value !== "list");
+    value1Label.textContent = allow.value === "list" ? t("Source") : shown.value2 ? t("Minimum") : t("Value");
+    value1.placeholder = allow.value === "date" ? "2026-01-15" : allow.value === "time" ? "09:30" : "";
+    styles.setHidden(optionRow, allow.value === "any");
   };
 
   allow.value = state.allow;
@@ -322,11 +328,11 @@ export function dataValidationDialog(
   operator.addEventListener("change", refresh);
 
   if (existing?.criteria.type === "custom") {
-    status.textContent = "这片区域用的是自定义规则，表单无法编辑；保存会替换它。";
+    status.textContent = t("This range uses a custom rule that cannot be edited here. Saving will replace it.");
   }
 
   ok.addEventListener("click", () => {
-    const outcome = ruleInputFromForm(read());
+    const outcome = ruleInputFromForm(read(), t);
     if (outcome.kind === "error") {
       status.textContent = outcome.message;
       return;
@@ -349,15 +355,16 @@ export function dataValidationDialog(
   });
 
   body.append(
-    field("允许", allow),
+    field(t("Allow"), allow),
     operatorRow,
     value1Row,
+    sourceHelp,
     value2Row,
     optionRow,
     renderModeRow,
-    field("错误样式", errorStyle),
-    field("错误标题", errorTitle),
-    field("错误信息", errorMessage),
+    field(t("Error style"), errorStyle),
+    field(t("Error title"), errorTitle),
+    field(t("Error message"), errorMessage),
     buttonRow,
     status
   );

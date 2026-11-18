@@ -1,3 +1,4 @@
+import { localizeDemoData } from "./localize";
 import { matrixToWorkbookSnapshot, type WorkbookSnapshot } from "@cyexcel/core";
 
 export const performanceColumns = [
@@ -19,15 +20,22 @@ const NAMES = [
 const REGIONS = ["华东", "华南", "华北", "西南", "东北"];
 
 export function buildPerformanceRows(count: number) {
+  const names = localizeDemoData(NAMES);
+  const regions = localizeDemoData(REGIONS);
+  const stock = localizeDemoData(["无", "有"]);
   return Array.from({ length: count }, (_unused, index) => [
     `P-${String(index + 1).padStart(7, "0")}`,
-    NAMES[index % NAMES.length]!,
-    REGIONS[index % REGIONS.length]!,
+    names[index % names.length]!,
+    regions[index % regions.length]!,
     Math.round((48 + ((index * 37) % 520)) * 100) / 100,
-    index % 5 === 0 ? "无" : "有"
+    stock[index % 5 === 0 ? 0 : 1]!
   ]);
 }
 
 export function buildPerformanceSnapshot(count: number): WorkbookSnapshot {
   return matrixToWorkbookSnapshot(buildPerformanceRows(count));
+}
+
+export function getPerformanceColumns() {
+  return localizeDemoData(performanceColumns);
 }

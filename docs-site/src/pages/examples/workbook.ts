@@ -1,15 +1,12 @@
+import { getLocale, translate } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createWorkbook } from "@cyexcel/createWorkbook";
-import {
-  columns,
-  rows,
-  summaryColumns,
-  summarySnapshot
-} from "../../demo/data";
+import { getDemoData } from "../../demo/data";
 import { matrixToWorkbookSnapshot } from "@cyexcel/core";
 import { demoBlock, pageHeader, paragraph, section, codeBlock } from "../../components/doc";
 
 export default function workbookExamplePage(root: DocElement): void {
+  const { columns, rows, summaryColumns, summarySnapshot } = getDemoData();
   root.append(
     pageHeader(
       "EXAMPLES",
@@ -43,18 +40,19 @@ workbook.getActiveSheet().insertRows(0, 1);`)
   root.append(demo.root);
   demo.mount.onMount = () => {
     const workbook = createWorkbook(demo.mount.element, {
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
       toolbar: true,
       formulaBar: true,
       sheets: [
         {
-          name: "订单明细",
+          name: translate("订单明细"),
           columns,
           snapshot: matrixToWorkbookSnapshot(rows),
           headerHeight: 28,
           rowHeaderWidth: 48
         },
         {
-          name: "区域汇总",
+          name: translate("区域汇总"),
           columns: summaryColumns,
           snapshot: summarySnapshot,
           headerHeight: 28,

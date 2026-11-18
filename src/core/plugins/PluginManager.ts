@@ -1,3 +1,4 @@
+import type { Translator } from "../locale/index.js";
 import type { ColumnDefinition as CyExcelColumnConfig } from "../cells/index.js";
 import type { ClipboardCopyOptions, ClipboardCopyResult, ClipboardPasteOptions } from "../clipboard/index.js";
 import { CyExcelError, CyExcelErrorCode } from "../errors.js";
@@ -11,6 +12,7 @@ import type { Disposer } from "../types.js";
 import type { CyExcelPlugin, PluginContext } from "./types.js";
 
 export interface PluginManagerOptions {
+  readonly t?: Translator;
   readonly sheetMenu?: SheetMenuCommands;
   readonly hooks: HookManager;
   readonly events: EventBus;
@@ -100,6 +102,7 @@ export class PluginManager {
     });
     let pluginDisposed = false;
     const context: PluginContext = {
+      ...(this.#options.t === undefined ? {} : { t: this.#options.t }),
       ...(this.#options.sheetMenu === undefined ? {} : { sheetMenu: {
         getState: this.#runtime("sheetMenu", this.#options.sheetMenu.getState, () => pluginDisposed),
         run: this.#runtime("sheetMenu", this.#options.sheetMenu.run, () => pluginDisposed)

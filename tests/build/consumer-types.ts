@@ -9,10 +9,11 @@
  * `@ts-expect-error`-assertion style as `tests/types/core-types.ts`, which
  * checks the source (not built) types instead.
  */
-import { CyExcelCore, DEFAULT_CYEXCEL_TAG_NAME, rowsToWorkbookSnapshot } from "cyexcel";
-import type { CyExcelCoreOptions } from "cyexcel";
+import { CyExcelCore, DEFAULT_CYEXCEL_TAG_NAME, rowsToWorkbookSnapshot, createTranslator, zhCN } from "cyexcel";
+import type { CyExcelCoreOptions, LocaleDefinition } from "cyexcel";
 import * as CoreApi from "cyexcel/core";
 import { defineCyExcel } from "cyexcel/register";
+import { createDefaultToolbarSchema } from "cyexcel/toolbar";
 
 // --- "cyexcel" re-exports the same CyExcelCore as "cyexcel/core" --------
 
@@ -41,6 +42,7 @@ void internalRuntimeIsNotShipped;
 // 出得来，否则只 import `CyExcelCore` 的消费者只能开一张空表（见 src/index.ts）。
 
 const options: CyExcelCoreOptions = {
+  locale: "en-US",
   // 列配置里没有 id、也没有 field（ADR 0004 §3.8.2）：字段名只在下面那次导入里
   // 出现一次，列本身就是它的下标。
   columns: [{ width: 120 }],
@@ -48,6 +50,17 @@ const options: CyExcelCoreOptions = {
   rowHeight: 24
 };
 void options;
+
+const customLocale: LocaleDefinition = { name: "custom", messages: { ...zhCN.messages, Undo: "Back" } };
+const translate = createTranslator(customLocale);
+const localizedSchema = createDefaultToolbarSchema(translate);
+const coreTranslate: typeof translate = CoreApi.createTranslator("en-US");
+void localizedSchema;
+void coreTranslate;
+// @ts-expect-error Unsupported built-in language strings require a dictionary.
+createTranslator("fr-FR");
+// @ts-expect-error Translation keys are checked against the canonical dictionary.
+translate("toolbar.typo");
 
 // --- CyExcelCore actually constructs from a real HTMLElement -------------
 

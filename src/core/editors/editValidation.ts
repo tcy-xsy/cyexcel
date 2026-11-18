@@ -1,3 +1,4 @@
+import { defaultTranslator, type Translator } from "../locale/index.js";
 import type { DataValidationResult } from "../sheet/validations.js";
 
 /**
@@ -21,14 +22,14 @@ export type EditValidationOutcome =
 export const ACCEPT: EditValidationOutcome = Object.freeze({ kind: "accept" });
 
 /** 把一次校验结果按规则的 `errorStyle` 翻成编辑器要执行的动作：只有停止级拦。 */
-export function outcomeFromResult(result: DataValidationResult): EditValidationOutcome {
+export function outcomeFromResult(result: DataValidationResult, t: Translator = defaultTranslator): EditValidationOutcome {
   if (result.valid || (result.errorStyle ?? "stop") !== "stop") {
     return ACCEPT;
   }
   return {
     kind: "reject",
     ...(result.title !== undefined ? { title: result.title } : {}),
-    message: result.message ?? "输入的值不符合规则"
+    message: result.message ?? t("The value does not meet the validation rule.")
   };
 }
 
