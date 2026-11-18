@@ -1,5 +1,5 @@
-import type { CellValue } from "../sheet/types";
-import type { CellRange, Command } from "../types";
+import type { CellValue } from "../sheet/types.js";
+import type { CellRange, Command } from "../types.js";
 
 export interface SetRangeCommandParams {
   readonly range: CellRange;

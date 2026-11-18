@@ -1,6 +1,6 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { assertValidRowOrder } from "../layout/rowOrder";
-import { validateAxisChange } from "../layout/structuralChange";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import { assertValidRowOrder } from "../layout/rowOrder.js";
+import { validateAxisChange } from "../layout/structuralChange.js";
 import {
   MutationCoordinator,
   type CommitReceipt,
@@ -8,21 +8,21 @@ import {
   type MutationPrepareContext,
   type MutationPrepareSession,
   type PreparedMutationParticipant
-} from "../mutations";
-import { rowValuesToCells, valueToRecord } from "../sheet/import";
-import type { SheetMutation } from "../sheet/mutation";
-import type { CellRecord, CellValue } from "../sheet/types";
-import type { DataValidationRule } from "../sheet/validations";
-import { changesForSheetMutation, type SheetAxisSpace } from "../sheet/patches";
-import type { SheetModel } from "../sheet/SheetModel";
-import { createSheetPlanningResources } from "../sheet/planning";
-import type { CellRange, Patch } from "../types";
-import { CellStyleMutation } from "../mutations/CellStyleMutation";
-import { CellImageMutation } from "../mutations/CellImageMutation";
-import { StyleRegistry } from "../style/StyleRegistry";
-import type { CellStylePatch } from "../style/styleKey";
-import { assertValidCoordinate, assertValidRange } from "../validation";
-import type { ChangeSet } from "./changes";
+} from "../mutations/index.js";
+import { rowValuesToCells, valueToRecord } from "../sheet/import.js";
+import type { SheetMutation } from "../sheet/mutation.js";
+import type { CellRecord, CellValue } from "../sheet/types.js";
+import type { DataValidationRule } from "../sheet/validations.js";
+import { changesForSheetMutation, type SheetAxisSpace } from "../sheet/patches.js";
+import type { SheetModel } from "../sheet/SheetModel.js";
+import { createSheetPlanningResources } from "../sheet/planning.js";
+import type { CellRange, Patch } from "../types.js";
+import { CellStyleMutation } from "../mutations/CellStyleMutation.js";
+import { CellImageMutation } from "../mutations/CellImageMutation.js";
+import { StyleRegistry } from "../style/StyleRegistry.js";
+import type { CellStylePatch } from "../style/styleKey.js";
+import { assertValidCoordinate, assertValidRange } from "../validation.js";
+import type { ChangeSet } from "./changes.js";
 
 export interface TableStoreCommitResult {
   readonly patches: readonly Patch[];

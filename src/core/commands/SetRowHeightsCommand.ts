@@ -1,5 +1,5 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { Command } from "../types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { Command } from "../types.js";
 
 export type RowHeightCommandProvenance = "auto" | "manual";
 

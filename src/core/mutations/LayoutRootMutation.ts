@@ -1,12 +1,12 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { invertRowOrder, type LayoutEngine, type LayoutRoot, type RowHeightProvenance } from "../layout";
-import type { SheetModel } from "../sheet/SheetModel";
-import type { PreparedSheetMutation } from "../sheet/SheetTransaction";
-import type { ColumnMeta, RowMeta } from "../sheet/types";
-import type { Patch } from "../types";
-import { geometricColumnWidthOf, withColumnHidden, withColumnWidth } from "./columnWidthMeta";
-import { rowHeightOf, rowHeightProvenanceOf, withRowHeight } from "./rowHeightMeta";
-import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import { invertRowOrder, type LayoutEngine, type LayoutRoot, type RowHeightProvenance } from "../layout/index.js";
+import type { SheetModel } from "../sheet/SheetModel.js";
+import type { PreparedSheetMutation } from "../sheet/SheetTransaction.js";
+import type { ColumnMeta, RowMeta } from "../sheet/types.js";
+import type { Patch } from "../types.js";
+import { geometricColumnWidthOf, withColumnHidden, withColumnWidth } from "./columnWidthMeta.js";
+import { rowHeightOf, rowHeightProvenanceOf, withRowHeight } from "./rowHeightMeta.js";
+import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types.js";
 
 export type LayoutRootAction =
   | {

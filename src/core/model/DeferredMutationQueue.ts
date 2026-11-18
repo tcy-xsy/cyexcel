@@ -1,5 +1,5 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { RevisionGate } from "./RevisionGate";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { RevisionGate } from "./RevisionGate.js";
 
 interface DeferredMutationIntent {
   readonly run: () => void;

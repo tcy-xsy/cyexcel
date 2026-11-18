@@ -1,5 +1,5 @@
-import type { RowHeightProvenance } from "../layout";
-import type { RowMeta } from "../sheet/types";
+import type { RowHeightProvenance } from "../layout/index.js";
+import type { RowMeta } from "../sheet/types.js";
 
 /**
  * 行高权威（`rowData`）与布局词汇（`RowHeightProvenance`）之间的那层翻译。

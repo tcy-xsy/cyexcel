@@ -1,4 +1,4 @@
-import type { CellRect } from "../layout";
+import type { CellRect } from "../layout/index.js";
 
 export function positionEditorElement(
   element: HTMLElement,

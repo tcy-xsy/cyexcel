@@ -1,12 +1,12 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { CellRect } from "../layout";
-import type { SceneCellFragment, SceneSnapshot } from "../scene";
-import type { CellRange } from "../types";
-import type { Canvas2DLike } from "./Canvas2DLike";
-import type { BorderSide, CellStyle } from "../style/types";
-import type { DirtyState } from "./RenderScheduler";
-import type { CellValue } from "../sheet/types";
-import { CAPSULE_RADIUS, computeCapsule, type CapsuleGeometry, type CellDropdown } from "./dropdownGeometry";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { CellRect } from "../layout/index.js";
+import type { SceneCellFragment, SceneSnapshot } from "../scene/index.js";
+import type { CellRange } from "../types.js";
+import type { Canvas2DLike } from "./Canvas2DLike.js";
+import type { BorderSide, CellStyle } from "../style/types.js";
+import type { DirtyState } from "./RenderScheduler.js";
+import type { CellValue } from "../sheet/types.js";
+import { CAPSULE_RADIUS, computeCapsule, type CapsuleGeometry, type CellDropdown } from "./dropdownGeometry.js";
 import {
   CELL_FONT,
   CELL_PADDING,
@@ -19,7 +19,7 @@ import {
   INVALID_MARK_COLOR,
   INVALID_MARK_SIZE,
   TEXT_COLOR
-} from "./theme";
+} from "./theme.js";
 
 export interface CellPaintContext {
   readonly ctx: Canvas2DLike;

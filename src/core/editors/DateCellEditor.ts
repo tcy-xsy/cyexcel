@@ -1,8 +1,8 @@
-import { CELL_FONT, CELL_PADDING, SELECTION_STROKE_COLOR, SELECTION_STROKE_WIDTH } from "../render/theme";
-import type { CellEditor, CellEditorContext } from "./CellEditor";
-import { positionEditorElement } from "./positionEditorElement";
-import type { CellValue } from "../sheet/types";
-import { serialFromISODate, serialToISODate } from "../style/dateSerial";
+import { CELL_FONT, CELL_PADDING, SELECTION_STROKE_COLOR, SELECTION_STROKE_WIDTH } from "../render/theme.js";
+import type { CellEditor, CellEditorContext } from "./CellEditor.js";
+import { positionEditorElement } from "./positionEditorElement.js";
+import type { CellValue } from "../sheet/types.js";
+import { serialFromISODate, serialToISODate } from "../style/dateSerial.js";
 
 /**
  * 格子里存的是 Excel 序列号（数字），`<input type="date">` 要的是 `yyyy-mm-dd`。

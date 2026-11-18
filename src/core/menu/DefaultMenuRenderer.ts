@@ -1,4 +1,4 @@
-import type { ContextMenuItem, ContextMenuRenderContext, ContextMenuRenderer } from "./types";
+import type { ContextMenuItem, ContextMenuRenderContext, ContextMenuRenderer } from "./types.js";
 
 type Entry = Exclude<ContextMenuItem, { type: "separator" }>;
 interface Panel {

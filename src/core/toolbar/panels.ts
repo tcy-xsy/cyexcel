@@ -1,7 +1,7 @@
-import type { BorderSide } from "../style/types";
-import type { ToolbarContext } from "./types";
-import * as styles from "./styles";
-import { el } from "./dom";
+import type { BorderSide } from "../style/types.js";
+import type { ToolbarContext } from "./types.js";
+import * as styles from "./styles.js";
+import { el } from "./dom.js";
 
 /**
  * 四个弹出面板，都是纯 DOM。

@@ -1,4 +1,4 @@
-import type { CellValue } from "../sheet/types";
+import type { CellValue } from "../sheet/types.js";
 /**
  * Extends a known sequence of values (one column's cells, or one row's
  * cells, in the source selection) by `targetCount` new values, matching the

@@ -1,4 +1,4 @@
-import { remapIndex, type StructuralChange } from "./structuralChange";
+import { remapIndex, type StructuralChange } from "./structuralChange.js";
 
 export type ColumnStructureChange = StructuralChange;
 

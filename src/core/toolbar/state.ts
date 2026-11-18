@@ -1,5 +1,5 @@
-import type { CellStyle } from "../style/types";
-import type { ToolbarContext, ToolbarItem, ToolbarItemState } from "./types";
+import type { CellStyle } from "../style/types.js";
+import type { ToolbarContext, ToolbarItem, ToolbarItemState } from "./types.js";
 
 /**
  * 全部满足才算激活，与 Excel 一致——半粗的选区按钮不亮，再点一次是"全部变粗"。

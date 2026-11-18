@@ -1,6 +1,6 @@
-export { HookManager, type HookManagerOptions } from "./HookManager";
-export { createCancellableContext, type CancellableContext } from "./cancellableContext";
-export type { HookMode, HookDefinition, HookRegistry, HookHandlerMeta } from "./types";
+export { HookManager, type HookManagerOptions } from "./HookManager.js";
+export { createCancellableContext, type CancellableContext } from "./cancellableContext.js";
+export type { HookMode, HookDefinition, HookRegistry, HookHandlerMeta } from "./types.js";
 export {
   PRODUCTION_HOOK_REGISTRY,
   BEFORE_INIT_HOOK,
@@ -13,4 +13,4 @@ export {
   BEFORE_CONTEXT_MENU_OPEN_HOOK,
   EXTEND_CONTEXT_MENU_HOOK,
   ON_HOOK_ERROR_HOOK
-} from "./registry";
+} from "./registry.js";

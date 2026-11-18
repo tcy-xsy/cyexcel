@@ -1,18 +1,18 @@
-import type { ColumnManager, RuntimeColumnRoot } from "../cells/ColumnManager";
-import { snapshotColumnDefinitions } from "../cells/columnSnapshot";
-import type { ColumnDefinition } from "../cells/types";
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { HeaderManager, HeaderManagerRoot } from "../headers/HeaderManager";
-import type { LayoutRoot, LayoutStructurePayload } from "../layout/LayoutEngine";
-import type { LayoutEngine } from "../layout/LayoutEngine";
-import type { RowMetricsFragment } from "../layout/RowMetrics";
-import type { AxisChangeDescriptor, StructuralChange } from "../layout/structuralChange";
-import type { SelectionModel, SelectionRoot } from "../interaction/SelectionModel";
-import type { MutationPrepareContext } from "../mutations/types";
+import type { ColumnManager, RuntimeColumnRoot } from "../cells/ColumnManager.js";
+import { snapshotColumnDefinitions } from "../cells/columnSnapshot.js";
+import type { ColumnDefinition } from "../cells/types.js";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { HeaderManager, HeaderManagerRoot } from "../headers/HeaderManager.js";
+import type { LayoutRoot, LayoutStructurePayload } from "../layout/LayoutEngine.js";
+import type { LayoutEngine } from "../layout/LayoutEngine.js";
+import type { RowMetricsFragment } from "../layout/RowMetrics.js";
+import type { AxisChangeDescriptor, StructuralChange } from "../layout/structuralChange.js";
+import type { SelectionModel, SelectionRoot } from "../interaction/SelectionModel.js";
+import type { MutationPrepareContext } from "../mutations/types.js";
 import type {
   PreparedStructureIntegration,
   StructureIntegrationOwner
-} from "../mutations/StructureIntegrationMutation";
+} from "../mutations/StructureIntegrationMutation.js";
 
 export interface GridStructureRoot {
   readonly columns: readonly ColumnDefinition[];

@@ -1,4 +1,4 @@
-import type { CanvasHeaderRenderer, DomHeaderRendererFactory } from "../cells";
+import type { CanvasHeaderRenderer, DomHeaderRendererFactory } from "../cells/index.js";
 
 export type {
   HeaderState,
@@ -10,7 +10,7 @@ export type {
   DomHeaderRenderer,
   DomHeaderRendererFactory,
   HeaderDefinition
-} from "../cells";
+} from "../cells/index.js";
 
 /** Resolved once at HeaderManager construction and cached; never re-merged when painting. */
 export interface RuntimeHeader {

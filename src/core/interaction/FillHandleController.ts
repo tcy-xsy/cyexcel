@@ -1,7 +1,7 @@
-import type { SceneSnapshot, SurfacePoint } from "../scene";
-import { SELECTION_HANDLE_SIZE } from "../render/theme";
-import type { CellRange } from "../types";
-import type { SelectionSnapshot } from "./SelectionModel";
+import type { SceneSnapshot, SurfacePoint } from "../scene/index.js";
+import { SELECTION_HANDLE_SIZE } from "../render/theme.js";
+import type { CellRange } from "../types.js";
+import type { SelectionSnapshot } from "./SelectionModel.js";
 
 export interface FillHandleControllerOptions {
   /** Fired on every preview change during a drag, and with `null` when the drag ends or produces no extension. */

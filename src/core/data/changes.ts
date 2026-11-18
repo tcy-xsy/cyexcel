@@ -1,4 +1,4 @@
-import type { CellRange, Patch } from "../types";
+import type { CellRange, Patch } from "../types.js";
 
 /**
  * Ordered facts emitted by one successful model commit. Unlike the legacy

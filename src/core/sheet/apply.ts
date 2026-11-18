@@ -1,7 +1,7 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { ColumnCells, RowCells, SheetMutation, SideTableEntries } from "./mutation";
-import type { SheetModel } from "./SheetModel";
-import type { CellRecord, ColumnMeta, RowMeta } from "./types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { ColumnCells, RowCells, SheetMutation, SideTableEntries } from "./mutation.js";
+import type { SheetModel } from "./SheetModel.js";
+import type { CellRecord, ColumnMeta, RowMeta } from "./types.js";
 
 /**
  * 把一条 `SheetMutation` 施加到模型上。

@@ -1,7 +1,7 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { IndexedTable } from "./IndexedTable";
-import { assertCanonicalIndexKeys } from "./indexKey";
-import type { ResourceEntry } from "./types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import { IndexedTable } from "./IndexedTable.js";
+import { assertCanonicalIndexKeys } from "./indexKey.js";
+import type { ResourceEntry } from "./types.js";
 
 function invalid(message: string): CyExcelError {
   return new CyExcelError(CyExcelErrorCode.InvalidOptions, message);

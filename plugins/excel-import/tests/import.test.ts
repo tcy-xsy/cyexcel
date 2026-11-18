@@ -3,8 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { WorkbookHandle } from "cyexcel";
 import { WorkbookModel } from "cyexcel/core";
 import { createFormulaEngine } from "cyexcel/formula";
-import { createExcelImportPlugin, readExcelWorkbook } from "../src/index";
-import { createExcelImportSample } from "../examples/sample";
+import { createExcelImportPlugin, readExcelWorkbook } from "../src/index.js";
+import { createExcelImportSample } from "../examples/sample.js";
 
 async function fixture(): Promise<Uint8Array> {
   const workbook = new ExcelJS.Workbook();

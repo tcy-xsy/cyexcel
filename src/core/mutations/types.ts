@@ -1,11 +1,11 @@
-import type { ModelRevision } from "../model";
-import type { ChangeSet } from "../data/changes";
-import type { SheetMutation } from "../sheet/mutation";
-import type { SheetModel } from "../sheet/SheetModel";
-import type { PreparedSheetMutation } from "../sheet/SheetTransaction";
-import type { CellRecord, ColumnMeta, RowMeta } from "../sheet/types";
-import type { DataValidationRule } from "../sheet/validations";
-import type { CellRange, Patch } from "../types";
+import type { ModelRevision } from "../model/index.js";
+import type { ChangeSet } from "../data/changes.js";
+import type { SheetMutation } from "../sheet/mutation.js";
+import type { SheetModel } from "../sheet/SheetModel.js";
+import type { PreparedSheetMutation } from "../sheet/SheetTransaction.js";
+import type { CellRecord, ColumnMeta, RowMeta } from "../sheet/types.js";
+import type { DataValidationRule } from "../sheet/validations.js";
+import type { CellRange, Patch } from "../types.js";
 
 export type MutationCoordinatorState =
   | "idle"

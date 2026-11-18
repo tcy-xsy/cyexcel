@@ -1,10 +1,10 @@
-import type { ColumnDefinition as CyExcelColumnConfig } from "../cells";
-import type { ClipboardCopyOptions, ClipboardCopyResult, ClipboardPasteOptions } from "../clipboard";
-import type { HookHandlerMeta } from "../hooks";
-import type { ContextMenuProvider, ContextMenuProviderMeta } from "../menu";
-import type { SheetMenuCommands } from "../menu/types";
-import type { ShortcutHandler } from "../shortcuts";
-import type { Disposer } from "../types";
+import type { ColumnDefinition as CyExcelColumnConfig } from "../cells/index.js";
+import type { ClipboardCopyOptions, ClipboardCopyResult, ClipboardPasteOptions } from "../clipboard/index.js";
+import type { HookHandlerMeta } from "../hooks/index.js";
+import type { ContextMenuProvider, ContextMenuProviderMeta } from "../menu/index.js";
+import type { SheetMenuCommands } from "../menu/types.js";
+import type { ShortcutHandler } from "../shortcuts/index.js";
+import type { Disposer } from "../types.js";
 
 /**
  * The capability surface handed to a plugin's `setup()` — intentionally

@@ -1,7 +1,7 @@
-import { HookManager, RESOLVE_COLUMN_HOOK, type HookRegistry } from "../hooks";
-import { DEFAULT_COLUMN_WIDTH } from "../layout";
-import type { CellTypeRegistry } from "./CellTypeRegistry";
-import type { ColumnDefinition, RuntimeColumn } from "./types";
+import { HookManager, RESOLVE_COLUMN_HOOK, type HookRegistry } from "../hooks/index.js";
+import { DEFAULT_COLUMN_WIDTH } from "../layout/index.js";
+import type { CellTypeRegistry } from "./CellTypeRegistry.js";
+import type { ColumnDefinition, RuntimeColumn } from "./types.js";
 
 /**
  * 缺省列宽只有一个定义处，在布局层（`LayoutEngine.ts`）。

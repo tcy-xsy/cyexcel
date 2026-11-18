@@ -1,5 +1,5 @@
-import { CyExcelError, CyExcelErrorCode } from "./errors";
-import type { CyExcelCoreOptions } from "./CyExcelCore";
+import { CyExcelError, CyExcelErrorCode } from "./errors.js";
+import type { CyExcelCoreOptions } from "./CyExcelCore.js";
 
 export interface CyExcelCoreDataDimensions {
   readonly rowCount: number;

@@ -1,6 +1,6 @@
-import type { SelectionSnapshot } from "../interaction";
-import type { SceneSnapshot } from "../scene";
-import type { ContextMenuContext } from "./types";
+import type { SelectionSnapshot } from "../interaction/index.js";
+import type { SceneSnapshot } from "../scene/index.js";
+import type { ContextMenuContext } from "./types.js";
 
 function containsPoint(
   rect: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },

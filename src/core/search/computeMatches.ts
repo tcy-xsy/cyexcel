@@ -1,4 +1,4 @@
-import type { CellValue } from "../sheet/types";
+import type { CellValue } from "../sheet/types.js";
 
 /**
  * Scans occupied cells for a text match, yielding to the event loop between

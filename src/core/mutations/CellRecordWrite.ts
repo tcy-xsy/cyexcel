@@ -1,9 +1,9 @@
-import type { Patch } from "../types";
-import type { CellRange } from "../types";
-import type { SheetModel } from "../sheet/SheetModel";
-import type { PreparedSheetMutation } from "../sheet/SheetTransaction";
-import type { CellRecord } from "../sheet/types";
-import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types";
+import type { Patch } from "../types.js";
+import type { CellRange } from "../types.js";
+import type { SheetModel } from "../sheet/SheetModel.js";
+import type { PreparedSheetMutation } from "../sheet/SheetTransaction.js";
+import type { CellRecord } from "../sheet/types.js";
+import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types.js";
 
 export interface CellRecordWrite {
   readonly row: number;

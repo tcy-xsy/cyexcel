@@ -1,7 +1,7 @@
-import { remapByColumnShift, remapByRowPlan } from "./indexShift";
-import type { ColumnShift } from "./columnShift";
-import { assertCanonicalIndexKeys, assertIndexIsNonNegativeInteger } from "./indexKey";
-import { CyExcelError, CyExcelErrorCode } from "../errors";
+import { remapByColumnShift, remapByRowPlan } from "./indexShift.js";
+import type { ColumnShift } from "./columnShift.js";
+import { assertCanonicalIndexKeys, assertIndexIsNonNegativeInteger } from "./indexKey.js";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
 
 export type IndexAxis = "row" | "column";
 

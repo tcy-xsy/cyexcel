@@ -1,6 +1,6 @@
-import type { CellAction } from "../cells/types";
-import type { Command } from "../types";
-import { SetCellCommand } from "./SetCellCommand";
+import type { CellAction } from "../cells/types.js";
+import type { Command } from "../types.js";
+import { SetCellCommand } from "./SetCellCommand.js";
 
 export type CellActionDispatch =
   | { readonly kind: "command"; readonly command: Command }

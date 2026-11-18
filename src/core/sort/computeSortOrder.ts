@@ -1,4 +1,4 @@
-import type { CellValue } from "../sheet/types";
+import type { CellValue } from "../sheet/types.js";
 /**
  * Sorts rows by a user-supplied key extractor and comparator, returning a
  * permutation without touching model state.

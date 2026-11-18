@@ -1,6 +1,6 @@
-export { type FilterState } from "./FilterState";
+export { type FilterState } from "./FilterState.js";
 export {
   relocateFilteredRowsForDelete,
   relocateFilteredRowsForInsert,
   relocateFilteredRowsForMove
-} from "./relocateFilteredRows";
+} from "./relocateFilteredRows.js";

@@ -1,12 +1,12 @@
-import { STYLE_KEYS, type CellStyle } from "../style/types";
-import { addDecimal, subtractDecimal } from "../style/numFmtDecimals";
-import { commonValue, everyCellHas } from "./state";
-import { DEFAULT_FONT_SIZE } from "../render/theme";
-import type { ToolbarContext, ToolbarItem, ToolbarSchema } from "./types";
-import * as icons from "./icons";
-import { applyBorderPreset, borderPanel, colorPanel, filterPanel } from "./panels";
-import { dataValidationDialog, findReplaceDialog } from "./dialogs";
-import { exportSheetToExcel } from "./exportExcel";
+import { STYLE_KEYS, type CellStyle } from "../style/types.js";
+import { addDecimal, subtractDecimal } from "../style/numFmtDecimals.js";
+import { commonValue, everyCellHas } from "./state.js";
+import { DEFAULT_FONT_SIZE } from "../render/theme.js";
+import type { ToolbarContext, ToolbarItem, ToolbarSchema } from "./types.js";
+import * as icons from "./icons.js";
+import { applyBorderPreset, borderPanel, colorPanel, filterPanel } from "./panels.js";
+import { dataValidationDialog, findReplaceDialog } from "./dialogs.js";
+import { exportSheetToExcel } from "./exportExcel.js";
 
 /**
  * toggle 一个布尔样式键：整片选区已经全是真就清掉，否则全部设上。

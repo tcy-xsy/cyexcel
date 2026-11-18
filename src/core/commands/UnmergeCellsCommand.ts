@@ -1,4 +1,4 @@
-import type { CellRange, Command } from "../types";
+import type { CellRange, Command } from "../types.js";
 
 /**
  * `range` 圈定要拆散哪些合并区——落在 `range` 内、或与 `range` 相交的合并区全部

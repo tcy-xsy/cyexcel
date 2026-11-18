@@ -1,12 +1,12 @@
-import type { RuntimeColumn } from "../cells";
-import type { CellRange } from "../types";
-import { ClipboardWorkerClient, type SerializeWorkerLike } from "./ClipboardWorkerClient";
-import { CopyPlanner } from "./CopyPlanner";
-import { buildCellGrid } from "./serializers";
-import type { CopiedStyles } from "./styleClipboard";
-import { decodeTsv } from "./tsv";
-import type { ClipboardCopyOptions, ClipboardCopyResult, ClipboardOptions, ClipboardPasteOptions, CopyPlan } from "./types";
-import type { CellValue } from "../sheet/types";
+import type { RuntimeColumn } from "../cells/index.js";
+import type { CellRange } from "../types.js";
+import { ClipboardWorkerClient, type SerializeWorkerLike } from "./ClipboardWorkerClient.js";
+import { CopyPlanner } from "./CopyPlanner.js";
+import { buildCellGrid } from "./serializers.js";
+import type { CopiedStyles } from "./styleClipboard.js";
+import { decodeTsv } from "./tsv.js";
+import type { ClipboardCopyOptions, ClipboardCopyResult, ClipboardOptions, ClipboardPasteOptions, CopyPlan } from "./types.js";
+import type { CellValue } from "../sheet/types.js";
 
 const DEFAULT_MAX_CELLS = 100_000;
 const DEFAULT_MAX_BYTES = 16 * 1024 * 1024;

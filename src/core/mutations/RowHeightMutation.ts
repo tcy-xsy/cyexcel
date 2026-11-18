@@ -1,10 +1,10 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { LayoutEngine, LayoutRoot, RowHeightProvenance } from "../layout";
-import type { SheetModel } from "../sheet/SheetModel";
-import type { PreparedSheetMutation } from "../sheet/SheetTransaction";
-import type { Patch } from "../types";
-import { rowHeightOf, rowHeightProvenanceOf, withRowHeight } from "./rowHeightMeta";
-import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { LayoutEngine, LayoutRoot, RowHeightProvenance } from "../layout/index.js";
+import type { SheetModel } from "../sheet/SheetModel.js";
+import type { PreparedSheetMutation } from "../sheet/SheetTransaction.js";
+import type { Patch } from "../types.js";
+import { rowHeightOf, rowHeightProvenanceOf, withRowHeight } from "./rowHeightMeta.js";
+import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types.js";
 
 export interface RowHeightMutationUpdate {
   readonly row: number;

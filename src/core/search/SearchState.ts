@@ -1,4 +1,4 @@
-import type { SearchMatch } from "./computeMatches";
+import type { SearchMatch } from "./computeMatches.js";
 
 /**
  * Tracks the current match set and which one is "active" (the one

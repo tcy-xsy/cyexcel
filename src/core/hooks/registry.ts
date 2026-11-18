@@ -1,4 +1,4 @@
-import type { HookDefinition, HookRegistry } from "./types";
+import type { HookDefinition, HookRegistry } from "./types.js";
 
 /**
  * One exported constant per hook name this project actually fires

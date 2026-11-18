@@ -1,4 +1,4 @@
-import { encodeTsv } from "../tsv";
+import { encodeTsv } from "../tsv.js";
 
 /**
  * Runs in a Worker's global scope, not a browsing context — `self` there is

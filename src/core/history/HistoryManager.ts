@@ -1,4 +1,4 @@
-import type { CommitReceipt } from "../mutations";
+import type { CommitReceipt } from "../mutations/index.js";
 
 export type HistoryEntry = CommitReceipt;
 

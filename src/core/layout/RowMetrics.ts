@@ -1,4 +1,4 @@
-import { assertValidRowOrder } from "./rowOrder";
+import { assertValidRowOrder } from "./rowOrder.js";
 
 const DENSE_LEAF_SIZE = 512;
 

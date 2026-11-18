@@ -2,7 +2,7 @@ export {
   HeaderManager,
   type HeaderManagerOptions,
   type HeaderManagerRoot
-} from "./HeaderManager";
+} from "./HeaderManager.js";
 export {
   HeaderCanvasRenderer,
   type HeaderCanvasRendererOptions,
@@ -11,10 +11,10 @@ export {
   DEFAULT_HEADER_FILTER_ZONE_WIDTH,
   DEFAULT_HEADER_FILTER_ZONE_MIN_WIDTH,
   defaultHeaderHitTest
-} from "./HeaderCanvasRenderer";
-export { RowHeaderCanvasRenderer, type RowHeaderCanvasRendererOptions } from "./RowHeaderCanvasRenderer";
-export { DomHeaderManager, type DomHeaderManagerOptions } from "./DomHeaderManager";
-export { columnIndexToLetter } from "./columnLetter";
+} from "./HeaderCanvasRenderer.js";
+export { RowHeaderCanvasRenderer, type RowHeaderCanvasRendererOptions } from "./RowHeaderCanvasRenderer.js";
+export { DomHeaderManager, type DomHeaderManagerOptions } from "./DomHeaderManager.js";
+export { columnIndexToLetter } from "./columnLetter.js";
 export type {
   HeaderState,
   HeaderRenderContext,
@@ -26,4 +26,4 @@ export type {
   DomHeaderRendererFactory,
   HeaderDefinition,
   RuntimeHeader,
-} from "./types";
+} from "./types.js";

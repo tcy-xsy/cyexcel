@@ -1,8 +1,8 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { ModelRevision } from "../model";
-import type { MutationPlanningResources } from "../mutations/types";
-import type { SheetModel } from "./SheetModel";
-import { SheetTransaction } from "./SheetTransaction";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { ModelRevision } from "../model/index.js";
+import type { MutationPlanningResources } from "../mutations/types.js";
+import type { SheetModel } from "./SheetModel.js";
+import { SheetTransaction } from "./SheetTransaction.js";
 
 /**
  * 一次事务规划所需的全部资源：一个影子模型，加上写口与两个读口。

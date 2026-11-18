@@ -1,7 +1,7 @@
-import { CELL_FONT, CELL_PADDING, SELECTION_STROKE_COLOR, SELECTION_STROKE_WIDTH } from "../render/theme";
-import type { CellEditor, CellEditorContext } from "./CellEditor";
-import { positionEditorElement } from "./positionEditorElement";
-import type { CellValue } from "../sheet/types";
+import { CELL_FONT, CELL_PADDING, SELECTION_STROKE_COLOR, SELECTION_STROKE_WIDTH } from "../render/theme.js";
+import type { CellEditor, CellEditorContext } from "./CellEditor.js";
+import { positionEditorElement } from "./positionEditorElement.js";
+import type { CellValue } from "../sheet/types.js";
 
 /**
  * Built-in default editor: a plain absolutely-positioned <input>, styled to

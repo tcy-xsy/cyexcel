@@ -1,9 +1,9 @@
-import type { CyExcelCore } from "../CyExcelCore";
-import type { BorderSide, CellStyle } from "../style/types";
-import type { SheetSnapshot, WorkbookSnapshot } from "../sheet/types";
-import type { DataValidationRule } from "../sheet/validations";
-import type { CellRange } from "../types";
-import { shiftFormulaRows } from "../formula/references";
+import type { CyExcelCore } from "../CyExcelCore.js";
+import type { BorderSide, CellStyle } from "../style/types.js";
+import type { SheetSnapshot, WorkbookSnapshot } from "../sheet/types.js";
+import type { DataValidationRule } from "../sheet/validations.js";
+import type { CellRange } from "../types.js";
+import { shiftFormulaRows } from "../formula/references.js";
 
 export interface ExcelExportOptions {
   readonly fileName?: string;

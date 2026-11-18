@@ -1,4 +1,4 @@
-import { ScrollAxisMapper, type ScrollAxisMapperOptions } from "./ScrollAxisMapper";
+import { ScrollAxisMapper, type ScrollAxisMapperOptions } from "./ScrollAxisMapper.js";
 
 /** The scroller's own box, as much of an element as this manager needs. */
 export interface ScrollerBox {

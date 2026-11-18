@@ -1,12 +1,12 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { CellRange } from "../types";
-import { assertValidBlankCount } from "./coordinateSpace";
-import { CellMatrix } from "./CellMatrix";
-import { assertCanonicalIndexKeys } from "./indexKey";
-import type { CellRecord, ColumnMeta, RowMeta, SheetSnapshot, WorkbookSnapshot } from "./types";
-import { SNAPSHOT_VERSION } from "./types";
-import { assertResourceSheetId, assertValidResourceEntry } from "./resources";
-import { assertValidRules, type DataValidationRule } from "./validations";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { CellRange } from "../types.js";
+import { assertValidBlankCount } from "./coordinateSpace.js";
+import { CellMatrix } from "./CellMatrix.js";
+import { assertCanonicalIndexKeys } from "./indexKey.js";
+import type { CellRecord, ColumnMeta, RowMeta, SheetSnapshot, WorkbookSnapshot } from "./types.js";
+import { SNAPSHOT_VERSION } from "./types.js";
+import { assertResourceSheetId, assertValidResourceEntry } from "./resources.js";
+import { assertValidRules, type DataValidationRule } from "./validations.js";
 
 export interface SerializeInput {
   readonly id: string;

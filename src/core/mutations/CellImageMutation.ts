@@ -1,9 +1,9 @@
-import type { Patch } from "../types";
-import type { SheetModel } from "../sheet/SheetModel";
-import type { PreparedSheetMutation } from "../sheet/SheetTransaction";
-import type { CellRecord } from "../sheet/types";
-import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types";
-import { participantOf, type CellRecordWrite } from "./CellRecordWrite";
+import type { Patch } from "../types.js";
+import type { SheetModel } from "../sheet/SheetModel.js";
+import type { PreparedSheetMutation } from "../sheet/SheetTransaction.js";
+import type { CellRecord } from "../sheet/types.js";
+import type { Mutation, MutationPrepareContext, PreparedMutationParticipant } from "./types.js";
+import { participantOf, type CellRecordWrite } from "./CellRecordWrite.js";
 
 /**
  * 把一格的图片 URL 设成 `url`（`undefined` 清掉）。只支持单格——`Patch` 里

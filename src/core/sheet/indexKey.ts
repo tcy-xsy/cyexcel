@@ -1,4 +1,4 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
 
 /**
  * 规范形式的非负整数字符串："0" 或不带前导零的正整数。

@@ -1,9 +1,9 @@
-export { createToolbar, toolbarWidget, type ToolbarHandle } from "./createToolbar";
-export { createFormulaBar, formulaBarWidget, type FormulaBarHandle } from "./createFormulaBar";
-export { parseA1, rangeToA1, toA1 } from "./a1Notation";
-export { defaultToolbarSchema } from "./schema";
-export { createDialog, type DialogHandle, type DialogOptions } from "./createDialog";
-export { findReplaceDialog } from "./dialogs";
+export { createToolbar, toolbarWidget, type ToolbarHandle } from "./createToolbar.js";
+export { createFormulaBar, formulaBarWidget, type FormulaBarHandle } from "./createFormulaBar.js";
+export { parseA1, rangeToA1, toA1 } from "./a1Notation.js";
+export { defaultToolbarSchema } from "./schema.js";
+export { createDialog, type DialogHandle, type DialogOptions } from "./createDialog.js";
+export { findReplaceDialog } from "./dialogs.js";
 export {
   exportSheetToExcel,
   exportWorkbookToExcel,
@@ -11,8 +11,8 @@ export {
   type ExcelExportOptions,
   type ExcelExportColumn,
   type ExcelSheetExportSource
-} from "./exportExcel";
-export { commonValue, everyCellHas, resolveItemState, MAX_PROBED_CELLS } from "./state";
+} from "./exportExcel.js";
+export { commonValue, everyCellHas, resolveItemState, MAX_PROBED_CELLS } from "./state.js";
 export {
   TOOLBAR_GROUPS,
   type ToolbarContext,
@@ -23,4 +23,4 @@ export {
   type ToolbarOptions,
   type ToolbarSchema,
   type ToolbarSelectOption
-} from "./types";
+} from "./types.js";

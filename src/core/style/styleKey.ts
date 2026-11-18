@@ -1,5 +1,5 @@
-import type { CellStyle, CellStyleKey } from "./types";
-import { STYLE_KEYS } from "./types";
+import type { CellStyle, CellStyleKey } from "./types.js";
+import { STYLE_KEYS } from "./types.js";
 
 /**
  * 规范化 intern key：按 `STYLE_KEYS` 的固定顺序序列化，跳过 `undefined`。

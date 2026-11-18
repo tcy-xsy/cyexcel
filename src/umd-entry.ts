@@ -7,18 +7,18 @@
  * one directly. `src/register.ts` itself stays untouched — it's still the
  * ESM entry for `dist/register.js`.
  */
-import { DEFAULT_CYEXCEL_TAG_NAME, defineCyExcel } from "./element/defineCyExcel";
+import { DEFAULT_CYEXCEL_TAG_NAME, defineCyExcel } from "./element/defineCyExcel.js";
 
-export * from "./core";
+export * from "./core/index.js";
 export { DEFAULT_CYEXCEL_TAG_NAME, defineCyExcel };
-export { createSheet, type CreateSheetOptions } from "./createSheet";
+export { createSheet, type CreateSheetOptions } from "./createSheet.js";
 export {
   createWorkbook,
   type CreateWorkbookOptions,
   type WorkbookHandle,
   type WorkbookSheetOptions
-} from "./createWorkbook";
-export * from "./core/toolbar";
+} from "./createWorkbook.js";
+export * from "./core/toolbar/index.js";
 
 if (typeof globalThis.customElements !== "undefined") {
   defineCyExcel();

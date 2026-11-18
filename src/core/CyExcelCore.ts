@@ -10,7 +10,7 @@ import {
   type CellTypeDefinition,
   type ColumnDefinition,
   type RuntimeColumn
-} from "./cells";
+} from "./cells/index.js";
 import {
   ClipboardService,
   buildCellGrid,
@@ -22,7 +22,7 @@ import {
   type ClipboardPasteOptions,
   type CopyPlan,
   type SerializeWorkerLike
-} from "./clipboard";
+} from "./clipboard/index.js";
 import {
   SetCellCommand,
   SetCellImageCommand,
@@ -47,37 +47,37 @@ import {
   ResizeColumnCommand,
   dispatchCellAction,
   type CommandManager
-} from "./commands";
+} from "./commands/index.js";
 import {
   TableStore,
   compileDirtySet,
   createChangeSet,
   type SemanticChange,
   summarizeStructuralChanges
-} from "./data";
+} from "./data/index.js";
 import {
   computeMatches,
   replaceMatches,
   SearchState,
   type SearchMatch,
   type SearchOptions
-} from "./search";
-import { formatCellText } from "./style/formatCellText";
-import { sharedImageCache } from "./render/ImageCache";
-import type { FormulaEngineFactory } from "./formula/types";
-import { buildCopyHtml, CopyStyleCache, styleAt, type CopiedStyles } from "./clipboard/styleClipboard";
-import { assertValidCoordinate, assertValidRange } from "./validation";
-import { CyExcelError, CyExcelErrorCode } from "./errors";
-import type { CellStylePatch } from "./style/styleKey";
-import { STYLE_KEYS, type CellStyle } from "./style/types";
+} from "./search/index.js";
+import { formatCellText } from "./style/formatCellText.js";
+import { sharedImageCache } from "./render/ImageCache.js";
+import type { FormulaEngineFactory } from "./formula/types.js";
+import { buildCopyHtml, CopyStyleCache, styleAt, type CopiedStyles } from "./clipboard/styleClipboard.js";
+import { assertValidCoordinate, assertValidRange } from "./validation.js";
+import { CyExcelError, CyExcelErrorCode } from "./errors.js";
+import type { CellStylePatch } from "./style/styleKey.js";
+import { STYLE_KEYS, type CellStyle } from "./style/types.js";
 import {
   DEFAULT_BLANK_COLUMNS,
   DEFAULT_BLANK_ROWS,
   WorkbookModel,
   type SheetModel,
   type WorkbookSnapshot
-} from "./sheet";
-import { expandRangeForMerges, findMergeAt, mergesIntersectingRange } from "./sheet/merges";
+} from "./sheet/index.js";
+import { expandRangeForMerges, findMergeAt, mergesIntersectingRange } from "./sheet/merges.js";
 import {
   buildRule,
   collectInvalidCells,
@@ -90,16 +90,16 @@ import {
   type DataValidationRuleInput,
   type ValidateOptions,
   type DataValidationResult
-} from "./sheet/validations";
-import type { CellEditorFactory } from "./editors";
+} from "./sheet/validations.js";
+import type { CellEditorFactory } from "./editors/index.js";
 import {
   ACCEPT,
   EditorManager,
   outcomeFromResult,
   ValidationHints,
   visibleRectForRange
-} from "./editors";
-import { EventBus } from "./events";
+} from "./editors/index.js";
+import { EventBus } from "./events/index.js";
 import {
   DomHeaderManager,
   HeaderCanvasRenderer,
@@ -109,8 +109,8 @@ import {
   type HeaderAction,
   type HeaderState,
   type RuntimeHeader
-} from "./headers";
-import { HookManager, PRODUCTION_HOOK_REGISTRY } from "./hooks";
+} from "./headers/index.js";
+import { HookManager, PRODUCTION_HOOK_REGISTRY } from "./hooks/index.js";
 import {
   FillHandleController,
   HeaderGestureController,
@@ -138,7 +138,7 @@ import {
   type InputSurfacePolicyContext,
   type InputTargetResolution,
   type SelectionSnapshot
-} from "./interaction";
+} from "./interaction/index.js";
 import {
   LayoutEngine,
   SkeletonSnapshot,
@@ -147,12 +147,12 @@ import {
   type LayoutRoot,
   type RowHeightProvenance,
   type ViewportState
-} from "./layout";
-import { InitializationRollback } from "./lifecycle";
-import { ContextMenuService, classifyContextMenuTarget, createBasicContextMenuPlugin } from "./menu";
-import type { SheetMenuAction, SheetMenuState } from "./menu/types";
-import { DeferredMutationQueue } from "./model";
-import { PluginManager, type CyExcelPlugin } from "./plugins";
+} from "./layout/index.js";
+import { InitializationRollback } from "./lifecycle/index.js";
+import { ContextMenuService, classifyContextMenuTarget, createBasicContextMenuPlugin } from "./menu/index.js";
+import type { SheetMenuAction, SheetMenuState } from "./menu/types.js";
+import { DeferredMutationQueue } from "./model/index.js";
+import { PluginManager, type CyExcelPlugin } from "./plugins/index.js";
 import {
   SceneSnapshot,
   ViewportManager,
@@ -162,11 +162,11 @@ import {
   type SurfacePoint,
   type SurfaceId,
   type SurfaceSetSnapshot
-} from "./scene";
-import { WrapMeasurementService, type RowHeightProvenanceView } from "./measurement";
-import { ShortcutRegistry, type ShortcutHandler } from "./shortcuts";
-import { computeSortOrder, createDefaultSortCompare, nextSortDirection, type SortState } from "./sort";
-import type { FilterState } from "./filter";
+} from "./scene/index.js";
+import { WrapMeasurementService, type RowHeightProvenanceView } from "./measurement/index.js";
+import { ShortcutRegistry, type ShortcutHandler } from "./shortcuts/index.js";
+import { computeSortOrder, createDefaultSortCompare, nextSortDirection, type SortState } from "./sort/index.js";
+import type { FilterState } from "./filter/index.js";
 import {
   ContentLayerRenderer,
   CanvasSurface,
@@ -176,22 +176,22 @@ import {
   readDevicePixelRatio,
   type Canvas2DLike,
   type CellDropdown
-} from "./render";
-import { CELL_FONT } from "./render/theme";
-import type { CellRange, Command, Disposer } from "./types";
+} from "./render/index.js";
+import { CELL_FONT } from "./render/theme.js";
+import type { CellRange, Command, Disposer } from "./types.js";
 import {
   GridStructureOwner,
   StructureTransition,
   createGridCommandManager,
   resolveInitialAxisGeometry,
   seedAxisMeta
-} from "./integration";
-import { columnWidthOf } from "./mutations/columnWidthMeta";
-import type { CellValue } from "./sheet/types";
+} from "./integration/index.js";
+import { columnWidthOf } from "./mutations/columnWidthMeta.js";
+import type { CellValue } from "./sheet/types.js";
 import {
   validateCyExcelCoreDataDimensions,
   validateCyExcelCoreOptions
-} from "./validateCyExcelCoreOptions";
+} from "./validateCyExcelCoreOptions.js";
 
 export type CyExcelColumnConfig = ColumnDefinition;
 

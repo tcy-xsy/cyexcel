@@ -1,6 +1,6 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { Disposer } from "../types";
-import type { HookDefinition, HookHandlerMeta, HookRegistry } from "./types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { Disposer } from "../types.js";
+import type { HookDefinition, HookHandlerMeta, HookRegistry } from "./types.js";
 
 type AnyHandler = (...args: never[]) => unknown;
 

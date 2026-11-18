@@ -1,4 +1,4 @@
-import type { ModelRevision, RevisionGate } from "../model";
+import type { ModelRevision, RevisionGate } from "../model/index.js";
 
 export interface InteractionSceneSnapshot {
   readonly modelVersion: number;

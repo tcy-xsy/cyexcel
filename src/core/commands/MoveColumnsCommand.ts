@@ -1,4 +1,4 @@
-import type { Command } from "../types";
+import type { Command } from "../types.js";
 
 export interface MoveColumnsCommandParams {
   readonly start: number;

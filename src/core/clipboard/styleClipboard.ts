@@ -1,4 +1,4 @@
-import type { CellStyle } from "../style/types";
+import type { CellStyle } from "../style/types.js";
 
 /**
  * 一次复制里随值一起带走的样式。

@@ -1,7 +1,7 @@
-import type { ChangeSet } from "../data/changes";
-import { mergePatches } from "../data/patch";
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { HistoryManager } from "../history";
+import type { ChangeSet } from "../data/changes.js";
+import { mergePatches } from "../data/patch.js";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import { HistoryManager } from "../history/index.js";
 import {
   BEFORE_COMMAND_HOOK,
   BEFORE_TRANSACTION_COMMIT_HOOK,
@@ -9,17 +9,17 @@ import {
   createCancellableContext,
   type CancellableContext,
   type HookRegistry
-} from "../hooks";
+} from "../hooks/index.js";
 import type {
   CommitReceipt,
   Mutation,
   MutationPrepareSession,
   PreparedTransaction,
   TransactionReadView
-} from "../mutations";
-import type { SemanticChange } from "../data/changes";
-import type { Command, CommandContext } from "../types";
-import type { CommandPlanner } from "./CommandHandlerRegistry";
+} from "../mutations/index.js";
+import type { SemanticChange } from "../data/changes.js";
+import type { Command, CommandContext } from "../types.js";
+import type { CommandPlanner } from "./CommandHandlerRegistry.js";
 
 export interface BeforeCommandContext extends CancellableContext {
   readonly command: Command;

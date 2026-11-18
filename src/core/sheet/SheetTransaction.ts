@@ -1,13 +1,13 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import type { ModelRevision } from "../model";
-import type { TransactionReadView } from "../mutations/types";
-import type { CellRange } from "../types";
-import type { DataValidationRule } from "./validations";
-import { applySheetMutation, estimateSheetMutationBytes } from "./apply";
-import { invertSheetMutation } from "./invert";
-import type { SheetMutation } from "./mutation";
-import type { SheetModel } from "./SheetModel";
-import type { CellRecord, ColumnMeta, RowMeta } from "./types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import type { ModelRevision } from "../model/index.js";
+import type { TransactionReadView } from "../mutations/types.js";
+import type { CellRange } from "../types.js";
+import type { DataValidationRule } from "./validations.js";
+import { applySheetMutation, estimateSheetMutationBytes } from "./apply.js";
+import { invertSheetMutation } from "./invert.js";
+import type { SheetMutation } from "./mutation.js";
+import type { SheetModel } from "./SheetModel.js";
+import type { CellRecord, ColumnMeta, RowMeta } from "./types.js";
 
 /**
  * 一条已暂存、尚未写进活模型的变更。

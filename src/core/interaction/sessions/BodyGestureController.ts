@@ -1,14 +1,14 @@
-import type { CellRange } from "../../types";
-import type { SceneSnapshot, SurfaceSetSnapshot, SurfacePoint } from "../../scene";
-import { clientPoint } from "../../scene";
-import type { FillHandleController } from "../FillHandleController";
-import type { PointerController } from "../PointerController";
-import type { SelectionSnapshot } from "../SelectionModel";
+import type { CellRange } from "../../types.js";
+import type { SceneSnapshot, SurfaceSetSnapshot, SurfacePoint } from "../../scene/index.js";
+import { clientPoint } from "../../scene/index.js";
+import type { FillHandleController } from "../FillHandleController.js";
+import type { PointerController } from "../PointerController.js";
+import type { SelectionSnapshot } from "../SelectionModel.js";
 import {
   PointerInteractionSession,
   type PointerCaptureTarget,
   type PointerInteractionSessionOptions
-} from "./PointerInteractionSession";
+} from "./PointerInteractionSession.js";
 
 export type BodyGestureKind = "fill" | "selection";
 

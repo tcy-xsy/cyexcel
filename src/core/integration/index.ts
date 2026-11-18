@@ -4,7 +4,7 @@ export {
   type GridStructureOwnerOptions,
   type GridStructurePayload,
   type GridStructureRoot
-} from "./GridStructureOwner";
+} from "./GridStructureOwner.js";
 export {
   TableCommandTransactionHost,
   TableDataCommandMutationFactory,
@@ -16,11 +16,11 @@ export {
   createGridCommandManager,
   type GridCommandManagerOptions,
   type TableCommandManagerOptions
-} from "./CommandRuntime";
-export { StructureTransition, type StructureTransitionOptions } from "./StructureTransition";
+} from "./CommandRuntime.js";
+export { StructureTransition, type StructureTransitionOptions } from "./StructureTransition.js";
 export {
   resolveInitialAxisGeometry,
   seedAxisMeta,
   type InitialAxisGeometry,
   type InitialAxisGeometryOptions
-} from "./axisGeometry";
+} from "./axisGeometry.js";

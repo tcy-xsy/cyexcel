@@ -1,4 +1,4 @@
-import type { CellValue } from "../sheet/types";
+import type { CellValue } from "../sheet/types.js";
 /**
  * The comparator `sortByColumn()` sorts with.
  *

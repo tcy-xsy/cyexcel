@@ -1,4 +1,4 @@
-import { serialFromISODate, serialToISODate } from "../style/dateSerial";
+import { serialFromISODate, serialToISODate } from "../style/dateSerial.js";
 import {
   COLOR_PATTERN,
   type DataValidationRenderMode,
@@ -6,7 +6,7 @@ import {
   type DataValidationRuleInput,
   type ValidationErrorStyle,
   type ValidationOperator
-} from "../sheet/validations";
+} from "../sheet/validations.js";
 
 /**
  * 「数据验证」对话框的表单状态与它同规则之间的互转。纯函数，不碰 DOM——对话框本身

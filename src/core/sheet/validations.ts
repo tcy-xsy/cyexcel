@@ -1,8 +1,8 @@
-import { CyExcelError, CyExcelErrorCode } from "../errors";
-import { remapIndex } from "../layout/structuralChange";
-import { serialFromISODate } from "../style/dateSerial";
-import { canIndexValidationRules, findIndexedValidationRule } from "./ValidationRuleIndex";
-import type { CellRange } from "../types";
+import { CyExcelError, CyExcelErrorCode } from "../errors.js";
+import { remapIndex } from "../layout/structuralChange.js";
+import { serialFromISODate } from "../style/dateSerial.js";
+import { canIndexValidationRules, findIndexedValidationRule } from "./ValidationRuleIndex.js";
+import type { CellRange } from "../types.js";
 import {
   axisInterval,
   rangesIntersect,
@@ -10,8 +10,8 @@ import {
   relocateIntervalForInsert,
   withAxisInterval,
   type AxisInterval
-} from "./merges";
-import type { CellValue } from "./types";
+} from "./merges.js";
+import type { CellValue } from "./types.js";
 
 /**
  * 数据验证规则：数据形状、区域几何、判定逻辑（设计稿 `doc/data-validation-design.md`）。

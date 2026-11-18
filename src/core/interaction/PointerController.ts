@@ -1,6 +1,6 @@
-import type { SceneSnapshot } from "../scene";
-import type { CellRange } from "../types";
-import type { SelectionModel, SelectionSnapshot } from "./SelectionModel";
+import type { SceneSnapshot } from "../scene/index.js";
+import type { CellRange } from "../types.js";
+import type { SelectionModel, SelectionSnapshot } from "./SelectionModel.js";
 
 export interface PointerControllerOptions {
   readonly selection: SelectionModel;

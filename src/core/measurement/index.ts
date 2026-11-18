@@ -5,4 +5,4 @@ export {
   type WrapMeasurementServiceOptions,
   type RowHeightMeasurement,
   type RowHeightProvenanceView
-} from "./WrapMeasurementService";
+} from "./WrapMeasurementService.js";

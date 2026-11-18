@@ -1,16 +1,16 @@
-import { CyExcelError, CyExcelErrorCode } from '../errors';
+import { CyExcelError, CyExcelErrorCode } from '../errors.js';
 import {
   relocateFilteredRowsForDelete,
   relocateFilteredRowsForInsert,
   relocateFilteredRowsForMove,
-} from '../filter/relocateFilteredRows';
-import { ColumnAxisSnapshot } from './ColumnAxisSnapshot';
-import { RowMetrics, type RowMetricsFragment } from './RowMetrics';
-import { assertValidRowOrder } from './rowOrder';
+} from '../filter/relocateFilteredRows.js';
+import { ColumnAxisSnapshot } from './ColumnAxisSnapshot.js';
+import { RowMetrics, type RowMetricsFragment } from './RowMetrics.js';
+import { assertValidRowOrder } from './rowOrder.js';
 import {
   validateAxisChange,
   type AxisChangeDescriptor,
-} from './structuralChange';
+} from './structuralChange.js';
 
 const EMPTY_FILTERED_ROWS: ReadonlySet<number> = new Set();
 

@@ -1,4 +1,4 @@
-import type { CellRange, Command } from "../types";
+import type { CellRange, Command } from "../types.js";
 
 export interface ClearRangeCommandParams {
   readonly range: CellRange;

@@ -1,5 +1,5 @@
-import type { CellTypeRegistry } from "./CellTypeRegistry";
-import { serialFromISODate, serialToISODate } from "../style/dateSerial";
+import type { CellTypeRegistry } from "./CellTypeRegistry.js";
+import { serialFromISODate, serialToISODate } from "../style/dateSerial.js";
 
 
 function formatText(value: unknown): string {

@@ -1,5 +1,5 @@
-import type { CellRange } from "../types";
-import type { DataValidationRule } from "./validations";
+import type { CellRange } from "../types.js";
+import type { DataValidationRule } from "./validations.js";
 
 interface Entry {
   readonly range: CellRange;

@@ -1,4 +1,4 @@
-import type { ValidationPresenter, ValidationPresentRequest } from "./editValidation";
+import type { ValidationPresenter, ValidationPresentRequest } from "./editValidation.js";
 
 const DEFAULT_TITLE = "提示";
 const OK_LABEL = "确定";

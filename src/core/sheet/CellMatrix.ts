@@ -1,12 +1,12 @@
-import { assertValidRowOrder } from "../layout/rowOrder";
+import { assertValidRowOrder } from "../layout/rowOrder.js";
 import {
   buildDeleteColumnsShift,
   buildInsertColumnsShift,
   buildMoveColumnsShift,
   type ColumnShift
-} from "./columnShift";
-import { ROW_PLAN_HOLE, assertValidRowPlan } from "./rowPlan";
-import type { CellRecord } from "./types";
+} from "./columnShift.js";
+import { ROW_PLAN_HOLE, assertValidRowPlan } from "./rowPlan.js";
+import type { CellRecord } from "./types.js";
 
 type RowBucket = Record<number, CellRecord>;
 

@@ -1,5 +1,5 @@
-import type { ModelRevision } from "../model";
-import type { Mutation, PreparedMutationParticipant, StateMutationOptions } from "./types";
+import type { ModelRevision } from "../model/index.js";
+import type { Mutation, PreparedMutationParticipant, StateMutationOptions } from "./types.js";
 
 class StateMutation implements Mutation {
   readonly type: string;

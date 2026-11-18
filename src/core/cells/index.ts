@@ -1,17 +1,17 @@
-export { CellTypeRegistry } from "./CellTypeRegistry";
-export { registerBuiltinCellTypes } from "./builtins";
+export { CellTypeRegistry } from "./CellTypeRegistry.js";
+export { registerBuiltinCellTypes } from "./builtins.js";
 export {
   ColumnManager,
   DEFAULT_COLUMN_WIDTH,
   type ColumnManagerOptions,
   type ResolveColumnContext,
   type RuntimeColumnRoot
-} from "./ColumnManager";
-export { createColumnAwarePainter } from "./createColumnAwarePainter";
-export { detectLinkUrl } from "./linkDetection";
-export { createImageCellRenderer, type ImageCellRendererOptions } from "./imageCellRenderer";
-export { snapshotColumnDefinitions } from "./columnSnapshot";
-export { DOMCellManager, type DOMCellManagerOptions } from "./DOMCellManager";
+} from "./ColumnManager.js";
+export { createColumnAwarePainter } from "./createColumnAwarePainter.js";
+export { detectLinkUrl } from "./linkDetection.js";
+export { createImageCellRenderer, type ImageCellRendererOptions } from "./imageCellRenderer.js";
+export { snapshotColumnDefinitions } from "./columnSnapshot.js";
+export { DOMCellManager, type DOMCellManagerOptions } from "./DOMCellManager.js";
 export type {
   CellType,
   CellTypeDefinition,
@@ -36,4 +36,4 @@ export type {
   DomHeaderRendererFactory,
   HeaderDefinition,
   ColumnClipboardPolicy
-} from "./types";
+} from "./types.js";
