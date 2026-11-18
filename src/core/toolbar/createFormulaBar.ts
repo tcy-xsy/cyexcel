@@ -25,6 +25,7 @@ export function formulaBarWidget() {
 }
 
 export function createFormulaBar(sheet: CyExcelCore, container: HTMLElement): FormulaBarHandle {
+  const t = sheet.t;
   const root = document.createElement("div");
   root.className = "cyx-formula-bar";
   styles.apply(root, styles.formulaBar);
@@ -32,7 +33,7 @@ export function createFormulaBar(sheet: CyExcelCore, container: HTMLElement): Fo
   const nameBox = document.createElement("input");
   nameBox.className = "cyx-formula-bar-name";
   nameBox.type = "text";
-  nameBox.setAttribute("aria-label", "单元格地址");
+  nameBox.setAttribute("aria-label", t("Cell address"));
   styles.apply(nameBox, styles.formulaName);
 
   const label = document.createElement("span");
@@ -43,7 +44,7 @@ export function createFormulaBar(sheet: CyExcelCore, container: HTMLElement): Fo
   const input = document.createElement("input");
   input.className = "cyx-formula-bar-input";
   input.type = "text";
-  input.setAttribute("aria-label", "单元格内容");
+  input.setAttribute("aria-label", t("Cell content"));
   styles.apply(input, styles.formulaInput);
 
   root.append(nameBox, label, input);

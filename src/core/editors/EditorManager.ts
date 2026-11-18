@@ -1,3 +1,4 @@
+import type { Translator } from "../locale/index.js";
 import type { SceneSnapshot } from "../scene/index.js";
 import type { CellRange } from "../types.js";
 import type { CellEditor, CellEditorFactory } from "./CellEditor.js";
@@ -8,6 +9,7 @@ import { createDomValidationPresenter } from "./ValidationDialog.js";
 import { intersectRect } from "./visibleCellRect.js";
 
 export interface EditorManagerOptions {
+  readonly t?: Translator;
   /** DOM node editors mount into; must already be connected to the document. */
   readonly container: HTMLElement;
   readonly getScene: () => SceneSnapshot;
@@ -56,6 +58,7 @@ interface ActiveEdit {
  * turns a commit into a SetCellCommand.
  */
 export class EditorManager {
+  readonly #t: Translator | undefined;
   readonly #container: HTMLElement;
   readonly #getScene: () => SceneSnapshot;
   readonly #findMergeAt: ((row: number, column: number) => CellRange | undefined) | undefined;
@@ -85,6 +88,7 @@ export class EditorManager {
   #dialogOpen = false;
 
   constructor(options: EditorManagerOptions) {
+    this.#t = options.t;
     this.#container = options.container;
     this.#getScene = options.getScene;
     this.#findMergeAt = options.findMergeAt;
@@ -191,7 +195,7 @@ export class EditorManager {
       // Reject this write. Acknowledging the error abandons the draft so
       // clicking another cell cannot submit the same invalid value again.
       this.#dialogOpen = true;
-      this.#presenter ??= createDomValidationPresenter();
+      this.#presenter ??= createDomValidationPresenter(this.#t);
       this.#presenter.show({
         ...(outcome.title !== undefined ? { title: outcome.title } : {}),
         message: outcome.message,

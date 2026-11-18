@@ -249,3 +249,5 @@ export {
 export type { ShortcutHandler } from "./shortcuts/index.js";
 export type { CyExcelPlugin, PluginContext } from "./plugins/index.js";
 export type { FormulaEngine, FormulaEngineFactory, FormulaModelAccess, FormulaCell } from "./formula/types.js";
+
+export { createTranslator, enUS, zhCN, type Locale, type LocaleDefinition, type MessageKey, type Translator } from "./locale/index.js";

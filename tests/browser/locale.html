@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Locale fixture</title>
+    <style>
+      body { margin: 12px; }
+      .sheet { width: 2600px; height: 260px; margin-bottom: 16px; }
+    </style>
+  </head>
+  <body>
+    <div id="english" class="sheet"></div>
+    <div id="chinese" class="sheet"></div>
+    <div id="custom" class="sheet"></div>
+    <script type="module">
+      import { createWorkbook, createSheet, matrixToWorkbookSnapshot } from "/src/index.ts";
+      const workbook = createWorkbook(document.getElementById("english"), {
+        locale: "en-US",
+        columns: [{ width: 120 }, { width: 120 }],
+        snapshot: matrixToWorkbookSnapshot([["Hello", 5]]),
+      });
+      const chinese = createSheet(document.getElementById("chinese"), {
+        columns: [{ width: 120 }, { width: 120 }],
+      });
+      const custom = createSheet(document.getElementById("custom"), {
+        locale: { name: "fr-FR", messages: { Undo: "Annuler" } },
+        columns: [{ width: 120 }],
+      });
+      window.localeFixture = { workbook, chinese, custom };
+    </script>
+  </body>
+</html>

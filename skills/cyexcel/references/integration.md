@@ -12,7 +12,7 @@ pnpm build
 pnpm pack --out /absolute/path/to/artifacts
 ```
 
-Install the generated `.tgz` into the consumer with its package manager. Do not recommend a raw Git dependency that lacks built `dist/` files. Use `pnpm add cyexcel` only after verifying an appropriate registry release exists.
+Install the generated `.tgz` into the consumer with its package manager. Do not recommend a raw Git dependency that lacks built `dist/` files. Use `pnpm add cyexcel@latest` only after verifying an appropriate registry release exists.
 
 ## Single sheet
 

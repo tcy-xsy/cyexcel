@@ -1,9 +1,11 @@
+import { getLocale } from "../i18n/index";
 import type { DocElement } from "../components/content";
 import { createSheet } from "@cyexcel/createSheet";
-import { columns, snapshot } from "../demo/data";
+import { getDemoData } from "../demo/data";
 import { demoBlock, featureGrid, pageHeader, paragraph, section } from "../components/doc";
 
 export default function overviewPage(root: DocElement): void {
+  const { columns, snapshot } = getDemoData();
   root.append(
     pageHeader(
       "OVERVIEW",
@@ -38,6 +40,7 @@ export default function overviewPage(root: DocElement): void {
   demo.mount.addClass("with-toolbar");
   demo.mount.onMount = () => {
     const sheet = createSheet(demo.mount.element, {
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
       columns,
       snapshot,
       headerHeight: 28,

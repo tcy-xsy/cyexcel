@@ -1,3 +1,5 @@
+import { localizeDemoData } from "../../demo/localize";
+import { getLocale } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
 import { matrixToWorkbookSnapshot, serialFromISODate, type DataValidationRule } from "@cyexcel/core";
@@ -81,11 +83,11 @@ const rules: readonly DataValidationRule[] = [
 ];
 
 function buildSnapshot() {
-  const base = matrixToWorkbookSnapshot(rows);
+  const base = matrixToWorkbookSnapshot(localizeDemoData(rows));
   const sheetId = base.sheetOrder[0]!;
   return {
     ...base,
-    sheets: { ...base.sheets, [sheetId]: { ...base.sheets[sheetId]!, dataValidations: rules } }
+    sheets: { ...base.sheets, [sheetId]: { ...base.sheets[sheetId]!, dataValidations: localizeDemoData(rules) } }
   };
 }
 
@@ -262,7 +264,8 @@ sheet.validateCell(2, 1);            // { valid: false, errorStyle: "stop", mess
   demo.mount.addClass("with-toolbar");
   demo.mount.onMount = () => {
     sheet = createSheet(demo.mount.element, {
-      columns,
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
+      columns: localizeDemoData(columns),
       snapshot: buildSnapshot(),
       headerHeight: 28,
       rowHeaderWidth: 48,

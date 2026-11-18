@@ -20,13 +20,13 @@ Initial data is imported into a snapshot. Edits to the spreadsheet and changes t
 ## Installation
 
 ```sh
-npm install cyexcel
+npm install cyexcel@latest
 ```
 
 For XLSX import, install the optional plugin alongside cyexcel 0.1.1 or later:
 
 ```sh
-npm install cyexcel@^0.1.1 cyexcel-plugin-excel-import@^0.1.0
+npm install cyexcel@latest cyexcel-plugin-excel-import@latest
 ```
 
 See the [Excel import plugin guide](plugins/excel-import/README.md) for toolbar integration, direct imports, configuration, and supported content.
@@ -94,6 +94,33 @@ await workbook.exportExcel({ fileName: "report.xlsx" });
 ```
 
 Export uses current sheet names and supports styles, merged ranges, and built-in validation rules. Set `download: false` to return a Blob, or `includeHeaders: false` to omit custom column headers. Images, custom JavaScript validators, and some advanced settings are not exported.
+
+## Internationalization
+
+Use the same package for every language. Pass `locale` when creating a sheet or workbook:
+
+```ts
+import { createSheet } from "cyexcel";
+
+const sheet = createSheet(container, {
+  locale: "en-US", // "zh-CN" is the default
+});
+```
+
+`createWorkbook()` and `new CyExcelCore()` accept the same option. Each instance has its own language. To follow the browser, pass `navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US"`.
+
+Add a language or override terminology with a partial dictionary; missing messages fall back to English:
+
+```ts
+createSheet(container, {
+  locale: {
+    name: "fr-FR",
+    messages: { Undo: "Annuler", Redo: "Rétablir", "Add sheet": "Ajouter une feuille" },
+  },
+});
+```
+
+Language is configured at creation. Cell values, user-supplied sheet names, number formats and custom UI labels stay under application control. Use `createDefaultToolbarSchema(sheet.t)` when extending the built-in toolbar for a localized sheet; `defaultToolbarSchema` retains its Chinese labels for compatibility.
 
 ## Formulas and limitations
 

@@ -1,9 +1,10 @@
+import { getLocale } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
 import type { CyExcelCore } from "@cyexcel/core";
 import {
   buildPerformanceSnapshot,
-  performanceColumns
+  getPerformanceColumns
 } from "../../demo/performance-data";
 import {
   setText,
@@ -53,7 +54,8 @@ export default function performanceExamplePage(root: DocElement): void {
     sheet?.dispose();
     const mountStart = performance.now();
     sheet = createSheet(demo.mount.element, {
-      columns: performanceColumns,
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
+      columns: getPerformanceColumns(),
       snapshot,
       headerHeight: 28,
       rowHeaderWidth: 48,
@@ -87,7 +89,8 @@ export default function performanceExamplePage(root: DocElement): void {
     const bootstrapImportMs = performance.now() - bootstrapStart;
     const bootstrapMountStart = performance.now();
     sheet = createSheet(demo.mount.element, {
-      columns: performanceColumns,
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
+      columns: getPerformanceColumns(),
       snapshot: bootstrapSnapshot,
       headerHeight: 28,
       rowHeaderWidth: 48,

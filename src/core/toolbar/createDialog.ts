@@ -1,3 +1,4 @@
+import { defaultTranslator, type Translator } from "../locale/index.js";
 import { el } from "./dom.js";
 import * as styles from "./styles.js";
 
@@ -19,6 +20,7 @@ import * as styles from "./styles.js";
  * 拖动与收边由 playground 手验。
  */
 export interface DialogOptions {
+  readonly t?: Translator;
   readonly title: string;
   /**
    * 内容自绘，返回 disposer。`close` 交给内容用——比如「关闭」按钮，或者替换完成后
@@ -45,6 +47,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 export function createDialog(options: DialogOptions): DialogHandle {
+  const t = options.t ?? defaultTranslator;
   const root = el("div", "cyx-toolbar-dialog");
   styles.apply(root, styles.dialog);
   root.setAttribute("role", "dialog");
@@ -58,7 +61,7 @@ export function createDialog(options: DialogOptions): DialogHandle {
 
   const closeButton = el("button", "cyx-toolbar-dialog-close", "✕");
   closeButton.type = "button";
-  closeButton.setAttribute("aria-label", "关闭");
+  closeButton.setAttribute("aria-label", t("Close"));
   styles.apply(closeButton, styles.dialogClose);
   const disposeCloseStyle = styles.attachFocusStyle(closeButton);
 
@@ -77,6 +80,8 @@ export function createDialog(options: DialogOptions): DialogHandle {
     closed = true;
     disposeContent();
     disposeCloseStyle();
+    window.removeEventListener("resize", keepInViewport);
+    resizeObserver?.disconnect();
     root.remove();
     options.onClosed?.();
   };
@@ -139,6 +144,16 @@ export function createDialog(options: DialogOptions): DialogHandle {
 
   const disposeContent = options.fill(body, close);
   document.body.append(root);
+
+  function keepInViewport(): void {
+    const rect = root.getBoundingClientRect();
+    root.style.left = `${clamp(rect.left, EDGE, Math.max(EDGE, window.innerWidth - EDGE - rect.width))}px`;
+    root.style.top = `${clamp(rect.top, EDGE, Math.max(EDGE, window.innerHeight - EDGE - rect.height))}px`;
+  }
+
+  const resizeObserver = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(keepInViewport);
+  resizeObserver?.observe(root);
+  window.addEventListener("resize", keepInViewport);
 
   // 先落位再收边：要量到真实尺寸才知道会不会顶出视口。同 openLayer 的做法。
   // 居中而不是锚定在触发按钮下方——按钮可能在工具栏最左或最右，锚定过去经常

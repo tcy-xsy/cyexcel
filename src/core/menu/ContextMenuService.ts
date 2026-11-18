@@ -1,3 +1,4 @@
+import { defaultTranslator, type Translator } from "../locale/index.js";
 import {
   BEFORE_CONTEXT_MENU_OPEN_HOOK,
   EXTEND_CONTEXT_MENU_HOOK,
@@ -42,6 +43,7 @@ function findAction(items: readonly ContextMenuItem[], id: string): ActionItem |
 }
 
 export interface ContextMenuServiceOptions {
+  readonly t?: Translator;
   /** Where the active renderer mounts — same convention as EditorManager/DOMCellManager's `container` option. */
   readonly container: HTMLElement;
   readonly hooks?: HookManager;
@@ -63,6 +65,7 @@ export interface ContextMenuServiceOptions {
  * cooperate with each other (doc/customization-and-hooks.md §3.6).
  */
 export class ContextMenuService {
+  readonly #t: Translator;
   readonly #container: HTMLElement;
   readonly #hooks: HookManager;
   readonly #rendererFactory: ContextMenuRendererFactory;
@@ -81,9 +84,10 @@ export class ContextMenuService {
   #activeAbortController: AbortController | null = null;
 
   constructor(options: ContextMenuServiceOptions) {
+    this.#t = options.t ?? defaultTranslator;
     this.#container = options.container;
     this.#hooks = options.hooks ?? new HookManager({ registry: STANDALONE_HOOK_REGISTRY });
-    this.#rendererFactory = options.rendererFactory ?? { create: () => new DefaultMenuRenderer() };
+    this.#rendererFactory = options.rendererFactory ?? { create: () => new DefaultMenuRenderer(this.#t) };
     this.#restoreFocus = options.restoreFocus;
     this.#getBounds = options.getBounds;
     this.#onActionError = options.onActionError;
@@ -265,9 +269,9 @@ export class ContextMenuService {
         console.error(`[cyexcel] context menu action "${itemId}" rejected`, error);
         this.#onActionError?.(itemId, error);
         this.#busyItemId = null;
-        this.#error = /paste/.test(itemId) ? "无法读取剪贴板，请使用 Ctrl+V（Mac：⌘V）粘贴。" :
-          /copy|cut/.test(itemId) ? "剪贴板操作未完成，原数据已保留。可尝试使用键盘快捷键。" :
-          error instanceof Error ? error.message : "操作未完成，请重试。";
+        this.#error = /paste/.test(itemId) ? this.#t("Cannot read the clipboard. Use Ctrl+V (Mac: Command+V) to paste.") :
+          /copy|cut/.test(itemId) ? this.#t("The clipboard operation failed. Original data was preserved. Try a keyboard shortcut.") :
+          error instanceof Error ? error.message : this.#t("The operation failed. Please try again.");
         this.#activeRenderer?.update(this.#renderContext());
       }
     );

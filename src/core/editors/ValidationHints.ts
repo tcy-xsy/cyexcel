@@ -1,3 +1,4 @@
+import { defaultTranslator, type Translator } from "../locale/index.js";
 import type { CellRect } from "../layout/index.js";
 import type { SceneSnapshot } from "../scene/index.js";
 import type { CellValue } from "../sheet/types.js";
@@ -6,6 +7,7 @@ import { describeDropdownItems, type DataValidationRule, type ValidationErrorSty
 import { visibleRectForRange } from "./visibleCellRect.js";
 
 export interface ValidationHintsOptions {
+  readonly t?: Translator;
   /** 编辑层。提示挂在这里而不是 `document.body`，理由同 `ValidationBubble`。 */
   readonly container: HTMLElement;
   readonly getRule: (row: number, column: number) => DataValidationRule | undefined;
@@ -91,7 +93,7 @@ export class ValidationHints {
       this.#closeList();
       return;
     }
-    this.#placeList(rect);
+    this.#placeList(rect, scene);
   }
 
   /**
@@ -126,7 +128,7 @@ export class ValidationHints {
       return;
     }
     this.hideAlert();
-    this.#openList(cell, rect, items);
+    this.#openList(cell, rect, items, scene);
   }
 
   hide(): void {
@@ -141,10 +143,11 @@ export class ValidationHints {
       return;
     }
     this.hideAlert();
+    const t = this.#options.t ?? defaultTranslator;
     const appearance = {
-      stop: { title: "输入无效", color: "#b3261e", border: "#f1c8c5" },
-      warning: { title: "注意", color: "#946200", border: "#f2d49b" },
-      information: { title: "提示", color: "#526277", border: "#d6dee8" }
+      stop: { title: t("Invalid input"), color: "#b3261e", border: "#f1c8c5" },
+      warning: { title: t("Warning"), color: "#946200", border: "#f2d49b" },
+      information: { title: t("Information"), color: "#526277", border: "#d6dee8" }
     }[errorStyle];
     // The editor layer is only a positioning origin; its own box is 0 x 0.
     // Use the Scene's body bounds for both sizing and edge clamping.
@@ -207,7 +210,7 @@ export class ValidationHints {
 
   // -- 下拉列表 ---------------------------------------------------------
 
-  #openList(cell: CellRef, rect: CellRect, items: readonly string[]): void {
+  #openList(cell: CellRef, rect: CellRect, items: readonly string[], scene: SceneSnapshot): void {
     const current = this.#options.getCellValue(cell.row, cell.column);
     const currentText = current === undefined ? "" : String(current);
 
@@ -218,6 +221,7 @@ export class ValidationHints {
       "position:absolute",
       "z-index:25",
       "box-sizing:border-box",
+      "width:max-content",
       "max-height:200px",
       "overflow-y:auto",
       "padding:2px 0",
@@ -241,6 +245,9 @@ export class ValidationHints {
       option.style.cssText = [
         "display:block",
         "width:100%",
+        "box-sizing:border-box",
+        "white-space:normal",
+        "overflow-wrap:anywhere",
         "text-align:left",
         "padding:4px 10px",
         "border:0",
@@ -265,7 +272,7 @@ export class ValidationHints {
     this.#options.container.append(list);
     this.#list = list;
     this.#listTarget = cell;
-    this.#placeList(rect);
+    this.#placeList(rect, scene);
 
     // 点到列表外面或按 Esc 关掉（Univer 的 `onClickOutside`）。捕获阶段监听，免得被别处
     // 的 stopPropagation 吞掉。点在画布箭头上的那一下也会先在这里关掉，把事件记下来，
@@ -291,13 +298,21 @@ export class ValidationHints {
     };
   }
 
-  #placeList(rect: CellRect): void {
+  #placeList(rect: CellRect, scene: SceneSnapshot): void {
     if (this.#list === undefined) {
       return;
     }
-    this.#list.style.left = `${rect.x}px`;
-    this.#list.style.top = `${rect.y + rect.height + LIST_GAP}px`;
-    this.#list.style.minWidth = `${rect.width}px`;
+    const { width, height } = scene.getSurface("body").rootRect;
+    const availableWidth = Math.max(0, width - 8);
+    this.#list.style.minWidth = `${Math.min(rect.width, availableWidth)}px`;
+    this.#list.style.maxWidth = `${availableWidth}px`;
+    this.#list.style.maxHeight = `${Math.min(200, Math.max(0, height - 8))}px`;
+    const below = Math.max(0, height - rect.y - rect.height - LIST_GAP - 4);
+    const above = Math.max(0, rect.y - LIST_GAP - 4);
+    const openAbove = this.#list.offsetHeight > below && above > below;
+    this.#list.style.maxHeight = `${Math.min(200, openAbove ? above : below)}px`;
+    this.#list.style.left = `${Math.max(4, Math.min(rect.x, width - this.#list.offsetWidth - 4))}px`;
+    this.#list.style.top = `${openAbove ? Math.max(4, rect.y - LIST_GAP - this.#list.offsetHeight) : rect.y + rect.height + LIST_GAP}px`;
   }
 
   #closeList(): void {

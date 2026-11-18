@@ -7,7 +7,7 @@ Optional XLSX import for cyexcel. This is a separate workspace package: the main
 Requires cyexcel 0.1.1 or later, before 1.0. The plugin targets ESM applications using a bundler such as Vite or Webpack.
 
 ```sh
-npm install cyexcel@^0.1.1 cyexcel-plugin-excel-import@^0.1.0
+npm install cyexcel@latest cyexcel-plugin-excel-import@latest
 ```
 
 ## Development
@@ -30,9 +30,11 @@ import { createWorkbook } from 'cyexcel';
 import { createExcelImportPlugin } from 'cyexcel-plugin-excel-import';
 
 const excelImport = createExcelImportPlugin({
+  locale: 'en-US',
   onWarning: message => console.warn(message)
 });
 const workbook = createWorkbook(container, {
+  locale: 'en-US',
   toolbar: { items: excelImport.toolbarItems }
 });
 excelImport.attach(workbook);

@@ -1,3 +1,5 @@
+import { localizeDemoData } from "../../demo/localize";
+import { getLocale } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createWorkbook } from "@cyexcel/createWorkbook";
 import { matrixToWorkbookSnapshot } from "@cyexcel/core";
@@ -11,12 +13,13 @@ export default function formulasExamplePage(root: DocElement): void {
   root.append(demo.root);
   demo.mount.onMount = () => {
     const workbook = createWorkbook(demo.mount.element, {
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
       toolbar: true,
-      columns: [
+      columns: localizeDemoData([
         { header: "物料", width: 180 }, { header: "数量", width: 120, type: "number" },
         { header: "单价", width: 120, type: "number" }, { header: "金额", width: 160 }
-      ],
-      snapshot: matrixToWorkbookSnapshot([["传感器", 3, 120, 0], ["电源", 5, 80, 0], ["线缆", 10, 15, 0], ["合计", undefined, undefined, 0]], { blankRows: 20 }),
+      ]),
+      snapshot: matrixToWorkbookSnapshot(localizeDemoData([["传感器", 3, 120, 0], ["电源", 5, 80, 0], ["线缆", 10, 15, 0], ["合计", undefined, undefined, 0]]), { blankRows: 20 }),
       rowHeight: 32
     });
     const sheet = workbook.getActiveSheet();

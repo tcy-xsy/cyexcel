@@ -1,9 +1,11 @@
+import { getLocale } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
-import { columns, snapshot } from "../../demo/data";
+import { getDemoData } from "../../demo/data";
 import { codeBlock, demoBlock, pageHeader, paragraph, section } from "../../components/doc";
 
 export default function toolbarExamplePage(root: DocElement): void {
+  const { columns, snapshot } = getDemoData();
   root.append(
     pageHeader("EXAMPLES", "工具栏", "createSheet() 默认提供工具栏和编辑栏，支持通过 schema 自定义工具栏内容。")
   );
@@ -28,6 +30,7 @@ export default function toolbarExamplePage(root: DocElement): void {
   root.append(demo.root);
   demo.mount.onMount = () => {
     const sheet = createSheet(demo.mount.element, {
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
       columns,
       snapshot,
       toolbar: true,

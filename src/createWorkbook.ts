@@ -1,3 +1,4 @@
+import { createTranslator, defaultTranslator, type Translator } from "./core/locale/index.js";
 import {
   CyExcelCore,
   rowsToWorkbookSnapshot,
@@ -82,9 +83,19 @@ function createTopWidgets(
   return widgets;
 }
 
-function normalizeSheetName(name: string | undefined, index: number): string {
+function normalizeSheetName(name: string | undefined, index: number, t: Translator = defaultTranslator): string {
   const trimmed = name?.trim();
-  return trimmed || `工作表${index + 1}`;
+  return trimmed || t("Sheet{0}", index + 1);
+}
+
+function snapshotLocaleOptions(options: WorkbookSheetOptions): WorkbookSheetOptions {
+  const locale = options.locale;
+  if (locale === undefined) return { ...options };
+  createTranslator(locale);
+  return {
+    ...options,
+    locale: typeof locale === "string" ? locale : { name: locale.name, messages: { ...locale.messages } }
+  };
 }
 
 /**
@@ -96,6 +107,7 @@ export function createWorkbook(
   container: HTMLElement,
   options: CreateWorkbookOptions = {}
 ): WorkbookHandle {
+  const t = createTranslator(options.locale);
   const {
     toolbar,
     formulaBar,
@@ -108,7 +120,7 @@ export function createWorkbook(
   const {
     snapshot: defaultSnapshot,
     ...defaultSheetOptions
-  } = workbookCoreOptions;
+  } = snapshotLocaleOptions(workbookCoreOptions);
 
   const root = element("div", "cyx-workbook");
   root.style.display = "flex";
@@ -132,8 +144,8 @@ export function createWorkbook(
 
   const addSheetButton = element("button", "cyx-workbook-add-sheet", "+");
   addSheetButton.type = "button";
-  addSheetButton.setAttribute("aria-label", "添加工作表");
-  addSheetButton.title = "添加工作表";
+  addSheetButton.setAttribute("aria-label", t("Add sheet"));
+  addSheetButton.title = t("Add sheet");
   addSheetButton.style.flex = "0 0 auto";
   addSheetButton.style.width = "28px";
   addSheetButton.style.height = "28px";
@@ -209,7 +221,7 @@ export function createWorkbook(
     button.addEventListener("click", () => {
       setActive(sheetId);
     });
-    button.title = "双击重命名工作表";
+    button.title = t("Double-click to rename sheet");
     button.addEventListener("dblclick", () => startRename(sheetId));
     button.addEventListener("keydown", event => {
       if (event.key === "F2") {
@@ -219,8 +231,8 @@ export function createWorkbook(
     });
     const close = element("button", "cyx-workbook-close-sheet");
     close.type = "button";
-    close.setAttribute("aria-label", `删除工作表 ${name}`);
-    close.title = `删除工作表 ${name}`;
+    close.setAttribute("aria-label", t("Delete sheet {0}", name));
+    close.title = t("Delete sheet {0}", name);
     close.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="m3 3 6 6m0-6-6 6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>';
     close.style.display = "grid";
     close.style.placeItems = "center";
@@ -238,7 +250,7 @@ export function createWorkbook(
     close.addEventListener("mouseleave", () => { close.style.background = "transparent"; });
     close.addEventListener("click", () => {
       if (disposed || sheetIdOrder.length <= 1) return;
-      if (window.confirm(`删除工作表“${specs.get(sheetId)?.name}”？此操作无法撤销。`)) {
+      if (window.confirm(t("Delete sheet \"{0}\"? This cannot be undone.", specs.get(sheetId)?.name))) {
         deleteSheet(sheetId);
         if (activeSheetId) tabButtons.get(activeSheetId)?.focus();
       }
@@ -261,8 +273,8 @@ export function createWorkbook(
     if (button) button.textContent = trimmed;
     const close = closeButtons.get(sheetId);
     if (close) {
-      close.setAttribute("aria-label", `删除工作表 ${trimmed}`);
-      close.title = `删除工作表 ${trimmed}`;
+      close.setAttribute("aria-label", t("Delete sheet {0}", trimmed));
+      close.title = t("Delete sheet {0}", trimmed);
     }
   }
 
@@ -273,7 +285,7 @@ export function createWorkbook(
     const input = element("input", "cyx-workbook-rename-sheet");
     input.type = "text";
     input.value = spec.name;
-    input.setAttribute("aria-label", "工作表名称");
+    input.setAttribute("aria-label", t("Sheet name"));
     input.style.width = `${Math.max(80, button.offsetWidth)}px`;
     input.style.height = "26px";
     input.style.boxSizing = "border-box";
@@ -317,11 +329,11 @@ export function createWorkbook(
     const index = sheetSequence;
     sheetSequence += 1;
     const id = `sheet-${String(index + 1).padStart(3, "0")}`;
-    const name = normalizeSheetName(sheetOptions.name, index);
+    const name = normalizeSheetName(sheetOptions.name, index, t);
     const spec: SheetSpec = {
       id,
       name,
-      options: sheetOptions,
+      options: snapshotLocaleOptions(sheetOptions),
       inheritWorkbookSnapshot
     };
 

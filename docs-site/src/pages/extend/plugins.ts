@@ -1,7 +1,8 @@
+import { getLocale, translate } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import type { CyExcelPlugin } from "@cyexcel/core";
 import { createSheet } from "@cyexcel/createSheet";
-import { columns, snapshot } from "../../demo/data";
+import { getDemoData } from "../../demo/data";
 import {
   setText,
   actionButton,
@@ -15,6 +16,7 @@ import {
 } from "../../components/doc";
 
 export default function pluginsPage(root: DocElement): void {
+  const { columns, snapshot } = getDemoData();
   let sheet: ReturnType<typeof createSheet>;
   root.append(
     pageHeader(
@@ -133,7 +135,7 @@ const helloPlugin: CyExcelPlugin = {
   };
 
   const setCell = actionButton("写入单元格", () => {
-    sheet.setCell(0, 1, `插件观察 #${changeCount + 1}`);
+    sheet.setCell(0, 1, `${translate("插件观察")} #${changeCount + 1}`);
   });
   const insertRow = actionButton("插入一行", () => {
     sheet.insertRows(sheet.getUsedRowCount(), 1);
@@ -153,6 +155,7 @@ const helloPlugin: CyExcelPlugin = {
   demo.mount.addClass("with-toolbar");
   demo.mount.onMount = () => {
     sheet = createSheet(demo.mount.element, {
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
       columns,
       snapshot,
       plugins: [auditPlugin],

@@ -1,6 +1,7 @@
+import { getLocale } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
-import { columns, snapshot } from "../../demo/data";
+import { getDemoData } from "../../demo/data";
 import {
   setText,
   actionButton,
@@ -12,6 +13,7 @@ import {
 } from "../../components/doc";
 
 export default function stylesExamplePage(root: DocElement): void {
+  const { columns, snapshot } = getDemoData();
   let sheet: ReturnType<typeof createSheet>;
   root.append(
     pageHeader("EXAMPLES", "样式与格式", "样式以 patch 合并写入，可以只改 bold、颜色、背景或数字格式。")
@@ -60,6 +62,7 @@ export default function stylesExamplePage(root: DocElement): void {
   demo.mount.addClass("with-toolbar");
   demo.mount.onMount = () => {
     sheet = createSheet(demo.mount.element, {
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
       columns,
       snapshot,
       headerHeight: 28,

@@ -1,6 +1,7 @@
+import { getLocale, translate } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
-import { columns, snapshot } from "../../demo/data";
+import { getDemoData } from "../../demo/data";
 import {
   setText,
   actionButton,
@@ -13,6 +14,7 @@ import {
 } from "../../components/doc";
 
 export default function hooksPage(root: DocElement): void {
+  const { columns, snapshot } = getDemoData();
   let sheet: ReturnType<typeof createSheet>;
   root.append(
     pageHeader(
@@ -133,7 +135,7 @@ dispose();`)
     }
   };
   const setCell = actionButton("写入单元格", () => {
-    sheet.setCell(0, 1, "Hook 已观察这次写入");
+    sheet.setCell(0, 1, translate("Hook 已观察这次写入"));
   });
   const insertRow = actionButton("插入一行", () => {
     sheet.insertRows(sheet.getUsedRowCount(), 1);
@@ -153,6 +155,7 @@ dispose();`)
   demo.mount.addClass("with-toolbar");
   demo.mount.onMount = () => {
     sheet = createSheet(demo.mount.element, {
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
       columns,
       snapshot,
       headerHeight: 28,

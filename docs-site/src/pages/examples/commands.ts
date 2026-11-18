@@ -1,6 +1,7 @@
+import { getLocale, translate } from "../../i18n/index";
 import type { DocElement } from "../../components/content";
 import { createSheet } from "@cyexcel/createSheet";
-import { columns, snapshot } from "../../demo/data";
+import { getDemoData } from "../../demo/data";
 import {
   setText,
   actionButton,
@@ -12,6 +13,7 @@ import {
 } from "../../components/doc";
 
 export default function commandsExamplePage(root: DocElement): void {
+  const { columns, snapshot } = getDemoData();
   let sheet: ReturnType<typeof createSheet>;
   root.append(
     pageHeader("EXAMPLES", "编辑与历史", "setCell() 通过命令层提交修改，支持通过 undo() 和 redo() 撤销与重做。")
@@ -23,13 +25,13 @@ export default function commandsExamplePage(root: DocElement): void {
   );
   root.append(intro.root);
   root.append(
-    codeBlock(`sheet.setCell(0, 1, "已确认订单");
+    codeBlock(`sheet.setCell(0, 1, translate("已确认订单"));
 sheet.undo();
 sheet.redo();`)
   );
 
   const writeCell = actionButton("写入第 1 行第 2 列", () => {
-    sheet.setCell(0, 1, "已确认订单");
+    sheet.setCell(0, 1, translate("已确认订单"));
     setText(log, `第 1 行第 2 列已写入，当前值：${String(sheet.getCell(0, 1))}`);
   });
   const undo = actionButton("撤销", () => {
@@ -55,6 +57,7 @@ sheet.redo();`)
   demo.mount.addClass("with-toolbar");
   demo.mount.onMount = () => {
     sheet = createSheet(demo.mount.element, {
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
       columns,
       snapshot,
       headerHeight: 28,

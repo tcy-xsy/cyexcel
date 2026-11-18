@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { createBasicContextMenuPlugin } from '../../../../src/core/menu/basicMenuPlugin';
 import type { ContextMenuContext, ContextMenuItem, ContextMenuProvider, SheetMenuCommands } from '../../../../src/core/menu/types';
 import type { PluginContext } from '../../../../src/core/plugins';
+import { createTranslator, type Translator } from '../../../../src/core/locale';
 
-function setup() {
+function setup(t?: Translator) {
   let provider: ContextMenuProvider | undefined;
   const run = vi.fn();
   const state = {structureEnabled:true,canMerge:true,hasMerge:false,canSort:true,canFilter:true,hasFilter:false,hasHiddenColumns:false,bold:false,italic:false};
   const context = {
+    t,
     contextMenu:{registerProvider:(_meta:unknown, value:ContextMenuProvider)=>{provider=value;return ()=>{};}},
     sheetMenu: {getState:()=>state,run} satisfies SheetMenuCommands,
     copy:vi.fn(async()=>({status:'copied'})),paste:vi.fn(async()=>{}),
@@ -25,6 +27,12 @@ function setup() {
 }
 
 describe('spreadsheet menu commands',()=>{
+  it('inherits the sheet locale from plugin context and interpolates selection counts',()=>{
+    const {find}=setup(createTranslator('en-US'));
+    expect(find('copy')).toMatchObject({label:'Copy'});
+    expect(find('insert-row-above')).toMatchObject({label:'Insert 3 rows above'});
+    expect(find('insert-column-right')).toMatchObject({label:'Insert 2 columns right'});
+  });
   it('inserts and deletes the full continuous selection rather than just the clicked row',()=>{
     const {context,find,menu}=setup();
     const signal=new AbortController().signal;

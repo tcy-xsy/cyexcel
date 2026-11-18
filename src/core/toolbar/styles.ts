@@ -124,6 +124,8 @@ export const splitCaret: Style = {
 };
 
 export const select: Style = {
+  maxWidth: "min(220px, calc(100vw - 48px))",
+  minWidth: "0",
   height: "28px",
   padding: "0 4px",
   border: `1px solid ${COLORS.border}`,
@@ -156,7 +158,12 @@ export const separator: Style = {
 export const panel: Style = {
   position: "fixed",
   zIndex: "9990",
-  minWidth: "160px",
+  minWidth: "min(160px, calc(100vw - 8px))",
+  maxWidth: "calc(100vw - 8px)",
+  maxHeight: "calc(100dvh - 8px)",
+  boxSizing: "border-box",
+  overflowY: "auto",
+  overflowWrap: "anywhere",
   padding: "6px",
   background: COLORS.surface,
   border: `1px solid ${COLORS.border}`,
@@ -179,7 +186,15 @@ export const panel: Style = {
 export const dialog: Style = {
   position: "fixed",
   zIndex: "9995",
-  minWidth: "320px",
+  width: "max-content",
+  minWidth: "min(480px, calc(100vw - 16px))",
+  maxWidth: "calc(100vw - 16px)",
+  minHeight: "min(180px, calc(100dvh - 16px))",
+  maxHeight: "calc(100dvh - 16px)",
+  boxSizing: "border-box",
+  overflow: "hidden",
+  resize: "both",
+  overflowWrap: "anywhere",
   background: COLORS.surface,
   border: `1px solid ${COLORS.border}`,
   borderRadius: "6px",
@@ -192,6 +207,7 @@ export const dialog: Style = {
 
 /** 标题栏。整条都是拖动把手，所以 `cursor: move`；文字不可选，免得拖动变成选中。 */
 export const dialogHeader: Style = {
+  flexShrink: "0",
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
@@ -204,6 +220,7 @@ export const dialogHeader: Style = {
 };
 
 export const dialogClose: Style = {
+  flexShrink: "0",
   display: "inline-flex",
   alignItems: "center",
   justifyContent: "center",
@@ -218,12 +235,17 @@ export const dialogClose: Style = {
 
 export const dialogBody: Style = {
   display: "flex",
+  flex: "1 1 auto",
   flexDirection: "column",
   gap: "8px",
-  padding: "10px"
+  padding: "10px 10px 16px",
+  minHeight: "0",
+  overflowY: "auto"
 };
 
-/** 一行「标签 + 控件」。标签固定宽，几行下来输入框左边缘对齐。 */
+/** Shared label width keeps translated fields and checkbox rows aligned. */
+const DIALOG_LABEL_WIDTH = "clamp(88px, 24vw, 104px)";
+
 export const dialogField: Style = {
   display: "flex",
   alignItems: "center",
@@ -232,7 +254,8 @@ export const dialogField: Style = {
 
 export const dialogLabel: Style = {
   flex: "0 0 auto",
-  width: "64px",
+  width: DIALOG_LABEL_WIDTH,
+  overflowWrap: "anywhere",
   textAlign: "right",
   color: COLORS.text
 };
@@ -254,13 +277,14 @@ export const dialogOptions: Style = {
   flexWrap: "wrap",
   alignItems: "center",
   gap: "12px",
-  paddingLeft: "72px"
+  paddingLeft: `calc(${DIALOG_LABEL_WIDTH} + 8px)`
 };
 
 export const dialogCheckbox: Style = {
   display: "inline-flex",
   alignItems: "center",
   gap: "4px",
+  minWidth: "0",
   cursor: "pointer"
 };
 
@@ -268,6 +292,13 @@ export const dialogButtons: Style = {
   display: "flex",
   flexWrap: "wrap",
   justifyContent: "flex-end",
+  gap: "6px",
+  paddingTop: "2px"
+};
+
+export const searchDialogButtons: Style = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
   gap: "6px",
   paddingTop: "2px"
 };
@@ -290,9 +321,18 @@ export const dialogStatus: Style = {
   color: "#6b7280"
 };
 
+export const dialogHelp: Style = {
+  ...dialogStatus,
+  paddingLeft: `calc(${DIALOG_LABEL_WIDTH} + 8px)`,
+  lineHeight: "1.5"
+};
+
 export const panelAction: Style = {
   display: "block",
   width: "100%",
+  boxSizing: "border-box",
+  whiteSpace: "normal",
+  overflowWrap: "anywhere",
   padding: "4px 8px",
   border: "none",
   borderRadius: "3px",
@@ -360,9 +400,9 @@ export const formulaInput: Style = {
 /** 溢出菜单里"标签 + 下拉"的一行。 */
 export const panelRow: Style = {
   display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: "8px",
+  flexDirection: "column",
+  alignItems: "stretch",
+  gap: "4px",
   padding: "2px 8px",
   fontSize: "13px"
 };
@@ -499,7 +539,12 @@ export function attachTooltip(element: HTMLElement, text: string): () => void {
         color: "#ffffff",
         fontSize: "12px",
         lineHeight: "1.4",
-        whiteSpace: "nowrap",
+        whiteSpace: "normal",
+        overflowWrap: "anywhere",
+        boxSizing: "border-box",
+        maxWidth: "calc(100vw - 8px)",
+        maxHeight: "calc(100dvh - 8px)",
+        overflowY: "auto",
         pointerEvents: "none",
         transform: "translateX(-50%)",
         left: `${rect.left + rect.width / 2}px`,
@@ -513,6 +558,9 @@ export function attachTooltip(element: HTMLElement, text: string): () => void {
       }
       if (bubbleRect.left < 4) {
         bubble.style.left = `${4 + bubbleRect.width / 2}px`;
+      }
+      if (bubbleRect.bottom > window.innerHeight - 4) {
+        bubble.style.top = `${Math.max(4, rect.top - bubbleRect.height - 6)}px`;
       }
     }, 300);
   };

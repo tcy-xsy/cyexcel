@@ -1,3 +1,4 @@
+import { defaultTranslator, type Translator } from "../locale/index.js";
 import { serialFromISODate, serialToISODate } from "../style/dateSerial.js";
 import {
   COLOR_PATTERN,
@@ -30,39 +31,45 @@ export interface DataValidationFormState {
   errorMessage: string;
 }
 
-export const ALLOW_OPTIONS: readonly { readonly value: AllowKind; readonly label: string }[] = [
-  { value: "any", label: "任何值" },
-  { value: "whole", label: "整数" },
-  { value: "decimal", label: "小数" },
-  { value: "textLength", label: "文本长度" },
-  { value: "date", label: "日期" },
-  { value: "time", label: "时间" },
-  { value: "list", label: "序列" }
-];
+export function createValidationFormOptions(t: Translator = defaultTranslator) {
+  const ALLOW_OPTIONS: readonly { readonly value: AllowKind; readonly label: string }[] = [
+    { value: "any", label: t("Any value") },
+    { value: "whole", label: t("Whole number") },
+    { value: "decimal", label: t("Decimal") },
+    { value: "textLength", label: t("Text length") },
+    { value: "date", label: t("Date") },
+    { value: "time", label: t("Time") },
+    { value: "list", label: t("List") }
+  ];
 
-export const OPERATOR_OPTIONS: readonly { readonly value: ValidationOperator; readonly label: string }[] = [
-  { value: "between", label: "介于" },
-  { value: "notBetween", label: "未介于" },
-  { value: "equal", label: "等于" },
-  { value: "notEqual", label: "不等于" },
-  { value: "greaterThan", label: "大于" },
-  { value: "greaterThanOrEqual", label: "大于或等于" },
-  { value: "lessThan", label: "小于" },
-  { value: "lessThanOrEqual", label: "小于或等于" }
-];
+  const OPERATOR_OPTIONS: readonly { readonly value: ValidationOperator; readonly label: string }[] = [
+    { value: "between", label: t("Between") },
+    { value: "notBetween", label: t("Not between") },
+    { value: "equal", label: t("Equal to") },
+    { value: "notEqual", label: t("Not equal to") },
+    { value: "greaterThan", label: t("Greater than") },
+    { value: "greaterThanOrEqual", label: t("Greater than or equal to") },
+    { value: "lessThan", label: t("Less than") },
+    { value: "lessThanOrEqual", label: t("Less than or equal to") }
+  ];
 
-export const RENDER_MODE_OPTIONS: readonly { readonly value: DataValidationRenderMode; readonly label: string }[] = [
-  { value: "arrow", label: "文字加箭头" },
-  { value: "text", label: "仅文字" },
-  { value: "custom", label: "胶囊标签" }
-];
+  const RENDER_MODE_OPTIONS: readonly { readonly value: DataValidationRenderMode; readonly label: string }[] = [
+    { value: "arrow", label: t("Text and arrow") },
+    { value: "text", label: t("Text only") },
+    { value: "custom", label: t("Chip") }
+  ];
 
-export const ERROR_STYLE_OPTIONS: readonly { readonly value: ValidationErrorStyle; readonly label: string }[] = [
-  // 与 Univer 一致：只有停止级会拒绝输入；警告、信息放行，只把违规的格子标红
-  { value: "stop", label: "停止（拒绝输入）" },
-  { value: "warning", label: "警告（仅标记）" },
-  { value: "information", label: "信息（仅标记）" }
-];
+  const ERROR_STYLE_OPTIONS: readonly { readonly value: ValidationErrorStyle; readonly label: string }[] = [
+    // 与 Univer 一致：只有停止级会拒绝输入；警告、信息放行，只把违规的格子标红
+    { value: "stop", label: t("Stop (reject input)") },
+    { value: "warning", label: t("Warning (mark only)") },
+    { value: "information", label: t("Information (mark only)") }
+  ];
+
+  return { ALLOW_OPTIONS, OPERATOR_OPTIONS, RENDER_MODE_OPTIONS, ERROR_STYLE_OPTIONS };
+}
+
+export const { ALLOW_OPTIONS, OPERATOR_OPTIONS, RENDER_MODE_OPTIONS, ERROR_STYLE_OPTIONS } = createValidationFormOptions();
 
 export const DEFAULT_FORM: DataValidationFormState = Object.freeze({
   allow: "any",
@@ -120,7 +127,7 @@ export type ListSource =
  * 一个**：`a=b=#fff` 是名为 `a=b` 的项。写了等号但后面不是合法颜色就报错，而不是悄悄把
  * 整段当成名字——那会让"拼错颜色"变成一个多出来的怪选项。
  */
-export function parseListSource(text: string): ListSource {
+export function parseListSource(text: string, t: Translator = defaultTranslator): ListSource {
   const items: string[] = [];
   const colors: Record<string, string> = {};
   for (const entry of text.split(LIST_SEPARATOR).map((part) => part.trim()).filter((part) => part !== "")) {
@@ -134,10 +141,10 @@ export function parseListSource(text: string): ListSource {
     const name = entry.slice(0, at).trim();
     const color = entry.slice(at + 1).trim();
     if (name === "") {
-      return { kind: "error", message: `「${entry}」缺少名称` };
+      return { kind: "error", message: t("A name is required for \"{0}\".", entry) };
     }
     if (!COLOR_PATTERN.test(color)) {
-      return { kind: "error", message: `「${name}」的颜色需要是 #RRGGBB 形式，例如 #d93025` };
+      return { kind: "error", message: t("The color for \"{0}\" must use #RRGGBB, for example #d93025.", name) };
     }
     if (!items.includes(name)) {
       items.push(name);
@@ -173,13 +180,13 @@ export type FormOutcome =
   | { readonly kind: "rule"; readonly input: DataValidationRuleInput }
   | { readonly kind: "error"; readonly message: string };
 
-function parseNumber(text: string, label: string): number | string {
+function parseNumber(text: string, label: string, t: Translator): number | string {
   const trimmed = text.trim();
   if (trimmed === "") {
-    return `请填写${label}`;
+    return t("Enter {0}.", label);
   }
   const value = Number(trimmed);
-  return Number.isFinite(value) ? value : `${label}需要是数字`;
+  return Number.isFinite(value) ? value : t("{0} must be a number.", label);
 }
 
 /**
@@ -187,7 +194,7 @@ function parseNumber(text: string, label: string): number | string {
  * 问题以 `error` 返回，文案直接给用户看。日期/时间在这里就解析成序列号：解析失败在用户
  * 还能改的地方提示，不等到 `setDataValidation` 抛错。
  */
-export function ruleInputFromForm(form: DataValidationFormState): FormOutcome {
+export function ruleInputFromForm(form: DataValidationFormState, t: Translator = defaultTranslator): FormOutcome {
   if (form.allow === "any") {
     return { kind: "clear" };
   }
@@ -200,12 +207,12 @@ export function ruleInputFromForm(form: DataValidationFormState): FormOutcome {
   };
 
   if (form.allow === "list") {
-    const source = parseListSource(form.value1);
+    const source = parseListSource(form.value1, t);
     if (source.kind === "error") {
       return source;
     }
     if (source.items.length === 0) {
-      return { kind: "error", message: "请填写序列内容，用逗号分隔" };
+      return { kind: "error", message: t("Enter list items separated by commas.") };
     }
     return {
       kind: "rule",
@@ -226,29 +233,29 @@ export function ruleInputFromForm(form: DataValidationFormState): FormOutcome {
   const read = (text: string, label: string): number | string => {
     if (form.allow === "date") {
       const serial = text.trim() === "" ? undefined : serialFromISODate(text.trim());
-      return serial === undefined || serial === null ? `${label}需要是日期，例如 2026-01-15` : serial;
+      return serial === undefined || serial === null ? t("{0} must be a date, for example 2026-01-15.", label) : serial;
     }
     if (form.allow === "time") {
       const fraction = parseClock(text);
-      return fraction === undefined ? `${label}需要是时间，例如 09:30` : fraction;
+      return fraction === undefined ? t("{0} must be a time, for example 09:30.", label) : fraction;
     }
-    const value = parseNumber(text, label);
+    const value = parseNumber(text, label, t);
     if (typeof value === "number" && (form.allow === "whole" || form.allow === "textLength") && !Number.isInteger(value)) {
-      return `${label}需要是整数`;
+      return t("{0} must be a whole number.", label);
     }
     if (typeof value === "number" && form.allow === "textLength" && value < 0) {
-      return `${label}不能是负数`;
+      return t("{0} cannot be negative.", label);
     }
     return value;
   };
 
-  const value1 = read(form.value1, needsSecond ? "最小值" : "值");
+  const value1 = read(form.value1, needsSecond ? t("Minimum") : t("Value"));
   if (typeof value1 === "string") {
     return { kind: "error", message: value1 };
   }
   let value2: number | undefined;
   if (needsSecond) {
-    const parsed = read(form.value2, "最大值");
+    const parsed = read(form.value2, t("Maximum"));
     if (typeof parsed === "string") {
       return { kind: "error", message: parsed };
     }

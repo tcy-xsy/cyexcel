@@ -1,6 +1,7 @@
+import { getLocale } from "../i18n/index";
 import type { DocElement } from "../components/content";
 import { createSheet } from "@cyexcel/createSheet";
-import { columns, snapshot } from "../demo/data";
+import { getDemoData } from "../demo/data";
 import {
   callout,
   codeBlock,
@@ -11,6 +12,7 @@ import {
 } from "../components/doc";
 
 export default function quickStartPage(root: DocElement): void {
+  const { columns, snapshot } = getDemoData();
   root.append(
     pageHeader(
       "QUICK START",
@@ -22,7 +24,7 @@ export default function quickStartPage(root: DocElement): void {
   const install = section("安装");
   install.body.append(paragraph("在已有前端工程中安装当前包："));
   root.append(install.root);
-  root.append(codeBlock("pnpm add cyexcel", "shell"));
+  root.append(codeBlock("pnpm add cyexcel@latest", "shell"));
 
   const create = section("创建表格");
   create.body.append(
@@ -40,6 +42,7 @@ const rows = [
 ];
 
 const sheet = createSheet(document.querySelector("#sheet"), {
+  locale: "${getLocale() === "en" ? "en-US" : "zh-CN"}",
   snapshot: matrixToWorkbookSnapshot(rows),
   headerHeight: 28,
   rowHeaderWidth: 48
@@ -60,6 +63,7 @@ const sheet = createSheet(document.querySelector("#sheet"), {
   root.append(demo.root);
   demo.mount.onMount = () => {
     const sheet = createSheet(demo.mount.element, {
+      locale: getLocale() === "en" ? "en-US" : "zh-CN",
       columns,
       snapshot,
       toolbar: true,

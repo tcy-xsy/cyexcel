@@ -1,6 +1,10 @@
 import { defineConfig } from "vitest/config";
+import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
+  resolve: {
+    alias: [{ find: /^@cyexcel\//, replacement: `${fileURLToPath(new URL("./src", import.meta.url))}/` }]
+  },
   test: {
     environment: "node",
     // tests/build/**/*.test.ts depends on a prior `pnpm build` (it imports

@@ -1,3 +1,4 @@
+import { createTranslator, type Locale, type Translator } from "./locale/index.js";
 import {
   CellTypeRegistry,
   ColumnManager,
@@ -207,6 +208,8 @@ export interface CyExcelHeaderActionEvent {
 }
 
 export interface CyExcelCoreOptions {
+  /** UI language; defaults to zh-CN. Each sheet owns its translation dictionary. */
+  readonly locale?: Locale;
   /** Install the standard spreadsheet menu. Core defaults to false; UI presets default to true. */
   readonly contextMenu?: boolean;
   /** Optional formula calculator. Workbook shells enable the bundled adapter by default. */
@@ -305,7 +308,7 @@ export interface CyExcelCoreOptions {
     readonly showInvalidMarks?: boolean;
   };
   readonly clipboard?: ClipboardOptions;
-  /** Installed via PluginManager at construction, in order — see doc/customization-and-hooks.md §11.2. Nothing is installed by default (e.g. createBasicContextMenuPlugin() must be listed explicitly to get a Copy/Paste right-click menu). */
+  /** Installed via PluginManager at construction, in order — see doc/customization-and-hooks.md §11.2. Nothing is installed by default (e.g. createBasicContextMenuPlugin(this.t) must be listed explicitly to get a Copy/Paste right-click menu). */
   readonly plugins?: readonly CyExcelPlugin[];
   /** 顶部部件，按顺序挂在表格上方。开箱即用的走法见主入口的 `createSheet()`。 */
   readonly topWidgets?: readonly TopWidgetFactory[];
@@ -848,7 +851,10 @@ export class CyExcelCore {
    */
   readonly #connectionObserver: MutationObserver | null;
 
+  readonly t: Translator;
+
   constructor(container: HTMLElement, options: CyExcelCoreOptions = {}) {
+    this.t = createTranslator(options.locale);
     validateCyExcelCoreOptions(options);
 
     // Copied, not aliased — insertColumns()/deleteColumns()/moveColumns()
@@ -967,6 +973,7 @@ export class CyExcelCore {
     this.#shortcuts = new ShortcutRegistry();
     initialization.defer(() => this.#shortcuts.dispose());
     this.#contextMenuService = new ContextMenuService({
+      t: this.t,
       container: dom.menuLayer,
       hooks: this.#hooks,
       restoreFocus: () => this.#contentCanvas.focus({ preventScroll: true }),
@@ -994,6 +1001,7 @@ export class CyExcelCore {
     });
     initialization.defer(() => this.#contextMenuService.dispose());
     this.#pluginManager = new PluginManager({
+      t: this.t,
       hooks: this.#hooks,
       events: this.#events,
       contextMenu: this.#contextMenuService,
@@ -1015,7 +1023,7 @@ export class CyExcelCore {
     });
     initialization.defer(() => this.#pluginManager.dispose());
     if (options.contextMenu && !options.plugins?.some(plugin => plugin.name === "cyexcel:basic-context-menu")) {
-      this.#pluginManager.use(createBasicContextMenuPlugin());
+      this.#pluginManager.use(createBasicContextMenuPlugin(this.t));
     }
     for (const plugin of options.plugins ?? []) {
       this.#pluginManager.use(plugin);
@@ -1395,6 +1403,7 @@ export class CyExcelCore {
     });
 
     this.#editorManager = new EditorManager({
+      t: this.t,
       container: dom.editorLayer,
       getScene: () => this.#scene,
       findMergeAt: (row, column) => findMergeAt(this.#sheet.merges(), row, column),
@@ -1419,7 +1428,7 @@ export class CyExcelCore {
             parsed = preview.getCell(row, column);
           } finally { preview.disposeFormulas(); }
         }
-        return outcomeFromResult(validateValue(rule, parsed, this.#validateOptions(row, column)));
+        return outcomeFromResult(validateValue(rule, parsed, this.#validateOptions(row, column)), this.t);
       },
       // Pure forwarding to whatever the column's own CellType declares —
       // EditorManager itself never decides which editor a column gets, and
@@ -1468,6 +1477,7 @@ export class CyExcelCore {
     initialization.defer(() => this.#editorManager.dispose());
 
     this.#validationHints = new ValidationHints({
+      t: this.t,
       container: dom.editorLayer,
       getRule: (row, column) => findRuleAt(this.#sheet.validations(), row, column),
       getCellValue: (row, column) => this.#store.getCell(row, column) as CellValue | undefined,
@@ -1783,12 +1793,12 @@ export class CyExcelCore {
     if (signal.aborted) return;
     switch (action) {
       case "cut": {
-        if (this.#getSheetMenuState(range, column).canCut === false) throw new Error("选区包含禁止复制的列，无法剪切。");
+        if (this.#getSheetMenuState(range, column).canCut === false) throw new Error(this.t("The selection contains columns that cannot be copied or cut."));
         const version = this.#store.version;
         const result = await this.copy({ range, signal });
-        if (result.status === "oversized") throw new Error("所选区域过大，请缩小选区后剪切。");
+        if (result.status === "oversized") throw new Error(this.t("The selection is too large. Select a smaller range to cut."));
         if (result.status === "copied" && !signal.aborted) {
-          if (version !== this.#store.version) throw new Error("数据已变化，已保留原单元格，请重新剪切。");
+          if (version !== this.#store.version) throw new Error(this.t("The data has changed. Original cells were preserved. Please cut again."));
           this.clearContents(range);
         }
         break;
@@ -1809,7 +1819,7 @@ export class CyExcelCore {
         const hasOtherValues = [...this.#sheet.recordsInRange(range)].some(({ row, column, record }) =>
           (row !== range.startRow || column !== range.startColumn) &&
           ((record.v !== undefined && record.v !== "") || record.f !== undefined || record.img !== undefined));
-        if (!hasOtherValues || window.confirm("合并后仅保留左上角单元格的内容，其他内容将被清除。是否继续？")) this.mergeCells(range);
+        if (!hasOtherValues || window.confirm(this.t("Merging keeps only the top-left cell and clears the other cells. Continue?"))) this.mergeCells(range);
         break;
       }
       case "unmerge": this.unmergeCells(range); break;
@@ -1981,6 +1991,7 @@ export class CyExcelCore {
 
   #validateOptions(row: number, column: number): ValidateOptions {
     return {
+      t: this.t,
       getCustomValidator: (name) => this.#customValidators.get(name),
       row,
       column,
@@ -3310,7 +3321,7 @@ export class CyExcelCore {
       );
       if (!result.valid) {
         this.#runFinalizer("validation-alert", () =>
-          this.#validationHints.showAlert(this.#scene, cell, result.message ?? "输入的值不符合规则", result.errorStyle)
+          this.#validationHints.showAlert(this.#scene, cell, result.message ?? this.t("The value does not meet the validation rule."), result.errorStyle)
         );
       }
     }, HOVER_ALERT_DELAY_MS);
