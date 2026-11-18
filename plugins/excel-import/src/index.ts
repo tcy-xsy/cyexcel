@@ -1,7 +1,7 @@
 import type { WorkbookHandle } from "cyexcel";
 import type { ToolbarItem } from "cyexcel/toolbar";
-import { readExcelWorkbook } from "./readExcel";
-import type { ExcelImportInput, ExcelImportOptions, ExcelImportResult } from "./readExcel";
+import { readExcelWorkbook } from "./readExcel.js";
+import type { ExcelImportInput, ExcelImportOptions, ExcelImportResult } from "./readExcel.js";
 
 export { readExcelWorkbook };
 export type { ExcelImportInput, ExcelImportOptions, ExcelImportResult };
